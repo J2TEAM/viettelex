@@ -92,7 +92,7 @@ final class SuiteRegressionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 35,
                                     "Vietnamese rendering regressed")
         // Ambiguous handled once an English run is established — floor.
-        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 65,
+        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 79,
                                     "context coverage of ambiguous words regressed")
     }
 
