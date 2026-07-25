@@ -44,7 +44,19 @@ final class SuiteRegressionTests: XCTestCase {
     /// Boundary-accurate replay, exactly like the controller: letters compose; every
     /// non-letter (space, digit, punctuation) is a word boundary — commit the word, then
     /// emit the character literally. So "ipv4", "vieejt-nam", "xin chaof!" round-trip.
+    /// Accept any of the `" / "`-separated alternatives the suite lists as valid (tone-
+    /// placement style variants: "hòa / hoà", "thủy / thuỷ").
+    private func matches(_ output: String, _ expected: String) -> Bool {
+        if output == expected { return true }
+        return expected.components(separatedBy: " / ").contains { $0 == output }
+    }
+
     private func drive(_ input: String, primeEnglish: Bool, context: Bool) -> String {
+        // liveSpellCheck on (shipped default). freeMarking is deliberately LEFT OFF here:
+        // its aggressive mark reach-back mangles English double-vowel words in this raw
+        // per-key replay ("excess"→"êcs"), which doesn't reflect real typing — so it would
+        // understate English-restore. The few multi_path free-position rows it would fix
+        // aren't worth that distortion.
         var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = context
         if primeEnglish { for ch in "he" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true) }
         var out = ""
@@ -69,10 +81,10 @@ final class SuiteRegressionTests: XCTestCase {
         var ambiguousWithContext = 0, ambiguousTotal = 0
         for r in rows {
             total[r.behavior, default: 0] += 1
-            if run(r.input, context: false) == r.expected { pass[r.behavior, default: 0] += 1 }
+            if matches(run(r.input, context: false), r.expected) { pass[r.behavior, default: 0] += 1 }
             if r.behavior == "ambiguous_needs_context" {
                 ambiguousTotal += 1
-                if runAfterEnglish(r.input) == r.expected { ambiguousWithContext += 1 }
+                if matches(runAfterEnglish(r.input), r.expected) { ambiguousWithContext += 1 }
             }
         }
         // Visibility.
@@ -87,10 +99,11 @@ final class SuiteRegressionTests: XCTestCase {
         // EN→EN: restore of transformed English words — floor (raise when improved).
         XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 6790,
                                     "English-restore coverage regressed")
-        // VN→VN: Vietnamese words render correctly — floor. The ~20 shortfalls are style
-        // variants (hoà/hòa, thuỷ/thủy), open-syllable ươ (uow→uơ) and mixed-case tone
-        // heuristics (ToAnS) the suite lists differently, not engine defects.
-        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 398,
+        // VN→VN: Vietnamese words render correctly — floor. Style variants (hoà/hòa,
+        // thuỷ/thủy) are accepted via `matches`. The remaining ~17 are NOT defects:
+        // multi_path free-tone-position rows (need freeMarking, off here — see drive()),
+        // open-syllable ươ (uow→uơ), mixed-case tone heuristics (ToAnS), and edge inputs.
+        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 401,
                                     "Vietnamese rendering regressed")
         // Ambiguous handled once an English run is established — floor (raised after the
         // broad `degrades_vn` whitelist expansion).
