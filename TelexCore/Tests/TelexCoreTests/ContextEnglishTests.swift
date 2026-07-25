@@ -145,6 +145,18 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(sentence("the email is", context: true), "the email is")
     }
 
+    // Interjections / greetings / politeness markers must NOT open an English run —
+    // Vietnamese speakers use them to start Vietnamese sentences.
+    func testInterjectionsDoNotSeedEnglish() {
+        XCTAssertEqual(sentence("ok cams own", context: true), "ok cám ơn")
+        XCTAssertEqual(sentence("ok hats", context: true), "ok hát")
+        XCTAssertEqual(sentence("sorry nha", context: true), "sorry nha")
+        XCTAssertEqual(sentence("thanks em", context: true), "thanks em")
+        XCTAssertEqual(sentence("hi cac banj", context: true), "hi cac bạn")
+        // …while genuine grammatical English still opens the run.
+        XCTAssertEqual(sentence("he bans", context: true), "he bans")
+    }
+
     // A whitelist word that renders Vietnamese (bans→bán after a Vietnamese word) seeds
     // VIETNAMESE — the following ambiguous word must stay Vietnamese, not flip.
     func testRenderedVietnameseSeedsVietnamese() {

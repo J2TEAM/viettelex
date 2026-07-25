@@ -35,7 +35,7 @@ enum EnglishContextWords {
         "think", "thinks", "look", "looks", "find", "found",
         "give", "gives", "tell", "work", "works", "call", "calls",
         // articles / determiners / quantifiers
-        "a", "an", "the", "some", "any", "no", "every", "each",
+        "a", "an", "the", "some", "any", "every", "each",
         "all", "both", "half", "few", "many", "much", "more", "most",
         "several", "enough", "such", "other", "another", "same",
         // prepositions
@@ -47,14 +47,18 @@ enum EnglishContextWords {
         "and", "or", "but", "nor", "so", "yet", "if", "then", "than",
         "because", "while", "when", "where", "why", "how", "though",
         "although", "unless", "until", "whether", "since", "as",
-        // common adverbs / adjectives / misc
-        "not", "yes", "ok", "okay", "hi", "hello", "hey",
-        "here", "there", "now", "just", "only", "also", "too", "very",
-        "well", "back", "down", "new", "old", "good", "great", "big",
+        // common adverbs / adjectives / misc.
+        // NOTE: interjections / greetings / politeness markers (ok, okay, hi, hello, hey,
+        // yes, no, sorry, thanks, thank, please, well, really, maybe) are DELIBERATELY
+        // NOT here — Vietnamese speakers open sentences with them ("ok cám ơn", "hi mọi
+        // người", "sorry nha"), so seeding an English run from them flips the next
+        // Vietnamese word ("ok cám ơn" → "ok cams ơn"). Left out, they fall through to
+        // neutral/Vietnamese and never open an English run.
+        "not", "here", "there", "now", "just", "only", "also", "too", "very",
+        "back", "down", "new", "old", "good", "great", "big",
         "small", "little", "long", "high", "low", "right", "left",
         "next", "last", "first", "one", "two", "three",
         "again", "always", "never", "often", "still", "even", "much",
-        "please", "thanks", "thank", "sorry", "really", "maybe",
         "day", "time", "way", "man", "men", "people", "thing", "things",
         // Hand-vetted ambiguous English words: each ALSO composes to a Vietnamese
         // syllable (runs→rún, songs→sóng, bans→bán, moms→móm, thus→thú), so they are
