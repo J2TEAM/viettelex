@@ -122,6 +122,29 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(e.commitText(autoRestore: true), "is")   // still after "he" → English
     }
 
+    // Hand-vetted ambiguous words: English inside an English run, Vietnamese otherwise.
+    func testHandVettedContextWords() {
+        let pairs = [("runs", "rún"), ("songs", "sóng"), ("sons", "són"),
+                     ("moms", "móm"), ("cams", "cám"), ("lens", "lén"), ("rays", "ráy"),
+                     ("vans", "ván"), ("bans", "bán"), ("tins", "tín"), ("tans", "tán"),
+                     ("dams", "dám"), ("hams", "hám"), ("thus", "thú")]
+        for (en, vn) in pairs {
+            XCTAssertEqual(sentence(en, context: true), vn, "\(en) with no English before → \(vn)")
+            XCTAssertEqual(sentence("she \(en)", context: true), "she \(en)", "she \(en) → English")
+        }
+        // "loans" is already an unconditional English-collision word → always English.
+        XCTAssertEqual(sentence("loans", context: true), "loans")
+        XCTAssertEqual(sentence("she loans", context: true), "she loans")
+    }
+
+    func testSpecPhrases() {
+        XCTAssertEqual(sentence("she thus", context: true), "she thus")
+        XCTAssertEqual(sentence("their moms", context: true), "their moms")
+        // …and each stays Vietnamese with the feature OFF.
+        XCTAssertEqual(sentence("she thus", context: false), "she thú")
+        XCTAssertEqual(sentence("their moms", context: false), "their móm")
+    }
+
     // Clearly-Vietnamese words are NEVER flipped, even mid English run (no ambiguity).
     func testUnambiguousVietnameseNeverFlips() {
         // "he được" — "được" has no English spelling, stays Vietnamese after English.

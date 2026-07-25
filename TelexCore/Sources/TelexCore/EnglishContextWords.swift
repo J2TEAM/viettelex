@@ -56,6 +56,13 @@ enum EnglishContextWords {
         "again", "always", "never", "often", "still", "even", "much",
         "please", "thanks", "thank", "sorry", "really", "maybe",
         "day", "time", "way", "man", "men", "people", "thing", "things",
+        // Hand-vetted ambiguous English words: each ALSO composes to a Vietnamese
+        // syllable (runs→rún, songs→sóng, bans→bán, moms→móm, thus→thú), so they are
+        // ONLY flipped to English inside an English run — after a Vietnamese/no-context
+        // word they correctly stay Vietnamese. NOT bulk-imported: most collision words
+        // hit COMMON Vietnamese (cos→có, sex→sẽ, max→mã) and would corrupt mixed text.
+        "runs", "loans", "songs", "sons", "moms", "cams", "lens", "rays", "vans",
+        "bans", "tins", "tans", "dams", "hams", "thus",
     ]
 
     /// Longest word in the set — lets the caller skip words that can't possibly match.
