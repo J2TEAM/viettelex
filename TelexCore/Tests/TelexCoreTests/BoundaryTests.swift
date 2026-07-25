@@ -16,6 +16,25 @@ final class BoundaryTests: XCTestCase {
         var e = feed(keys); return e.commitText(autoRestore: restore)
     }
 
+    // With free-marking ON (the shipped default), an English word whose "ee"/"oo" gets
+    // circumflexed and whose trailing "ss"/"ff" cancels ("excess"→"êcs") used to STICK,
+    // because the cancel suppressed auto-restore. It must now restore to raw, while a
+    // clean-ascii cancel ("iss"→"is") is still kept.
+    func testFreeMarkingMangledEnglishRestores() {
+        func commitFM(_ keys: String) -> String {
+            var e = feed(keys) { $0.freeMarking = true; $0.liveSpellCheck = true }
+            return e.commitText(autoRestore: true)
+        }
+        for w in ["excess", "lenses", "necessity", "address", "depression"] {
+            XCTAssertEqual(commitFM(w), w, "\(w) mangled by free-marking must restore to raw")
+        }
+        // Cancel contract preserved (plain ascii after the cancel → keep composed).
+        XCTAssertEqual(commitFM("iss"), "is")
+        XCTAssertEqual(commitFM("messs"), "mess")
+        XCTAssertEqual(commitFM("off"), "off")     // English-collision
+        XCTAssertEqual(commitFM("class"), "class")
+    }
+
     // commitBoundary's .replace(backspaces:insert:) must delete exactly the composed
     // characters currently on screen and insert the raw keystrokes — applying it to a
     // simulated screen showing `composed` must yield exactly commitText's result.

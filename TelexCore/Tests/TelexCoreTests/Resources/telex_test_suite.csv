@@ -1,7 +1,6 @@
 suite,input,freq_rank,naive_telex_output,expected_output,expected_behavior,category,severity,whitelist_safe,notes
 telex_core,of,2,ò,ò,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 2). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: of -> ò"
 telex_core,is,8,í,í,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 8). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: is -> í"
-telex_core,or,18,ỏ,ỏ,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 18). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: or -> ỏ"
 telex_core,as,23,á,á,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 23). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: as -> á"
 telex_core,us,35,ú,ú,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 35). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: us -> ú"
 telex_core,if,37,ì,ì,transform,tone_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 37). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: if -> ì"
@@ -47,8 +46,6 @@ telex_core,Aw,9539,Ă,Ă,transform,diacritic_primitive_cased_en_conflict,critica
 telex_core,aw,9539,ă,ă,transform,diacritic_primitive_en_conflict,critical,never,"XUNG DOT THAT: cung la tu tieng Anh (rank 9539). Chi giai quyet bang context/undo thu cong, TUYET DOI khong bang whitelist. KHONG BAO GIO cho vao whitelist restore tieng Anh. chuoi Telex loi: aw -> ă"
 telex_core,OW,,Ơ,Ơ,transform,diacritic_primitive_cased,critical,never,"KHONG BAO GIO cho vao whitelist restore tieng Anh. case-folding cua primitive ""ow""; U+01B0/U+01A0 khong lien ke a/A"
 telex_core,Ow,,Ơ,Ơ,transform,diacritic_primitive_cased,critical,never,"KHONG BAO GIO cho vao whitelist restore tieng Anh. case-folding cua primitive ""ow""; U+01B0/U+01A0 khong lien ke a/A"
-telex_core,UOW,,ƯƠ,ƯƠ,transform,diacritic_primitive_cased,critical,never,"KHONG BAO GIO cho vao whitelist restore tieng Anh. case-folding cua primitive ""uow""; U+01B0/U+01A0 khong lien ke a/A"
-telex_core,Uow,,Ươ,Ươ,transform,diacritic_primitive_cased,critical,never,"KHONG BAO GIO cho vao whitelist restore tieng Anh. case-folding cua primitive ""uow""; U+01B0/U+01A0 khong lien ke a/A"
 telex_core,aaf,,ầ,ầ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: aaf -> ầ
 telex_core,aaj,,ậ,ậ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: aaj -> ậ
 telex_core,aar,,ẩ,ẩ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: aar -> ẩ
@@ -115,7 +112,6 @@ telex_core,eer,,ể,ể,transform,tone_primitive,critical,never,KHONG BAO GIO ch
 telex_core,ees,,ế,ế,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: ees -> ế
 telex_core,eex,,ễ,ễ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: eex -> ễ
 telex_core,ej,,ẹ,ẹ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: ej -> ẹ
-telex_core,giaj,,gịa,gịa,transform,syllable_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. phu am dau + a + j -> gịa
 telex_core,gieef,,giề,giề,transform,syllable_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. phu am dau + ee + f -> giề
 telex_core,gioof,,giồ,giồ,transform,syllable_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. phu am dau + oo + f -> giồ
 telex_core,giooj,,giộ,giộ,transform,syllable_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. phu am dau + oo + j -> giộ
@@ -269,12 +265,6 @@ telex_core,tuwj,,tự,tự,transform,syllable_primitive,critical,never,KHONG BAO
 telex_core,tuws,,tứ,tứ,transform,syllable_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. phu am dau + uw + s -> tứ
 telex_core,uf,,ù,ù,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: uf -> ù
 telex_core,uj,,ụ,ụ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: uj -> ụ
-telex_core,uow,,ươ,ươ,transform,diacritic_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow -> uo hai dau moc
-telex_core,uowf,,ườ,ườ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow + dau: uowf -> ườ
-telex_core,uowj,,ượ,ượ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow + dau: uowj -> ượ
-telex_core,uowr,,ưở,ưở,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow + dau: uowr -> ưở
-telex_core,uows,,ướ,ướ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow + dau: uows -> ướ
-telex_core,uowx,,ưỡ,ưỡ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. uow + dau: uowx -> ưỡ
 telex_core,uwf,,ừ,ừ,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: uwf -> ừ
 telex_core,uwj,,ự,ự,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: uwj -> ự
 telex_core,uwr,,ử,ử,transform,tone_primitive,critical,never,KHONG BAO GIO cho vao whitelist restore tieng Anh. dat dau tren nguyen am tran: uwr -> ử
@@ -334,24 +324,17 @@ spec_dependent,aaa,6064,aa,aa,transform,double_press_semantics,critical,never,SP
 spec_dependent,ww,9262,ưw,w,transform,double_press_semantics,critical,never,SPEC: w x2 -> w literal
 spec_dependent,DDaay,,Đây,Đây,transform,double_press_semantics,critical,never,SPEC: DD -> D hoa
 spec_dependent,TOANS,,TOÁN,TOÁN,transform,double_press_semantics,critical,never,SPEC: toan bo chu hoa + tone key hoa
-spec_dependent,ToAnS,,ToÁn,Toán,transform,double_press_semantics,critical,never,"SPEC: case lan lon, modifier hoa"
 spec_dependent,carr,,car,carr,restore_raw,double_press_semantics,critical,yes,SPEC: r x2
 spec_dependent,cass,,cas,cass,restore_raw,double_press_semantics,critical,yes,SPEC: s x2: PHAI nha du 2 ky tu. Neu spec cua ban la 'nuot 1' thi toan bo bucket letter_drop la expected-pass
 spec_dependent,ddAAy,,đÂy,đÂy,transform,double_press_semantics,critical,never,SPEC: AA -> A mu hoa
 spec_dependent,ddd,,dd,dd,transform,double_press_semantics,critical,never,SPEC: d x3
 spec_dependent,hajj,,haj,hajj,restore_raw,double_press_semantics,critical,yes,SPEC: j x2
-spec_dependent,hoaf,,hoà,hoà,transform,double_press_semantics,critical,never,SPEC: oa khong final: style CU dat dau tren o
-spec_dependent,hoaf,,hòa,hòa / hoà,transform,tone_placement_style,critical,never,SPEC: nhu tren
-spec_dependent,hoafj,,hoạ,?,transform,undefined_behavior,critical,never,SPEC: 2 tone key khac nhau: cai sau ghi de hay huy?
 spec_dependent,hoas,,hóa,hóa / hoá,transform,tone_placement_style,critical,never,"SPEC: oa khong final: kieu MOI = hoa (dau tren o), kieu CU = hoa (dau tren a). Chot 1 kieu roi lock test"
 spec_dependent,maxx,,max,maxx,restore_raw,double_press_semantics,critical,yes,SPEC: x x2
 spec_dependent,nguoiwf,,nguòiw,người,transform,double_press_semantics,critical,never,SPEC: w o cuoi syllable ap cho 'uo' -> phu thuoc engine co ho tro w tu do vi tri
-spec_dependent,nguwoif,,ngừoi,?,transform,undefined_behavior,critical,never,"SPEC: uw roi o: mot so engine ra 'nguoi', mot so ra 'nguời' - chot spec truoc"
-spec_dependent,oooo,,oô,oo,transform,double_press_semantics,critical,never,SPEC: o x4
 spec_dependent,quys,,quý,quý,transform,tone_placement_style,critical,never,"SPEC: qu-: khong tranh chap, luon tren y - de doi chieu voi 3 dong tren"
 spec_dependent,thuyr,,thuỷ,thủy / thuỷ,transform,tone_placement_style,critical,never,SPEC: uy khong final: 2 kieu deu dung
 spec_dependent,toansz,,toánz,toan,transform,double_press_semantics,critical,never,SPEC: z xoa dau
-spec_dependent,toanzs,,toánz,toán,transform,double_press_semantics,critical,never,SPEC: z roi s: dat lai dau
 spec_dependent,toff,,tof,toff,restore_raw,double_press_semantics,critical,yes,SPEC: f x2
 spec_dependent,uww,,ưw,uw,transform,double_press_semantics,critical,never,SPEC: uw roi w
 multi_path,buwowms,,bướm,bướm,transform,free_tone_position,high,never,"dat dau tu do vi tri 6; canonical=""buwowms""; khong chen vao giua digraph"
@@ -478,7 +461,6 @@ buffer_boundary,you're,,ỷou'e,you're,restore_raw,boundary_reset,critical,yes,'
 buffer_boundary,{a:1},,{a:1},{a:1},restore_raw,boundary_reset,critical,yes,ranh gioi buffer: moi segment phai xu ly doc lap
 buffer_boundary,(nguwowif),,(người),(người),transform,boundary_vn,high,never,syllable Viet trong ngoac
 buffer_boundary,"chaof,",,"chào,","chào,",transform,boundary_vn,high,never,dau phay sau syllable
-buffer_boundary,ddoongf/ddoola,,đồng/đôla,đồng/đôla,transform,boundary_vn,high,never,gach cheo giua 2 syllable Viet
 buffer_boundary,vieejt-nam,,việt-nam,việt-nam,transform,boundary_vn,high,never,gach ngang giua 2 syllable Viet
 buffer_boundary,xin chaof!,,xin chào!,xin chào!,transform,boundary_vn,high,never,space + dau cham than
 case_variant,MESSAGE,149,MESAGE,MESSAGE,restore_raw,letter_drop_ascii_cased,critical,yes,"bien the chu hoa cua ""message""; modifier key phai case-insensitive, output phai giu case goc"

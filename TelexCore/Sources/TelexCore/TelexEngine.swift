@@ -370,21 +370,35 @@ public struct TelexEngine {
     /// Boundary restore decision, shared by both commit paths.
     /// Order matters: the English-collision table wins over EVERYTHING, including
     /// a cancel — that is what restores "off"/"office"/"class" (their raw doubles
-    /// are real English). After that, a deliberate double-key cancel ALWAYS keeps
+    /// are real English). After that, a deliberate double-key cancel normally KEEPS
     /// the composed text: the user pressed the extra key to undo an unwanted
     /// diacritic and may keep typing ("Deffault" keys → Default, field report
     /// 2026-07-22 — an earlier validity-based rule here restored the raw double-f).
+    /// EXCEPTION: if the cancelled composition is still MANGLED — not a valid syllable
+    /// AND still carrying a Vietnamese diacritic — the cancel didn't clean it up, so the
+    /// user clearly wasn't typing Vietnamese; restore the raw keys. This is the English
+    /// double-vowel case where free-marking reached back BEFORE the trailing double-key
+    /// cancel: "excess" → "êcs" (ê stuck) → restore "excess"; while "iss"→"is",
+    /// "messs"→"mess" (plain ascii after the cancel) are kept.
     /// Only then do the standard validity/exception rules decide.
     /// NON-mutating (scratch-free) so `peekCommitText` can share it verbatim.
     private func shouldRestoreRaw() -> Bool {
         if rawIsEnglishCollision() { return true }
-        if markCancelled { return false }
+        if markCancelled { return !composedIsValidSyllable() && composedHasDiacritic() }
         if forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable() { return true }
         // Context-based (experimental): after an English word, an ambiguous word whose raw
         // keys spell an English word is restored to English ("he is" → "is", not "í").
         // Gated so vniMode/default typing pays nothing (the String build only runs when the
         // flag is on AND the previous word was English).
         if contextualEnglish, previousWordEnglish, rawIsEnglishContextWord() { return true }
+        return false
+    }
+
+    /// True if the current composition still carries any Vietnamese diacritic — a mark
+    /// (â/ê/ô/ơ/ư/ă/đ) on any letter, or a pending tone. NON-mutating.
+    private func composedHasDiacritic() -> Bool {
+        if pTone != .none { return true }
+        for k in 0..<pCount where letters[k].mark != .none { return true }
         return false
     }
 

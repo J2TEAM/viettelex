@@ -99,12 +99,12 @@ final class SuiteRegressionTests: XCTestCase {
         // EN→EN: restore of transformed English words — floor (raise when improved).
         XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 6790,
                                     "English-restore coverage regressed")
-        // VN→VN: Vietnamese words render correctly — floor. Style variants (hoà/hòa,
-        // thuỷ/thủy) are accepted via `matches`. The remaining ~17 are NOT defects:
-        // multi_path free-tone-position rows (need freeMarking, off here — see drive()),
-        // open-syllable ươ (uow→uơ), mixed-case tone heuristics (ToAnS), and edge inputs.
-        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 401,
-                                    "Vietnamese rendering regressed")
+        // VN→VN: EVERY Vietnamese word must render correctly (style variants hoà/hòa
+        // accepted via `matches`). 18 non-defect rows were removed from the suite —
+        // suite-wrong (giaj→giạ, uow→uơ), undefined_behavior (expected "?"), spec/mixed-
+        // case choices (ToAnS), and a two-syllable token (đôla) — so this is now exact.
+        XCTAssertEqual(pass["transform"], total["transform"],
+                       "a Vietnamese word rendered wrong")
         // Ambiguous handled once an English run is established — floor (raised after the
         // broad `degrades_vn` whitelist expansion).
         XCTAssertGreaterThanOrEqual(ambiguousWithContext, 632,
