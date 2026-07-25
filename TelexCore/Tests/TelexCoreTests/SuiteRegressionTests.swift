@@ -92,8 +92,9 @@ final class SuiteRegressionTests: XCTestCase {
         // heuristics (ToAnS) the suite lists differently, not engine defects.
         XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 398,
                                     "Vietnamese rendering regressed")
-        // Ambiguous handled once an English run is established — floor.
-        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 223,
+        // Ambiguous handled once an English run is established — floor (raised after the
+        // broad `degrades_vn` whitelist expansion).
+        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 632,
                                     "context coverage of ambiguous words regressed")
     }
 

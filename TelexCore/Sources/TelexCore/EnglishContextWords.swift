@@ -63,6 +63,29 @@ enum EnglishContextWords {
         // hit COMMON Vietnamese (cos→có, sex→sẽ, max→mã) and would corrupt mixed text.
         "runs", "loans", "songs", "sons", "moms", "cams", "lens", "rays", "vans",
         "bans", "tins", "tans", "dams", "hams", "thus",
+        // Broad expansion (user opt-in): the `degrades_vn` rows from telex_test_suite —
+        // English words whose Telex reading is a valid (mostly less-common) Vietnamese
+        // syllable. Recognized as ambiguous so context can flip them after an English
+        // word; alone they stay Vietnamese. The `never` rows (cos→có, sex→sẽ, max→mã,
+        // this→thí…) are DELIBERATELY excluded — they collide with COMMON Vietnamese.
+        "air", "ais", "ams", "ans", "arm", "asn", "asp", "bangs", "barn",
+        "beer", "beest", "bens", "best", "bins", "bits", "bons", "boost", "boots", "born",
+        "burn", "cans", "caps", "cast", "cats", "chair", "chans", "chaos", "charm",
+        "chens", "chest", "chips", "choes", "choir", "chose", "conf", "cons", "corn", "cost",
+        "cums", "cups", "cuts", "dans", "days", "deer", "deest", "dims", "dist",
+        "docs", "doms", "dons", "dust", "ems", "ens", "eos", "est", "gaps", "gary",
+        "gays", "hair", "hangs", "hans", "harm", "hats", "hays", "heer", "heest",
+        "here", "hero", "hist", "hits", "hoest", "hongs", "horn", "host", "hungs", "inf",
+        "ins", "ira", "ist", "its", "keeps", "kens", "kits", "langs", "lans", "laos",
+        "last", "lats", "lays", "leer", "leest", "leos", "lets", "lips", "lisa",
+        "list", "loes", "loest", "longs", "loops", "lose", "lost", "lots", "luis",
+        "mais", "mans", "mary", "mats", "mays", "meest", "meets", "mens", "mere", "mias",
+        "most", "must", "nams", "neer", "neest", "neos", "nest", "nons", "norm",
+        "nuts", "oer", "oes", "oops", "owns", "past", "pest", "pets", "pics", "queens",
+        "queest", "quest", "taxi", "teest", "term", "test", "thais", "thats", "theer",
+        "theest", "there", "these", "tims", "tips", "tits", "toer", "toes", "toest",
+        "toms", "tops", "towns", "turn", "ums", "ups", "uri", "urw", "usa", "usc",
+        "vary", "vast", "vees", "veest", "vias", "visa", "vons", "was",
     ]
 
     /// Longest word in the set — lets the caller skip words that can't possibly match.

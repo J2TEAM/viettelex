@@ -137,6 +137,20 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(sentence("she loans", context: true), "she loans")
     }
 
+    // Vietnamese loanwords (email/app/web) are NEUTRAL: they don't open an English run,
+    // but they preserve one already open.
+    func testLoanwordsAreNeutral() {
+        XCTAssertEqual(sentence("email bans hangf", context: true), "email bán hàng")
+        XCTAssertEqual(sentence("app bans", context: true), "app bán")
+        XCTAssertEqual(sentence("the email is", context: true), "the email is")
+    }
+
+    // A whitelist word that renders Vietnamese (bans→bán after a Vietnamese word) seeds
+    // VIETNAMESE — the following ambiguous word must stay Vietnamese, not flip.
+    func testRenderedVietnameseSeedsVietnamese() {
+        XCTAssertEqual(sentence("toi bans is", context: true), "toi bán í")
+    }
+
     func testSpecPhrases() {
         XCTAssertEqual(sentence("she thus", context: true), "she thus")
         XCTAssertEqual(sentence("their moms", context: true), "their moms")

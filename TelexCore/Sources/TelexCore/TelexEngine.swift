@@ -363,7 +363,7 @@ public struct TelexEngine {
             for i in lcp..<rawCount { s.append(Unicode.Scalar(raw[i])) }
             action = .replace(backspaces: backspaces, insert: String(s))
         }
-        if contextualEnglish { previousWordEnglish = classifyEnglishForContext(restored: wantsRestore) }
+        updateContext(restored: wantsRestore)
         return action
     }
 
@@ -388,17 +388,38 @@ public struct TelexEngine {
         return false
     }
 
-    /// Classify the CURRENT word as English for the NEXT word's context, reusing the
-    /// restore decision so no check is repeated. The English-word lookup runs ONLY for
-    /// AMBIGUOUS words (a valid Vietnamese syllable that was NOT restored): a word already
-    /// restored (collision / exception / invalid = certainly English or non-Vietnamese) is
-    /// English with no extra lookup, and a non-Vietnamese kept form is caught by the cheap
-    /// zero-alloc validity check — so "certainly Vietnamese / certainly not" never pay for
-    /// the Set lookup. NON-mutating.
-    private func classifyEnglishForContext(restored: Bool) -> Bool {
-        if restored { return true }                    // collision/exception/invalid/context → English
-        if !composedIsValidSyllable() { return true }  // kept but not a VN syllable (cancel edge)
-        return rawIsEnglishContextWord()               // ambiguous: valid VN — the only Set lookup
+    /// How a committed word affects the NEXT word's context. THREE-way, not binary:
+    /// - `.english`   — a recognized English word (whitelist / collision / exception):
+    ///                   start or continue an English run (seed context = English).
+    /// - `.vietnamese`— a valid Vietnamese syllable: end the English run (context = VN).
+    /// - `.neutral`   — a loanword / foreign / brand token that is neither (e.g. "email",
+    ///                   "app", "wifi"): PRESERVE the current context. This is what makes
+    ///                   "email bán" stay Vietnamese (email doesn't start an English run)
+    ///                   while "the email is" keeps the English run "the" opened.
+    enum WordContext { case english, vietnamese, neutral }
+    /// Classify by what was ACTUALLY committed (so it never disagrees with the screen):
+    /// - restored to raw ascii → English if it's a recognized English word, else `.neutral`
+    ///   (a loanword/foreign token like "email" that was only restored because it isn't a
+    ///   VN syllable — must NOT open an English run);
+    /// - kept a composition WITH a Vietnamese diacritic ("lít", "được") → `.vietnamese`;
+    /// - kept plain ascii (no transform): English if recognized ("he", "the"), else VN.
+    private func isRecognizedEnglish() -> Bool {
+        rawIsEnglishContextWord() || rawIsEnglishCollision() || rawIsEnglishException()
+    }
+    private func classifyWordContext(restored: Bool) -> WordContext {
+        if restored { return isRecognizedEnglish() ? .english : .neutral }
+        if compositionDiffersFromRaw() { return .vietnamese }   // a VN diacritic is on screen
+        return isRecognizedEnglish() ? .english : .vietnamese   // plain ascii: "he" vs "sao"
+    }
+
+    /// Fold the just-committed word into the cross-word context (only when the feature is on).
+    private mutating func updateContext(restored: Bool) {
+        guard contextualEnglish, rawCount > 0 else { return }
+        switch classifyWordContext(restored: restored) {
+        case .english:    previousWordEnglish = true
+        case .vietnamese: previousWordEnglish = false
+        case .neutral:    break                       // loanword/foreign: preserve
+        }
     }
 
     /// Raw keystrokes spell a common English word (see EnglishContextWords). NON-mutating.
@@ -433,7 +454,7 @@ public struct TelexEngine {
         // Decide with the PREVIOUS word's context, then refresh it for the NEXT word
         // (reusing the restore decision — no repeated checks).
         let wantsRestore = autoRestore && outCount > 0 && shouldRestoreRaw()
-        if contextualEnglish, rawCount > 0 { previousWordEnglish = classifyEnglishForContext(restored: wantsRestore) }
+        updateContext(restored: wantsRestore)
         return wantsRestore ? rawKeystrokes : composed
     }
 
