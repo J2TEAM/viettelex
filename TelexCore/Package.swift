@@ -26,7 +26,8 @@ let package = Package(
         ),
         .testTarget(
             name: "TelexCoreTests",
-            dependencies: ["TelexCore"]
+            dependencies: ["TelexCore"],
+            resources: [.copy("Resources/telex_test_suite.csv")]
         )
     ]
 )

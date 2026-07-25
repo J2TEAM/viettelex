@@ -1,0 +1,112 @@
+import XCTest
+@testable import TelexCore
+
+// Regression harness over the external telex_test_suite.csv (bundled in Resources/).
+// Every input is run through the engine and bucketed by `expected_behavior`:
+//   • transform               → a Vietnamese word must render to its VN form (VN→VN)
+//   • keep_as_typed           → an English word with no transform stays as typed (EN→EN)
+//   • restore_raw             → an English word that DID transform is restored to raw (EN→EN)
+//   • ambiguous_needs_context → composes to a valid VN syllable but the raw spells English;
+//                               only the context feature (after an English word) can flip it
+//
+// The English suite is aspirational (the engine is not a full English dictionary), so the
+// EN buckets assert a FLOOR, not 100% — the floors are the measured pass counts and must
+// never drop (a regression fails the build). Raise them when the engine improves.
+//
+// IMPORTANT finding baked in as a guard (testCoreTelexSequencesAreNotAmbiguousEnglish):
+// the suite mislabels core Telex sequences (aa→â, oo→ô, uw→ư, aw→ă, ar→ả, aj→ạ) as
+// "ambiguous_needs_context" because they appear as tokens in an English frequency list.
+// They must NEVER be treated as English — that would break Vietnamese typing — so they
+// are explicitly excluded from any context whitelist.
+final class SuiteRegressionTests: XCTestCase {
+
+    private struct Row { let input: String; let expected: String; let behavior: String }
+
+    private func loadSuite() throws -> [Row] {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "telex_test_suite", withExtension: "csv"),
+                                "telex_test_suite.csv missing from test bundle")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        // CRLF: Swift folds "\r\n" into one grapheme, so split on any newline scalar.
+        var lines = text.split(whereSeparator: { $0.isNewline }).map(String.init)
+        lines.removeFirst()   // header
+        // Columns 0..8: suite,input,freq,naive,expected,behavior,category,severity,notes.
+        // input/expected/behavior are comma-free; a quoted notes field with commas only
+        // adds trailing fields, so fixed indices stay correct.
+        return lines.compactMap { line in
+            let f = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            guard f.count >= 6 else { return nil }
+            return Row(input: f[1], expected: f[4], behavior: f[5])
+        }
+    }
+
+    /// Word-aware commit: the engine composes one word at a time, so split multi-word
+    /// inputs ("xin chaof") on spaces, commit each, and rejoin.
+    private func run(_ input: String, context: Bool) -> String {
+        var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = context
+        var out: [String] = []
+        for token in input.split(separator: " ", omittingEmptySubsequences: false) {
+            for ch in token { _ = e.feed(ch) }
+            out.append(e.commitText(autoRestore: true))
+        }
+        return out.joined(separator: " ")
+    }
+
+    /// Same but primed as if an English word ("he") was just typed, so the context
+    /// feature is in an English run.
+    private func runAfterEnglish(_ input: String) -> String {
+        var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = true
+        for ch in "he" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true)
+        var out: [String] = []
+        for token in input.split(separator: " ", omittingEmptySubsequences: false) {
+            for ch in token { _ = e.feed(ch) }
+            out.append(e.commitText(autoRestore: true))
+        }
+        return out.joined(separator: " ")
+    }
+
+    func testSuiteClassificationFloors() throws {
+        let rows = try loadSuite()
+        var pass: [String: Int] = [:], total: [String: Int] = [:]
+        var ambiguousWithContext = 0, ambiguousTotal = 0
+        for r in rows {
+            total[r.behavior, default: 0] += 1
+            if run(r.input, context: false) == r.expected { pass[r.behavior, default: 0] += 1 }
+            if r.behavior == "ambiguous_needs_context" {
+                ambiguousTotal += 1
+                if runAfterEnglish(r.input) == r.expected { ambiguousWithContext += 1 }
+            }
+        }
+        // Visibility.
+        for k in total.keys.sorted() {
+            print("SUITE \(k): \(pass[k] ?? 0)/\(total[k]!)")
+        }
+        print("SUITE ambiguous handled by context: \(ambiguousWithContext)/\(ambiguousTotal)")
+
+        // EN→EN: an English word that doesn't transform must always survive verbatim.
+        XCTAssertEqual(pass["keep_as_typed"], total["keep_as_typed"],
+                       "an unchanged English word must never be mangled")
+        // EN→EN: restore of transformed English words — floor (raise when improved).
+        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 5577,
+                                    "English-restore coverage regressed")
+        // VN→VN: Vietnamese words render correctly — floor (2 suite rows are bad data).
+        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 35,
+                                    "Vietnamese rendering regressed")
+        // Ambiguous handled once an English run is established — floor.
+        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 65,
+                                    "context coverage of ambiguous words regressed")
+    }
+
+    // Guard the finding: core Telex sequences the suite mislabels as ambiguous English
+    // must render Vietnamese and must NOT be in the context whitelist — else typing "â"
+    // (aa) after an English word would corrupt to "aa".
+    func testCoreTelexSequencesAreNotAmbiguousEnglish() {
+        let core: [(String, String)] = [("aa", "â"), ("oo", "ô"), ("ee", "ê"),
+                                         ("uw", "ư"), ("aw", "ă"), ("ar", "ả"), ("aj", "ạ")]
+        for (keys, vn) in core {
+            XCTAssertFalse(EnglishContextWords.words.contains(keys),
+                           "\(keys) is a core Telex sequence, not an English word")
+            // Even inside an English run it must stay Vietnamese.
+            XCTAssertEqual(runAfterEnglish(keys), vn, "\(keys) must render \(vn) even after English")
+        }
+    }
+}
