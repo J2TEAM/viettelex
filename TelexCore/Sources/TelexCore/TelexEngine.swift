@@ -82,6 +82,19 @@ public struct TelexEngine {
     /// inherent VNI ambiguity every VNI IME has). Preserved across `reset()`.
     public var vniMode = false
 
+    /// Context-based decision (EXPERIMENTAL, default OFF). When the previous committed
+    /// word was English, an AMBIGUOUS current word — one whose composition is a valid
+    /// Vietnamese syllable but whose raw keys also spell an English word — is restored to
+    /// English instead of kept Vietnamese: "he is" → "he is" (not "he í"). After a valid
+    /// Vietnamese or undetermined word, the ambiguous word stays Vietnamese: "sao í".
+    /// Uses `EnglishContextWords`. Preserved across `reset()`; cleared by `resetContext()`.
+    public var contextualEnglish = false
+
+    /// Whether the PREVIOUS committed word was classified English (for `contextualEnglish`).
+    /// Cross-word state: survives `reset()` (which runs per word), updated at each commit,
+    /// wiped by `resetContext()` (caller: focus / app switch). Read-only to callers/tests.
+    public private(set) var previousWordEnglish = false
+
     /// Force-restore top-frequency English words that collide with valid
     /// Vietnamese syllables ("his"→hí) at the word boundary. Default ON.
     /// gen-english turns this OFF to regenerate the table against the
@@ -325,11 +338,17 @@ public struct TelexEngine {
         guard rawCount > 0 else { return .none }
         // Overflowed: the 32-char view is stale vs. the screen, so `outCount`
         // backspaces would hit the wrong characters. No restore, no rewrite.
-        if overflowed { return .none }
+        if overflowed {
+            if contextualEnglish { previousWordEnglish = false }   // undetermined → Vietnamese
+            return .none
+        }
         // Skip restore when the user cancelled a diacritic on purpose ("iss"→is).
         // Validation runs on letter classes + tone (no String); Strings are built
-        // only when a restore actually happens.
-        if autoRestore, outCount > 0, shouldRestoreRaw(), compositionDiffersFromRaw() {
+        // only when a restore actually happens. shouldRestoreRaw() reads the PREVIOUS
+        // word's context; previousWordEnglish is refreshed for the NEXT word after.
+        let wantsRestore = autoRestore && outCount > 0 && shouldRestoreRaw()
+        var action: TelexAction = .none
+        if wantsRestore, compositionDiffersFromRaw() {
             // Strip the shared leading run, exactly like diff() does per keystroke:
             // an unchanged prefix (the "g" in "gôgle"→"google") must NOT be
             // deleted+retyped. Re-typing a still-correct leading char surfaces as a
@@ -342,9 +361,10 @@ public struct TelexEngine {
             var s = String.UnicodeScalarView()
             s.reserveCapacity(rawCount - lcp)
             for i in lcp..<rawCount { s.append(Unicode.Scalar(raw[i])) }
-            return .replace(backspaces: backspaces, insert: String(s))
+            action = .replace(backspaces: backspaces, insert: String(s))
         }
-        return .none
+        if contextualEnglish { previousWordEnglish = classifyEnglishForContext(restored: wantsRestore) }
+        return action
     }
 
     /// Boundary restore decision, shared by both commit paths.
@@ -359,8 +379,45 @@ public struct TelexEngine {
     private func shouldRestoreRaw() -> Bool {
         if rawIsEnglishCollision() { return true }
         if markCancelled { return false }
-        return forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable()
+        if forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable() { return true }
+        // Context-based (experimental): after an English word, an ambiguous word whose raw
+        // keys spell an English word is restored to English ("he is" → "is", not "í").
+        // Gated so vniMode/default typing pays nothing (the String build only runs when the
+        // flag is on AND the previous word was English).
+        if contextualEnglish, previousWordEnglish, rawIsEnglishContextWord() { return true }
+        return false
     }
+
+    /// Classify the CURRENT word as English for the NEXT word's context, reusing the
+    /// restore decision so no check is repeated. The English-word lookup runs ONLY for
+    /// AMBIGUOUS words (a valid Vietnamese syllable that was NOT restored): a word already
+    /// restored (collision / exception / invalid = certainly English or non-Vietnamese) is
+    /// English with no extra lookup, and a non-Vietnamese kept form is caught by the cheap
+    /// zero-alloc validity check — so "certainly Vietnamese / certainly not" never pay for
+    /// the Set lookup. NON-mutating.
+    private func classifyEnglishForContext(restored: Bool) -> Bool {
+        if restored { return true }                    // collision/exception/invalid/context → English
+        if !composedIsValidSyllable() { return true }  // kept but not a VN syllable (cancel edge)
+        return rawIsEnglishContextWord()               // ambiguous: valid VN — the only Set lookup
+    }
+
+    /// Raw keystrokes spell a common English word (see EnglishContextWords). NON-mutating.
+    private func rawIsEnglishContextWord() -> Bool {
+        guard rawCount > 0, rawCount <= EnglishContextWords.maxLength else { return false }
+        var v = String.UnicodeScalarView()
+        v.reserveCapacity(rawCount)
+        for i in 0..<rawCount {
+            var b = raw[i]
+            if b >= UInt8(ascii: "A"), b <= UInt8(ascii: "Z") { b |= 0x20 }
+            guard b >= UInt8(ascii: "a"), b <= UInt8(ascii: "z") else { return false }
+            v.append(Unicode.Scalar(b))
+        }
+        return EnglishContextWords.words.contains(String(v))
+    }
+
+    /// Clear the cross-word English context (caller: focus change / app switch), so a new
+    /// typing context doesn't inherit the previous field's last word.
+    public mutating func resetContext() { previousWordEnglish = false }
 
     /// Final text to commit at a word boundary, with auto-restore applied
     /// (non-Vietnamese syllables fall back to the raw keystrokes). Resets the engine.
@@ -369,11 +426,15 @@ public struct TelexEngine {
         defer { reset() }
         // Overflowed: never restore to `rawKeystrokes` (only the first 32 keys) —
         // return the composed prefix unchanged; the caller keeps the rest on screen.
-        if overflowed { return composed }
-        if autoRestore, outCount > 0, shouldRestoreRaw() {
-            return rawKeystrokes
+        if overflowed {
+            if contextualEnglish { previousWordEnglish = false }
+            return composed
         }
-        return composed
+        // Decide with the PREVIOUS word's context, then refresh it for the NEXT word
+        // (reusing the restore decision — no repeated checks).
+        let wantsRestore = autoRestore && outCount > 0 && shouldRestoreRaw()
+        if contextualEnglish, rawCount > 0 { previousWordEnglish = classifyEnglishForContext(restored: wantsRestore) }
+        return wantsRestore ? rawKeystrokes : composed
     }
 
     /// Non-mutating twin of `commitText(autoRestore:)`: điều boundary SẼ chốt,

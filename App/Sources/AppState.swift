@@ -34,6 +34,7 @@ final class AppState: @unchecked Sendable {
         static let simpleTelex = "simpleTelex"
         static let quickTelex = "quickTelex"
         static let vniMode = "vniMode"
+        static let contextualEnglish = "contextualEnglish"
         static let shortcuts = "shortcuts"
         static let fallbackApps = "fallbackApps"      // learned: ignore replacementRange
         static let probedApps = "probedApps"          // learned: verified good
@@ -159,6 +160,12 @@ final class AppState: @unchecked Sendable {
     var vniMode: Bool {
         get { defaults.object(forKey: Key.vniMode) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.vniMode) }
+    }
+
+    /// Context-based decision (EXPERIMENTAL, default OFF). See `TelexEngine.contextualEnglish`.
+    var contextualEnglish: Bool {
+        get { defaults.object(forKey: Key.contextualEnglish) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.contextualEnglish) }
     }
 
     /// UI language override for the Settings window + menu, independent of the

@@ -61,6 +61,7 @@ final class SettingsModel: ObservableObject {
     @Published var simpleTelex: Bool { didSet { AppState.shared.simpleTelex = simpleTelex } }
     @Published var quickTelex: Bool { didSet { AppState.shared.quickTelex = quickTelex } }
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
+    @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
     @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
     @Published var tapSkipSyntheticKeyUp: Bool { didSet { AppState.shared.tapSkipSyntheticKeyUp = tapSkipSyntheticKeyUp } }
@@ -105,6 +106,7 @@ final class SettingsModel: ObservableObject {
         simpleTelex = AppState.shared.simpleTelex
         quickTelex = AppState.shared.quickTelex
         vniMode = AppState.shared.vniMode
+        contextualEnglish = AppState.shared.contextualEnglish
         tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
         axSelectionReplace = AppState.shared.axSelectionReplace
@@ -606,6 +608,9 @@ struct ExperimentalTab: View {
             Section(model.loc("Input method")) {
                 Toggle(model.loc("VNI typing (experimental)"), isOn: $model.vniMode)
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Context-based decision (experimental)"), isOn: $model.contextualEnglish)
+                Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Terminal typing latency")) {

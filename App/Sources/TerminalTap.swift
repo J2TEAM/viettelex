@@ -1332,6 +1332,7 @@ final class TerminalTapController {
         engine.simpleTelex = AppState.shared.simpleTelex
         engine.quickTelex = AppState.shared.quickTelex
         engine.vniMode = AppState.shared.vniMode
+        engine.contextualEnglish = AppState.shared.contextualEnglish
 
         // Signpost the tap-handled keystroke; message = emit mode (see Instrumentation).
         let spState = Signposts.poster.beginInterval("tap.handle",
@@ -1347,6 +1348,10 @@ final class TerminalTapController {
 
         if keyCode == kDelete {
             if engine.isEmpty {
+                // Deleting previously-committed text: the "previous word" is now unclear,
+                // so drop the English context (undetermined → Vietnamese). In-word
+                // backspace (buffer non-empty, below) keeps it — prev word unchanged.
+                engine.resetContext()
                 // Not composing -> real Backspace, unless a synthetic burst is still
                 // draining (it must land first or the delete hits the wrong char).
                 if SyntheticKeyboard.queueDrained() { return pass }
@@ -1359,6 +1364,10 @@ final class TerminalTapController {
             return nil
         }
         if keyCode == kReturn || keyCode == kEnter || keyCode == kTab || keyCode == kEscape {
+            // A newline breaks the English run: the first word on the next line has no
+            // preceding word, so "is" → "í". Reset AFTER emitBoundary commits (and
+            // classifies) the current word, via defer so every return path clears it.
+            if keyCode == kReturn || keyCode == kEnter { defer { engine.resetContext() } }
             // Commit the composed word, then prefer passing the REAL key through: a
             // synthetic (isTrusted=false) Tab/Return doesn't trigger the app's own
             // handling — shell Tab-completion never fires, web/Electron "Enter to send"

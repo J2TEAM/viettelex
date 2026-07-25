@@ -310,10 +310,15 @@ final class TelexInputController: IMKInputController {
         engine.simpleTelex = AppState.shared.simpleTelex
         engine.quickTelex = AppState.shared.quickTelex
         engine.vniMode = AppState.shared.vniMode
+        engine.contextualEnglish = AppState.shared.contextualEnglish
 
         switch event.keyCode {
         case kDelete:
-            if engine.isEmpty { return false }   // not composing -> normal delete
+            // Backspacing with an empty buffer deletes previously-committed text: the
+            // "previous word" relationship is now unclear, so drop the English context
+            // (undetermined → Vietnamese). In-word backspace (buffer non-empty) keeps it —
+            // the preceding word hasn't changed.
+            if engine.isEmpty { engine.resetContext(); return false }
             let action = engine.backspace()
             if usesMarkedNow(id) { updateMarked(client); return true }
             if tracking {
@@ -342,6 +347,9 @@ final class TelexInputController: IMKInputController {
             }
 
         case kReturn, kEnter, kTab, kEscape:
+            // A newline starts a fresh line/prompt with no preceding word ("is" → "í"):
+            // reset AFTER boundary() commits + classifies the current word (defer).
+            if event.keyCode == kReturn || event.keyCode == kEnter { defer { engine.resetContext() } }
             // KNOWN LIMITATION — while a MARKED composition is open in a terminal,
             // the first boundary press only commits; the second acts ("vậy⏎⏎").
             // Tried and closed (2026-07-21): delivering the key's byte through
@@ -856,6 +864,7 @@ final class TelexInputController: IMKInputController {
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         engine.reset()
+        engine.resetContext()   // new field/app: don't inherit the last word's English context
         tracking = false
         fieldVerified = false
         fieldForcedMarked = false
