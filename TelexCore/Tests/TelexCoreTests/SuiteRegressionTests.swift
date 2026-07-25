@@ -32,37 +32,36 @@ final class SuiteRegressionTests: XCTestCase {
         // Columns 0..8: suite,input,freq,naive,expected,behavior,category,severity,notes.
         // input/expected/behavior are comma-free; a quoted notes field with commas only
         // adds trailing fields, so fixed indices stay correct.
+        let known: Set<String> = ["transform", "restore_raw", "keep_as_typed", "ambiguous_needs_context"]
         return lines.compactMap { line in
             let f = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
-            guard f.count >= 6 else { return nil }
+            // Skip junk rows (a notes field with an embedded newline spills a partial line).
+            guard f.count >= 6, known.contains(f[5]) else { return nil }
             return Row(input: f[1], expected: f[4], behavior: f[5])
         }
     }
 
-    /// Word-aware commit: the engine composes one word at a time, so split multi-word
-    /// inputs ("xin chaof") on spaces, commit each, and rejoin.
-    private func run(_ input: String, context: Bool) -> String {
+    /// Boundary-accurate replay, exactly like the controller: letters compose; every
+    /// non-letter (space, digit, punctuation) is a word boundary — commit the word, then
+    /// emit the character literally. So "ipv4", "vieejt-nam", "xin chaof!" round-trip.
+    private func drive(_ input: String, primeEnglish: Bool, context: Bool) -> String {
         var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = context
-        var out: [String] = []
-        for token in input.split(separator: " ", omittingEmptySubsequences: false) {
-            for ch in token { _ = e.feed(ch) }
-            out.append(e.commitText(autoRestore: true))
+        if primeEnglish { for ch in "he" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true) }
+        var out = ""
+        for ch in input {
+            if let a = ch.asciiValue, isLetter(a) {
+                _ = e.feed(ch)
+            } else {
+                out += e.commitText(autoRestore: true)
+                out.append(ch)
+            }
         }
-        return out.joined(separator: " ")
+        out += e.commitText(autoRestore: true)
+        return out
     }
 
-    /// Same but primed as if an English word ("he") was just typed, so the context
-    /// feature is in an English run.
-    private func runAfterEnglish(_ input: String) -> String {
-        var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = true
-        for ch in "he" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true)
-        var out: [String] = []
-        for token in input.split(separator: " ", omittingEmptySubsequences: false) {
-            for ch in token { _ = e.feed(ch) }
-            out.append(e.commitText(autoRestore: true))
-        }
-        return out.joined(separator: " ")
-    }
+    private func run(_ input: String, context: Bool) -> String { drive(input, primeEnglish: false, context: context) }
+    private func runAfterEnglish(_ input: String) -> String { drive(input, primeEnglish: true, context: true) }
 
     func testSuiteClassificationFloors() throws {
         let rows = try loadSuite()
@@ -86,13 +85,15 @@ final class SuiteRegressionTests: XCTestCase {
         XCTAssertEqual(pass["keep_as_typed"], total["keep_as_typed"],
                        "an unchanged English word must never be mangled")
         // EN→EN: restore of transformed English words — floor (raise when improved).
-        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 5577,
+        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 6790,
                                     "English-restore coverage regressed")
-        // VN→VN: Vietnamese words render correctly — floor (2 suite rows are bad data).
-        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 35,
+        // VN→VN: Vietnamese words render correctly — floor. The ~20 shortfalls are style
+        // variants (hoà/hòa, thuỷ/thủy), open-syllable ươ (uow→uơ) and mixed-case tone
+        // heuristics (ToAnS) the suite lists differently, not engine defects.
+        XCTAssertGreaterThanOrEqual(pass["transform"] ?? 0, 398,
                                     "Vietnamese rendering regressed")
         // Ambiguous handled once an English run is established — floor.
-        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 79,
+        XCTAssertGreaterThanOrEqual(ambiguousWithContext, 223,
                                     "context coverage of ambiguous words regressed")
     }
 
