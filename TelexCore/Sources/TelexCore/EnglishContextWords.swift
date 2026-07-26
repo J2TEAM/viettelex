@@ -55,6 +55,7 @@ enum EnglishContextWords {
         // Vietnamese word ("ok cám ơn" → "ok cams ơn"). Left out, they fall through to
         // neutral/Vietnamese and never open an English run.
         "not", "here", "there", "now", "just", "only", "also", "too", "very",
+        "default",   // Deffault→Default: the mid-word tone-cancel escape (see shouldRestoreRaw)
         "back", "down", "new", "old", "good", "great", "big",
         "small", "little", "long", "high", "low", "right", "left",
         "next", "last", "first", "one", "two", "three",

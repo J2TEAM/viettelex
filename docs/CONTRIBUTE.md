@@ -43,6 +43,8 @@ ghi trong header file) rồi mở PR — không cần sửa Swift.
   Đọc TRƯỚC khi đụng vào signing / Info.plist / cơ chế gõ.
 - [`BENCHMARKS.md`](BENCHMARKS.md) — số đo engine theo version + bộ công cụ đo
   end-to-end (os_signpost, keystroke-photon, stress-typing, zero-alloc invariant).
+- [`REGRESSION.md`](REGRESSION.md) — độ chính xác theo version trên suite 9.091 ca
+  (4 bucket VN/EN/ambiguous), luật quyết định restore, và phần chưa phủ được.
 - [`checklist.md`](checklist.md) — ma trận test tương thích theo từng app.
 
 ## Test & benchmark
@@ -52,6 +54,7 @@ cd TelexCore
 swift test                                          # golden + validator tests
 swift test -c release --filter Benchmark            # engine latency (ghi vào BENCHMARKS.md)
 swift test -c release --filter ZeroAllocation       # invariant zero-alloc hot path
+swift test --filter SuiteRegression                 # độ chính xác (ghi vào REGRESSION.md)
 
 # Test app target (routing, import plist, Updater…)
 xcodegen generate && xcodebuild -project VietTelex.xcodeproj -scheme VietTelex test

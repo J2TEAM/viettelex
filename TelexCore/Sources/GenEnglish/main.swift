@@ -93,7 +93,15 @@ let twoLetterWhitelist: Set<String> = ["of", "if", "is", "us", "or"]
 /// bãi mìn từ Việt (cos=có, gif=gì, mas=má, cow=cơ, zoo=zô…) nên KHÔNG quét
 /// tự động — chỉ nhận bổ sung tay, và vẫn đi qua đủ engine-check + protect.
 let extraEnglish = ["mess", "boss", "kiss", "chess", "bless", "gross",
-                    "grass", "brass", "cliff", "moss", "hiss", "fuss"]
+                    "grass", "brass", "cliff", "moss", "hiss", "fuss",
+                    // Đợt 2026-07-26 (suite regression): từ Anh THẬT còn miss sau khi
+                    // sửa nhóm tone-cancel — chọn tay, bỏ hết viết tắt/tên riêng
+                    // (ross, usps, ieee, nginx…) và các từ trùng tiếng Việt thật
+                    // (worst=ướt, won=ươn, zoo=zô).
+                    "bias", "boats", "busy", "buys", "charms", "doom", "dose", "err",
+                    "ghost", "gore", "guns", "hose", "mask", "nose", "pairs", "pays",
+                    "peers", "pens", "pins", "piss", "poems", "pose", "puts", "sass",
+                    "sees", "tariff", "thongs", "tons", "trips", "troops", "turns", "wax"]
 
 let args = CommandLine.arguments
 guard args.count >= 4,
@@ -133,12 +141,35 @@ for line in content.split(separator: "\n") {
     consider(w)
 }
 for w in extraEnglish { consider(w) }
+
+// MONOTONE: giữ lại mọi từ đã có trong bảng đang ship. `consider` chỉ nhận từ mà
+// engine HÔM NAY còn gõ sai với CÀI ĐẶT MẶC ĐỊNH — nhưng một từ được luật mới cứu
+// ở mặc định (nhóm tone-cancel 2026-07-26: office/message/current) có thể vẫn cần
+// bảng khi người dùng tắt free marking / bật Simple Telex. Rẻ (~vài KB) nên không
+// prune; chỉ protect-list mới gỡ được một từ khỏi bảng.
+// (Đọc thẳng file output cũ — bảng là `internal` trong TelexCore.)
+var inherited = Set<String>()
+let keptSet = Set(kept)
+if let prev = try? String(contentsOfFile: args[3], encoding: .utf8) {
+    for m in prev.split(separator: "\"") where m.allSatisfy({ $0.isASCII && $0.isLowercase && $0.isLetter }) {
+        let w = String(m)
+        // KHÔNG dùng `seen` ở đây: `consider` đã nạp cả corpus vào `seen` (kể cả
+        // các từ nó loại vì engine hôm nay gõ đúng) — đó chính là những từ cần
+        // thừa hưởng. Chỉ chặn trùng lặp trong `kept` và protect-list.
+        guard w.count >= 2, !inherited.contains(w), !keptSet.contains(w) else { continue }
+        inherited.insert(w)
+        let out = commitDefault(w)
+        if protected.contains(out) { excluded.append((w, out)); continue }
+        kept.append(w)
+    }
+}
 kept.sort()
 
 var src = """
 // EnglishCollisions.swift — SINH TỰ ĐỘNG bởi gen-english, ĐỪNG SỬA TAY.
 // Từ tiếng Anh phổ biến (top-\(maxWords)) mà Telex mặc định biến thành âm tiết
 // Việt hợp lệ (validator không cứu được) — force-restore ở word boundary.
+// Bảng là HỢP của lần sinh này với bảng đang ship (xem gen-english: monotone).
 // Đã loại các từ mà tiếng Việt thắng (sẽ=sex, ơn=own… — xem gen-english).
 // Regenerate:  swift run gen-english google-10000-english.txt \(maxWords) \
 //              Sources/TelexCore/EnglishCollisions.swift

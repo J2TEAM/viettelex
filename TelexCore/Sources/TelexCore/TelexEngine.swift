@@ -140,6 +140,16 @@ public struct TelexEngine {
     private var pTone: Tone = .none
     private var pToneKeyCount = 0
     private var pCancelled = false
+    // Distance (in raw keys) from the cancelled tone key to the key that cancelled it:
+    // 1 = the classic adjacent double ("iss", "aff"), >1 = the cancel reached back over
+    // letters, which means the tone key it kills was itself an eaten letter
+    // ("hosts"→hots, "asks"→aks). 0 = no tone cancel in this word.
+    private var pToneCancelSpan = 0
+    // Raw index of the last TONE-key cancel (ss/ff/rr/xx/jj, z, VNI 1-5/0), -1 if none.
+    // A tone cancel means different things depending on WHERE it happened — at the end of
+    // the word it's the literal-letter escape, mid-word it ate a letter. See
+    // `shouldRestoreRaw`. Mark doublers (aa a, ww, dd d, VNI 6-9) never set it.
+    private var pToneCancelAt = -1
     private var pProcessed = 0
     private var pFreeMarking = false    // settings snapshot the state was built with
     private var pSimpleTelex = false
@@ -158,6 +168,10 @@ public struct TelexEngine {
     // gesture, so auto-restore leaves the word alone even when it isn't a valid
     // Vietnamese syllable: "iss"→is (not restored to "iss"), "ass"→as.
     private var markCancelled = false
+
+    // Snapshots of `pToneCancelAt` / `pToneCancelSpan`, taken with `markCancelled`.
+    private var toneCancelAt = -1
+    private var toneCancelSpan = 0
 
     // Rebuild directive: fold every tone key back to its literal letter. Set ONLY
     // for the second pass of a frozen-word rebuild when a tone is still PENDING
@@ -221,6 +235,8 @@ public struct TelexEngine {
 
         var newCount = render()
         markCancelled = pCancelled
+        toneCancelAt = pToneCancelAt
+        toneCancelSpan = pToneCancelSpan
 
         // Uppercase tone/mark key in a MIXED-case word ("OmS", "SaaS", "JavaScript")
         // → this is English/code, not Vietnamese. Freeze the WHOLE word to its raw
@@ -232,6 +248,8 @@ public struct TelexEngine {
             rebuildParseState()
             newCount = render()
             markCancelled = pCancelled
+        toneCancelAt = pToneCancelAt
+        toneCancelSpan = pToneCancelSpan
         }
 
         // Live spell-check: once the word can no longer be valid Vietnamese, freeze
@@ -325,6 +343,8 @@ public struct TelexEngine {
         rebuildFrozenAware()
         let newCount = render()
         markCancelled = pCancelled
+        toneCancelAt = pToneCancelAt
+        toneCancelSpan = pToneCancelSpan
         let action = diff(newCount)
         copyOut(newCount)
         return action
@@ -374,17 +394,42 @@ public struct TelexEngine {
     /// the composed text: the user pressed the extra key to undo an unwanted
     /// diacritic and may keep typing ("Deffault" keys → Default, field report
     /// 2026-07-22 — an earlier validity-based rule here restored the raw double-f).
-    /// EXCEPTION: if the cancelled composition is still MANGLED — not a valid syllable
-    /// AND still carrying a Vietnamese diacritic — the cancel didn't clean it up, so the
-    /// user clearly wasn't typing Vietnamese; restore the raw keys. This is the English
-    /// double-vowel case where free-marking reached back BEFORE the trailing double-key
-    /// cancel: "excess" → "êcs" (ê stuck) → restore "excess"; while "iss"→"is",
-    /// "messs"→"mess" (plain ascii after the cancel) are kept.
+    /// TWO exceptions, both meaning the cancel did NOT leave clean text:
+    ///  1. the composition still carries a Vietnamese diacritic — free-marking reached
+    ///     back BEFORE the cancel ("excess"→"êcs") → restore the raw keys; while
+    ///     "iss"→"is", "messs"→"mess" (plain ascii after the cancel) are kept;
+    ///  2. a TONE-key cancel MID-word (letters typed after it) — that is an ordinary
+    ///     English double consonant, not an escape: the pair cost the word a letter
+    ///     ("office"→ofice, "possess"→posess) → restore, unless the result is a
+    ///     recognized English word ("Deffault"→Default).
     /// Only then do the standard validity/exception rules decide.
     /// NON-mutating (scratch-free) so `peekCommitText` can share it verbatim.
     private func shouldRestoreRaw() -> Bool {
         if rawIsEnglishCollision() { return true }
-        if markCancelled { return !composedIsValidSyllable() && composedHasDiacritic() }
+        if markCancelled {
+            if composedIsValidSyllable() { return false }
+            // A TONE-key cancel (ss/ff/rr/xx/jj, z) splits by WHERE it happened:
+            //  • LAST key of the word → the escape gesture, nothing was lost after it:
+            //    keep ("hoass"→hoas, "banhss"→banhs, "aff"→af, "iss"→is, "messs"→mess).
+            //  • MID-word (letters typed after it) → the user kept going, so this was an
+            //    ordinary English double consonant: the first key ate a diacritic and the
+            //    second dropped the letter — "office"→ofice, "possess"→posess,
+            //    "current"→curent, "message"→mesage. Restore the raw keys, UNLESS the
+            //    result is itself a real English word and the raw keys are not
+            //    ("Deffault"→Default, field report; but "hiss" stays "hiss", not "his").
+            // Same verdict when the cancel REACHED BACK over letters (span > 1): the tone
+            // key it killed was typed keys ago and is itself a letter the word lost —
+            // "hosts"→hots, "asks"→aks, "discs"→dics, "buses"→bues. The escape gesture is
+            // always the ADJACENT double (span 1), never a reach-back.
+            if toneCancelAt >= 0, toneCancelAt < rawCount - 1 || toneCancelSpan > 1 {
+                return !composedIsRecognizedEnglish() || rawIsEnglishContextWord()
+            }
+            // Trailing tone cancel, or a MARK doubler anywhere (aaa/ooo/ddd/ww): a
+            // deliberate literal-letter escape — keep it ("gooogle", "DDDR", "uw").
+            // Unless free-marking left a diacritic stuck before the cancel, i.e. the
+            // cancel did NOT clean the word up ("excess"→"êcs", "lenses"→"lêns").
+            return composedHasDiacritic()
+        }
         if forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable() { return true }
         // Context-based (experimental): after an English word, an ambiguous word whose raw
         // keys spell an English word is restored to English ("he is" → "is", not "í").
@@ -400,6 +445,23 @@ public struct TelexEngine {
         if pTone != .none { return true }
         for k in 0..<pCount where letters[k].mark != .none { return true }
         return false
+    }
+
+    /// True if the composed form is itself a recognized English word (collision table or
+    /// context whitelist) — the tone-cancel escape ("iss"→is, "Deffault"→Default) vs a
+    /// mangled letter-drop ("possess"→posess). NON-mutating; boundary-only (one String).
+    private func composedIsRecognizedEnglish() -> Bool {
+        guard outCount >= 2, outCount <= 12 else { return false }
+        var v = String.UnicodeScalarView()
+        v.reserveCapacity(outCount)
+        for i in 0..<outCount {
+            var b = out[i]
+            if b >= 0x41, b <= 0x5A { b |= 0x20 }
+            guard b >= 0x61, b <= 0x7A else { return false }   // non-ascii ⇒ not English
+            v.append(Unicode.Scalar(b)!)
+        }
+        let w = String(v)
+        return EnglishCollisions.words.contains(w) || EnglishContextWords.words.contains(w)
     }
 
     /// How a committed word affects the NEXT word's context. THREE-way, not binary:
@@ -664,6 +726,8 @@ public struct TelexEngine {
         rawCount = 0
         outCount = 0
         markCancelled = false
+        toneCancelAt = -1
+        toneCancelSpan = 0
         upperToneKey = false
         overflowed = false
         disabledAtCount = Int.max
@@ -671,6 +735,8 @@ public struct TelexEngine {
         pTone = .none
         pToneKeyCount = 0
         pCancelled = false
+        pToneCancelAt = -1
+        pToneCancelSpan = 0
         pProcessed = 0
     }
 
@@ -807,6 +873,8 @@ public struct TelexEngine {
         pTone = .none
         pToneKeyCount = 0
         pCancelled = false
+        pToneCancelAt = -1
+        pToneCancelSpan = 0
         upperToneKey = false
         pFreeMarking = freeMarking
         pSimpleTelex = simpleTelex
@@ -866,7 +934,8 @@ public struct TelexEngine {
             if hasVowel(pCount) {
                 if pTone == t {
                     pTone = .none // double same tone -> cancel, emit literal
-                    pCancelled = true
+                    pCancelled = true; pToneCancelAt = at
+                pToneCancelSpan = pToneKeyCount > 0 ? at - toneKeys[pToneKeyCount - 1] : 1
                     appendLetter(base: lower, mark: .none, upper: upper)
                     rawLetter[at] = pCount - 1
                     // The canceled tone's ORIGINAL key(s) are orphaned now: with no
@@ -904,7 +973,8 @@ public struct TelexEngine {
         // of being silently swallowed.
         if lower == UInt8(ascii: "z") {
             if pTone != .none {                          // a tone to clear -> consume z
-                pCancelled = true
+                pCancelled = true; pToneCancelAt = at
+                pToneCancelSpan = pToneKeyCount > 0 ? at - toneKeys[pToneKeyCount - 1] : 1
                 pTone = .none
                 if upper && hasLowercaseBefore(at) { upperToneKey = true }
                 rawLetter[at] = -1
@@ -1135,7 +1205,8 @@ public struct TelexEngine {
             if hasVowel(pCount) {
                 if pTone == t {
                     pTone = .none
-                    pCancelled = true
+                    pCancelled = true; pToneCancelAt = at
+                pToneCancelSpan = pToneKeyCount > 0 ? at - toneKeys[pToneKeyCount - 1] : 1
                     appendLetter(base: key, mark: .none, upper: false)
                     rawLetter[at] = pCount - 1
                     for j in 0..<pToneKeyCount where rawLetter[toneKeys[j]] == -1 {
@@ -1157,7 +1228,8 @@ public struct TelexEngine {
         // 0 → clear tone (like Telex z): consume only when there's a tone to remove.
         if key == UInt8(ascii: "0") {
             if pTone != .none {
-                pCancelled = true
+                pCancelled = true; pToneCancelAt = at
+                pToneCancelSpan = pToneKeyCount > 0 ? at - toneKeys[pToneKeyCount - 1] : 1
                 pTone = .none
                 rawLetter[at] = -1
                 toneKeys[pToneKeyCount] = at; pToneKeyCount += 1

@@ -40,6 +40,31 @@ final class EnglishCollisionTests: XCTestCase {
         XCTAssertEqual(commit("hoass"), "hoas")
     }
 
+    // Tone-key cancels the DICT never sees, split by shape (2026-07-26). None of
+    // these words is in EnglishCollisions — the engine decides structurally.
+    func testToneCancelShapeRestoresEnglishWithoutDict() {
+        // MID-WORD double (letters typed after it): an ordinary English double
+        // consonant, and the pair cost the word a letter → restore the raw keys.
+        for w in ["possess", "assess", "offset", "necessity"] {
+            XCTAssertFalse(EnglishCollisions.words.contains(w), "'\(w)' should test the RULE, not the dict")
+            XCTAssertEqual(commit(w), w, "'\(w)': mid-word tone cancel must restore")
+        }
+        // REACH-BACK cancel (the killed tone key sits keys away, so it too is a
+        // letter the word lost) → restore, even though the cancel ends the word.
+        for w in ["hosts", "asks", "discs", "buses", "trusts"] {
+            XCTAssertFalse(EnglishCollisions.words.contains(w), "'\(w)' should test the RULE, not the dict")
+            XCTAssertEqual(commit(w), w, "'\(w)': reach-back tone cancel must restore")
+        }
+        // The ESCAPE gesture is the ADJACENT double at the END of the word — kept.
+        XCTAssertEqual(commit("hoass"), "hoas")
+        XCTAssertEqual(commit("banhss"), "banhs")
+        XCTAssertEqual(commit("iss"), "is")
+        XCTAssertEqual(commit("aff"), "af")
+        // MARK doublers keep their literal-letter escape at ANY position.
+        XCTAssertEqual(commit("gooogle"), "google")
+        XCTAssertEqual(commit("DDDR"), "DDR")
+    }
+
     func testVietnameseProtectedWords() {
         // raw sequences shared with English where Vietnamese WINS (protect list)
         XCTAssertEqual(commit("sex"), "sẽ")
