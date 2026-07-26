@@ -398,30 +398,31 @@ public struct TelexEngine {
     ///  1. the composition still carries a Vietnamese diacritic — free-marking reached
     ///     back BEFORE the cancel ("excess"→"êcs") → restore the raw keys; while
     ///     "iss"→"is", "messs"→"mess" (plain ascii after the cancel) are kept;
-    ///  2. a TONE-key cancel MID-word (letters typed after it) — that is an ordinary
-    ///     English double consonant, not an escape: the pair cost the word a letter
-    ///     ("office"→ofice, "possess"→posess) → restore, unless the result is a
-    ///     recognized English word ("Deffault"→Default).
+    ///  2. a TONE-key cancel that REACHED BACK over letters (the killed tone key was
+    ///     typed keys earlier, so it is itself a letter the word lost): "hosts"→hots,
+    ///     "asks"→aks → restore. An escape gesture is ALWAYS an adjacent double, so a
+    ///     reach-back cancel is never one.
     /// Only then do the standard validity/exception rules decide.
     /// NON-mutating (scratch-free) so `peekCommitText` can share it verbatim.
     private func shouldRestoreRaw() -> Bool {
         if rawIsEnglishCollision() { return true }
         if markCancelled {
             if composedIsValidSyllable() { return false }
-            // A TONE-key cancel (ss/ff/rr/xx/jj, z) splits by WHERE it happened:
-            //  • LAST key of the word → the escape gesture, nothing was lost after it:
-            //    keep ("hoass"→hoas, "banhss"→banhs, "aff"→af, "iss"→is, "messs"→mess).
-            //  • MID-word (letters typed after it) → the user kept going, so this was an
-            //    ordinary English double consonant: the first key ate a diacritic and the
-            //    second dropped the letter — "office"→ofice, "possess"→posess,
-            //    "current"→curent, "message"→mesage. Restore the raw keys, UNLESS the
-            //    result is itself a real English word and the raw keys are not
-            //    ("Deffault"→Default, field report; but "hiss" stays "hiss", not "his").
-            // Same verdict when the cancel REACHED BACK over letters (span > 1): the tone
-            // key it killed was typed keys ago and is itself a letter the word lost —
-            // "hosts"→hots, "asks"→aks, "discs"→dics, "buses"→bues. The escape gesture is
-            // always the ADJACENT double (span 1), never a reach-back.
-            if toneCancelAt >= 0, toneCancelAt < rawCount - 1 || toneCancelSpan > 1 {
+            // A TONE-key cancel that REACHED BACK over letters (span > 1): the tone key
+            // it killed was typed keys ago, so that key is itself a letter the word lost
+            // — "hosts"→hots, "asks"→aks, "discs"→dics, "buses"→bues. Restore the raw
+            // keys unless the result is a real English word whose raw keys are not
+            // (keeps "hiss" as "hiss", not "his").
+            //
+            // An ADJACENT double is NOT decided here — it is the escape gesture and the
+            // composed text always wins, wherever it sits in the word. Mid-word is just
+            // as deliberate as trailing ("tessted"→tested, "Deffault"→Default: field
+            // reports 2026-07-26 / 07-22). The keystrokes of an escape and of an English
+            // double consonant are IDENTICAL ("tessted"→tested vs "office"→ofice), so
+            // only the dictionary can tell them apart — that is `rawIsEnglishCollision`
+            // above, and the screen-truth rule (what you see is what you commit) decides
+            // everything it doesn't know.
+            if toneCancelSpan > 1 {
                 return !composedIsRecognizedEnglish() || rawIsEnglishContextWord()
             }
             // Trailing tone cancel, or a MARK doubler anywhere (aaa/ooo/ddd/ww): a
@@ -435,7 +436,8 @@ public struct TelexEngine {
         // keys spell an English word is restored to English ("he is" → "is", not "í").
         // Gated so vniMode/default typing pays nothing (the String build only runs when the
         // flag is on AND the previous word was English).
-        if contextualEnglish, previousWordEnglish, rawIsEnglishContextWord() { return true }
+        if contextualEnglish, previousWordEnglish,
+           rawIsEnglishContextWord(includingRestoreOnly: true) { return true }
         return false
     }
 
@@ -499,7 +501,11 @@ public struct TelexEngine {
     }
 
     /// Raw keystrokes spell a common English word (see EnglishContextWords). NON-mutating.
-    private func rawIsEnglishContextWord() -> Bool {
+    /// `includingRestoreOnly` also accepts the interjection layer (wow/ok/hey…): those
+    /// must be RESTORED inside an English run but must never OPEN one, so the context
+    /// classifier calls this with the default (false) and only the restore decision
+    /// passes true.
+    private func rawIsEnglishContextWord(includingRestoreOnly: Bool = false) -> Bool {
         guard rawCount > 0, rawCount <= EnglishContextWords.maxLength else { return false }
         var v = String.UnicodeScalarView()
         v.reserveCapacity(rawCount)
@@ -509,7 +515,9 @@ public struct TelexEngine {
             guard b >= UInt8(ascii: "a"), b <= UInt8(ascii: "z") else { return false }
             v.append(Unicode.Scalar(b))
         }
-        return EnglishContextWords.words.contains(String(v))
+        let w = String(v)
+        if EnglishContextWords.words.contains(w) { return true }
+        return includingRestoreOnly && EnglishContextWords.restoreOnly.contains(w)
     }
 
     /// Clear the cross-word English context (caller: focus change / app switch), so a new

@@ -27,7 +27,7 @@ https://github.com/user-attachments/assets/b07b7321-912f-4d81-a741-bcaa9a43f07d
 - **Nhanh** — luật chính tả compile thành trie + bitmap, incremental parse, SIMD, zero-alloc: **~130 ns/phím**, gõ nhanh cỡ nào cũng mượt.
 - **Gõ được ở nơi bộ gõ khác hay vỡ** — Terminal/iTerm (giữ autocomplete shell), address bar Chrome, ô Excel, Spotlight; tự học theo từng app.
 - **Thông minh với English/code** — tự khôi phục `google`/`github`, nhận token camelCase (`OmS`, `JavaScript`) để không bỏ dấu nhầm, có Telex nghiêm ngặt.
-- **Đúng, có số đo** — bộ regression 9.091 ca: **100%** từ tiếng Việt ra đúng dấu, **99,0%** từ tiếng Anh bị biến dạng được khôi phục. Chi tiết + phần chưa phủ: [`docs/REGRESSION.md`](docs/REGRESSION.md).
+- **Đúng, có số đo** — bộ regression 9.091 ca: **100%** từ tiếng Việt ra đúng dấu, **98,9%** từ tiếng Anh bị biến dạng được khôi phục. Chi tiết + phần chưa phủ: [`docs/REGRESSION.md`](docs/REGRESSION.md).
 - **Nhẹ & riêng tư** — không chạy nền, không thu thập dữ liệu; chỉ gọi mạng khi bạn bấm *Kiểm tra cập nhật*.
 
 | Menu trên thanh menu | Cửa sổ Cài đặt |

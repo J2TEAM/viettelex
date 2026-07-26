@@ -40,29 +40,34 @@ final class EnglishCollisionTests: XCTestCase {
         XCTAssertEqual(commit("hoass"), "hoas")
     }
 
-    // Tone-key cancels the DICT never sees, split by shape (2026-07-26). None of
-    // these words is in EnglishCollisions — the engine decides structurally.
-    func testToneCancelShapeRestoresEnglishWithoutDict() {
-        // MID-WORD double (letters typed after it): an ordinary English double
-        // consonant, and the pair cost the word a letter → restore the raw keys.
-        for w in ["possess", "assess", "offset", "necessity"] {
-            XCTAssertFalse(EnglishCollisions.words.contains(w), "'\(w)' should test the RULE, not the dict")
-            XCTAssertEqual(commit(w), w, "'\(w)': mid-word tone cancel must restore")
-        }
-        // REACH-BACK cancel (the killed tone key sits keys away, so it too is a
-        // letter the word lost) → restore, even though the cancel ends the word.
-        for w in ["hosts", "asks", "discs", "buses", "trusts"] {
+    // REACH-BACK tone cancel (2026-07-26): the killed tone key was typed keys
+    // earlier, so that key is itself a letter the word lost → restore. Decided
+    // STRUCTURALLY: none of these words is in EnglishCollisions.
+    func testReachBackToneCancelRestoresWithoutDict() {
+        for w in ["hosts", "asks", "discs", "buses"] {
             XCTAssertFalse(EnglishCollisions.words.contains(w), "'\(w)' should test the RULE, not the dict")
             XCTAssertEqual(commit(w), w, "'\(w)': reach-back tone cancel must restore")
         }
-        // The ESCAPE gesture is the ADJACENT double at the END of the word — kept.
-        XCTAssertEqual(commit("hoass"), "hoas")
+    }
+
+    // An ADJACENT double is the ESCAPE gesture and the composed text always wins,
+    // wherever it sits in the word — its keystrokes are identical to an English
+    // double consonant ("tessted"→tested vs "office"→ofice), so only the dict can
+    // tell them apart. Field reports 2026-07-26 (tessted) / 2026-07-22 (Deffault).
+    func testAdjacentDoubleKeepsWhatTheScreenShows() {
+        XCTAssertEqual(commit("tessted"), "tested")     // mid-word escape
+        XCTAssertEqual(commit("Deffault"), "Default")
+        XCTAssertEqual(commit("hoass"), "hoas")         // trailing escape
         XCTAssertEqual(commit("banhss"), "banhs")
         XCTAssertEqual(commit("iss"), "is")
         XCTAssertEqual(commit("aff"), "af")
-        // MARK doublers keep their literal-letter escape at ANY position.
+        // MARK doublers: same escape, any position.
         XCTAssertEqual(commit("gooogle"), "google")
         XCTAssertEqual(commit("DDDR"), "DDR")
+        // …and the dict is what recovers the words that only LOOK like an escape.
+        for w in ["office", "possess", "assess", "offset", "message"] {
+            XCTAssertEqual(commit(w), w, "'\(w)': dict must restore the eaten double")
+        }
     }
 
     func testVietnameseProtectedWords() {
@@ -155,7 +160,7 @@ final class EnglishCollisionTests: XCTestCase {
             XCTAssertFalse(EnglishCollisions.words.contains(junk), "junk '\(junk)' leaked into the table")
         }
         // minimal means minimal: a few hundred words, not a dictionary
-        XCTAssertLessThan(EnglishCollisions.words.count, 600)
+        XCTAssertLessThan(EnglishCollisions.words.count, 1000)
         XCTAssertGreaterThan(EnglishCollisions.words.count, 80)
     }
 

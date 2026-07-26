@@ -93,6 +93,20 @@ enum EnglishContextWords {
         "vary", "vast", "vees", "veest", "vias", "visa", "vons", "was",
     ]
 
+    /// RESTORE-ONLY: khôi phục khi ĐANG trong mạch tiếng Anh, nhưng KHÔNG bao giờ mở
+    /// mạch. Thán từ / từ chat đứng chung với tiếng Việt rất thường xuyên ("ok cám ơn",
+    /// "wow đẹp quá", "hi mọi người") nên nếu chúng seed context thì từ Việt kế tiếp bị
+    /// lật sang tiếng Anh (lý do chúng bị gỡ khỏi `words` ngày 2026-07-25). Nhưng khi
+    /// mạch tiếng Anh đã mở bởi từ khác thì chính chúng phải giữ nguyên dạng tiếng Anh:
+    /// "that's great wow" → wow, không phải "wơ" (field report 2026-07-26, Simple Telex:
+    /// `w` literal + `ow` → ơ, và "wơ" lại hợp lệ qua teencode w→qu = "quơ").
+    static let restoreOnly: Set<String> = [
+        "wow", "ok", "okay", "oh", "ah", "aha", "hey", "hi", "hello", "yay", "yeah",
+        "yep", "nope", "oops", "ouch", "hmm", "huh", "haha", "hehe", "lol", "omg",
+        "wtf", "bye", "sorry", "thanks", "thank", "please", "welcome", "congrats",
+        "cool", "wonderful", "awesome", "amazing",
+    ]
+
     /// Longest word in the set — lets the caller skip words that can't possibly match.
     static let maxLength = 12
 }

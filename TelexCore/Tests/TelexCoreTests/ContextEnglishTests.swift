@@ -157,6 +157,25 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(sentence("he bans", context: true), "he bans")
     }
 
+    // …but INSIDE an English run those same interjections must come back as English
+    // (EnglishContextWords.restoreOnly). Field report 2026-07-26: "that's great wow"
+    // committed "wơ" in Simple Telex (literal w + ow→ơ, and "wơ" validates through the
+    // teencode w→qu fold as "quơ", so plain validity can't catch it).
+    func testInterjectionsRestoreInsideAnEnglishRun() {
+        var e = TelexEngine()
+        e.liveSpellCheck = true; e.simpleTelex = true; e.contextualEnglish = true
+        for ch in "great" { _ = e.feed(ch) }
+        XCTAssertEqual(e.commitText(autoRestore: true), "great")
+        for ch in "wow" { _ = e.feed(ch) }
+        XCTAssertEqual(e.commitText(autoRestore: true), "wow")
+        // Standing alone (no English run) the teencode reading still wins.
+        var v = TelexEngine(); v.liveSpellCheck = true; v.simpleTelex = true; v.contextualEnglish = true
+        for ch in "wow" { _ = v.feed(ch) }
+        XCTAssertEqual(v.commitText(autoRestore: true), "wơ")
+        // And they still must not OPEN a run: the word after stays Vietnamese.
+        XCTAssertEqual(sentence("wow ddepj quas", context: true), "wow đẹp quá")
+    }
+
     // A whitelist word that renders Vietnamese (bans→bán after a Vietnamese word) seeds
     // VIETNAMESE — the following ambiguous word must stay Vietnamese, not flip.
     func testRenderedVietnameseSeedsVietnamese() {

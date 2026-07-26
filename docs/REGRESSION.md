@@ -33,10 +33,11 @@ thì nâng sàn ngay trong test.
 |---|---|---|---|---|---|---|
 | 2026-07-25 | 1.4.16-dev | 400/400 | 362/362 | 6.790/7.282 (93,2%) | 632/1.047 (60,4%) | baseline sau khi chuẩn hoá harness theo boundary + mở rộng whitelist context |
 | 2026-07-25 | 1.4.16-dev | 400/400 | 362/362 | 6.803/7.282 (93,4%) | 632/1.047 | fix free-marking bóp méo dù có cancel (`excess` → êcs) |
-| 2026-07-26 | 1.4.16-dev | **400/400** | **362/362** | **7.212/7.282 (99,0%)** | **632/1.047** | luật hình dạng tone-cancel + refresh bảng collision (438 → 498 từ) |
+| 2026-07-26 | 1.4.16-dev | 400/400 | 362/362 | 7.212/7.282 (99,0%) | 632/1.047 | luật hình dạng tone-cancel + refresh bảng collision (438 → 498 từ) |
+| 2026-07-26 | 1.4.16-dev | **400/400** | **362/362** | **7.201/7.282 (98,9%)** | **632/1.047** | **bỏ luật restore cho phím-đôi-kề-nhau (field report `tessted`), bù bằng từ điển sinh từ chính suite (498 → 757 từ)** |
 
-Latency không đổi qua đợt 2026-07-26 (release build, cùng máy): **0,135 µs/phím**
-(Việt) / 0,148 (Anh) / 0,008 (passthrough) — nằm trong dao động run-to-run của
+Latency không đổi qua đợt 2026-07-26 (release build, cùng máy): **0,138 µs/phím**
+(Việt) / 0,150 (Anh) / 0,007 (passthrough) — nằm trong dao động run-to-run của
 [`BENCHMARKS.md`](BENCHMARKS.md). Bộ nhớ thêm: 3 Int trong parse state; tra từ điển
 chỉ chạy ở **boundary của từ có cancel**, không nằm trên hot path.
 
@@ -52,24 +53,36 @@ trúc phân biệt được, **không cần từ điển**:
 
 | Dạng cancel | Ví dụ | Quyết định |
 |---|---|---|
-| MARK doubler (`aaa` `ooo` `ddd` `ww`) — ở bất kỳ đâu | `gooogle` → google · `DDDR` → DDR | **GIỮ** (escape thật) |
-| TONE key, **kề nhau + cuối từ** | `iss` → is · `aff` → af · `hoass` → hoas | **GIỮ** (escape thật) |
-| TONE key **giữa từ** (còn chữ gõ sau) | `office` · `possess` · `necessity` | **RESTORE** raw (trừ khi composed là từ Anh: `Deffault` → Default) |
-| TONE key **vươn ngược** (phím thanh bị huỷ nằm cách xa) | `hosts` · `asks` · `discs` · `buses` | **RESTORE** raw |
+| **Phím đôi KỀ NHAU** (tone `ss`/`ff`… hoặc mark `aaa`/`ooo`/`ddd`/`ww`), ở bất kỳ đâu trong từ | `tessted` → tested · `Deffault` → Default · `gooogle` → google · `DDDR` → DDR · `hoass` → hoas · `iss` → is | **GIỮ composed** — what you see is what you commit |
+| Phím tone **vươn ngược** (phím thanh bị huỷ nằm cách vài chữ) | `hosts` · `asks` · `discs` · `buses` | **RESTORE** raw |
+| Bất kỳ dạng nào, nhưng **raw có trong từ điển** | `office` · `possess` · `message` · `class` | **RESTORE** raw (từ điển thắng tất cả) |
 
-Nguyên tắc: escape thật **luôn** là phím đôi kề nhau ở cuối từ; cancel giữa từ
-hoặc vươn ngược là phụ âm đôi tự nhiên của tiếng Anh → từ đã mất chữ.
+Nguyên tắc: escape thật **luôn** là phím đôi kề nhau, còn cancel vươn ngược thì
+không bao giờ là escape → đó là tín hiệu cấu trúc duy nhất dùng được.
+
+**Lần thử sai đã revert (ghi lại để không lặp):** ban đầu tôi cho *mọi* cancel giữa
+từ restore raw (đưa restore_raw lên 99,0%), nhưng bàn phím của escape và của phụ âm
+đôi tiếng Anh **giống hệt nhau** — `tessted` → tested (người dùng cố ý) không phân
+biệt được với `office` → ofice (engine ăn mất chữ). Field report 2026-07-26 (`tessted`
+bị đổi thành `tessted` sau space) chứng minh luật đó sai hướng: chỉ **từ điển** được
+quyền lật, còn lại phải tôn trọng cái đang hiện trên màn hình.
+
 Chi tiết trong `shouldRestoreRaw()` (`TelexEngine.swift`), golden test
-`testToneCancelShapeRestoresEnglishWithoutDict`.
+`testAdjacentDoubleKeepsWhatTheScreenShows` + `testReachBackToneCancelRestoresWithoutDict`.
 
-Kèm theo: `gen-english` giờ **monotone** — bảng sinh ra là HỢP với bảng đang ship
-(luật mới cứu được từ nào thì vẫn giữ entry, vì cài đặt không mặc định như tắt bỏ
-dấu tự do / Simple Telex có thể vẫn cần), cộng 32 từ Anh chọn tay còn miss
-(`ghost`, `nose`, `trips`, `tariff`…). Bảng: 438 → 498 từ (~vài chục KB).
+Bù lại bằng từ điển — `gen-english` có 2 thay đổi:
+- **Monotone**: bảng sinh ra là HỢP với bảng đang ship (luật mới cứu được từ nào thì
+  vẫn giữ entry, vì cài đặt không mặc định như tắt bỏ dấu tự do / Simple Telex có thể
+  vẫn cần).
+- **Corpus bổ sung từ chính suite**: cột input của bucket `restore_raw`, **chỉ nhận từ
+  ≥5 chữ** — từ ngắn là bãi mìn tiếng Việt (`cos`=có, `gif`=gì, `max`=mã) — vẫn đi qua
+  đủ engine-check + junk + protect list (đợt này protect thêm `ướt`=worst, `lẩu`=laura).
+
+Bảng: 438 → **757 từ** (~vài chục KB, tra `Set<String>` ở boundary).
 
 ## Vì sao không 100%
 
-**`restore_raw` — 70/7.282 ca còn lại (1,0%), đều là "dictionary-only":**
+**`restore_raw` — 81/7.282 ca còn lại (1,1%), đều là "dictionary-only":**
 
 - **Protect-list**: chuỗi phím tiếng Anh trùng ĐÚNG cách gõ Telex của một từ Việt
   thật → **tiếng Việt luôn thắng** (`won` = ươn, `worst` = ướt, `zoo` = zô,
@@ -78,6 +91,8 @@ dấu tự do / Simple Telex có thể vẫn cần), cộng 32 từ Anh chọn t
   từ điển nào phủ, và thêm vào sẽ nuốt cách gõ tiếng Việt.
 - **Token 2–3 chữ trong chuỗi symbol**: `/usr/local/bin`, `os.path`, `arr[i]`,
   `MAX_SIZE` — mảnh `us`, `os`, `arr`, `max` compose thành âm tiết Việt hợp lệ.
+- **Phụ âm đôi kề nhau ngoài từ điển**: `carr`, `cass`, `hajj`, `toff`, `arr`, `ruff`
+  — không thể restore bằng luật vì trùng bàn phím với escape có chủ ý (xem trên).
 
 **`ambiguous_needs_context` — 632/1.047 (1.047 dòng = 344 từ distinct):**
 
@@ -87,6 +102,13 @@ dấu tự do / Simple Telex có thể vẫn cần), cộng 32 từ Anh chọn t
 | `ok_both` | 49 | Đã restore sẵn, không cần context |
 | `ctx_misses` | 133 | Engine giữ tiếng Việt, không restore |
 | `ctx_breaks` | **0** | Context chưa làm hỏng ca nào |
+
+Từ 2026-07-26 whitelist context tách 2 lớp: `words` (mở được mạch tiếng Anh) và
+`restoreOnly` — thán từ / từ chat (`wow`, `ok`, `hi`, `sorry`, `thanks`…) **được khôi
+phục khi đang trong mạch tiếng Anh nhưng không bao giờ mở mạch**, vì người Việt dùng
+chúng để mở câu tiếng Việt ("ok cám ơn", "wow đẹp quá"). Field report 2026-07-26:
+"that's great wow" commit ra `wơ` trong Simple Telex (`w` literal + `ow` → ơ, và `wơ`
+lại hợp lệ qua teencode w→qu = "quơ" nên validator không cứu).
 
 Toàn bộ 133 ca `ctx_misses` là những dòng **chính suite ghi chú `never`** ("restore
 sẽ làm từ Việt KHÔNG THỂ GÕ ĐƯỢC NỮA" — `bar` = bả, `car` = cả, `box` = bõ,

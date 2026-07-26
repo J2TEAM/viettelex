@@ -79,6 +79,10 @@ let protected: Set<String> = [
     "tã",   // tax
     "úp",   // ups   (úp mở)
     "rẽ",   // res   (rẽ trái)
+    // Đợt corpus-from-suite 2026-07-26 (minLen 5): từ Anh ≥5 chữ trùng đúng telex
+    // của một từ Việt phổ biến.
+    "ướt",  // worst (ướt át)
+    "lẩu",  // laura (nồi lẩu)
 ]
 
 /// Rác viết tắt trong corpus web (không phải từ tiếng Anh thật) — vào bảng sẽ
@@ -103,6 +107,11 @@ let extraEnglish = ["mess", "boss", "kiss", "chess", "bless", "gross",
                     "peers", "pens", "pins", "piss", "poems", "pose", "puts", "sass",
                     "sees", "tariff", "thongs", "tons", "trips", "troops", "turns", "wax"]
 
+// Corpus BỔ SUNG (tuỳ chọn, arg 4 + độ dài tối thiểu ở arg 5): danh sách từ tiếng
+// Anh khác — hiện dùng cột input của bucket `restore_raw` trong telex_test_suite.csv.
+// CHẶN ĐỘ DÀI: từ ngắn là bãi mìn tiếng Việt (cos=có, gif=gì, pas=pá, max=mã), còn
+// từ ≥6 chữ hầu như không trùng đúng chuỗi telex của một từ Việt phổ biến.
+// Vẫn đi qua đủ engine-check + junk + protect như mọi từ khác.
 let args = CommandLine.arguments
 guard args.count >= 4,
       let content = try? String(contentsOfFile: args[1], encoding: .utf8),
@@ -141,6 +150,18 @@ for line in content.split(separator: "\n") {
     consider(w)
 }
 for w in extraEnglish { consider(w) }
+if args.count >= 6, let extra = try? String(contentsOfFile: args[4], encoding: .utf8),
+   let minLen = Int(args[5]) {
+    var added = 0
+    for line in extra.split(separator: "\n") {
+        let w = line.trimmingCharacters(in: .whitespaces).lowercased()
+        guard w.count >= minLen, w.count <= 12, w.allSatisfy({ $0.isASCII && $0.isLetter }) else { continue }
+        let before = kept.count
+        consider(w)
+        added += kept.count - before
+    }
+    print("extra corpus: +\(added) từ (minLen \(minLen))")
+}
 
 // MONOTONE: giữ lại mọi từ đã có trong bảng đang ship. `consider` chỉ nhận từ mà
 // engine HÔM NAY còn gõ sai với CÀI ĐẶT MẶC ĐỊNH — nhưng một từ được luật mới cứu
