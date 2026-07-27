@@ -172,6 +172,14 @@ enum SelfUpdater {
                 }
 
                 let dest = ("~/Library/Input Methods/VietTelex.app" as NSString).expandingTildeInPath
+                // Stop the event tap BEFORE the bundle under us is replaced. Apple's
+                // update guidance (and Quinn in forums/thread/703188) is to quit the code
+                // whose bundle you are about to swap: TCC identifies us by code signature,
+                // and a live tap owned by a process whose backing bundle just got unlinked
+                // is exactly the state that comes back as "listed but refused" after an
+                // update. We exit a few lines below anyway — this just makes sure the tap
+                // is gone first, not at some arbitrary point during teardown.
+                await MainActor.run { TerminalTapController.shared.stopForUpdate() }
                 try installBundle(from: newApp, to: URL(fileURLWithPath: dest))
                 // Refresh the LaunchServices registration so the Text Input system relaunches
                 // from the new bundle (mirrors notarize-install.sh).

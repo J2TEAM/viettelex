@@ -1292,17 +1292,55 @@ final class TelexInputController: IMKInputController {
         }
     }
 
-    /// Stale-grant repair: macOS lists VietTelex as allowed but refuses the tap
-    /// (typical after a re-signed binary lands under an old grant). The ONLY fix
-    /// is user-side: remove the entry and add it back. Walk them through it.
+    /// Stale-grant repair: macOS lists VietTelex as allowed but refuses the tap — the
+    /// stored TCC requirement no longer matches this binary, so the checkbox is a lie
+    /// (see Accessibility.grantLooksStale). Removing the entry and adding it back is what
+    /// fixes it, and `tccutil reset` does exactly that to our OWN row — so the primary
+    /// button now does it for the user instead of walking them through four steps in
+    /// System Settings. The manual route stays as the second button, because a row that
+    /// macOS refuses to delete (MDM/system default) can only be fixed by hand.
     @objc private func showStaleTrustRepair() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = VTLocalized("Stale permission title")
         alert.informativeText = VTLocalized("Stale permission body")
+        alert.addButton(withTitle: VTLocalized("Repair automatically"))
         alert.addButton(withTitle: VTLocalized("Open Accessibility Settings"))
         alert.addButton(withTitle: VTLocalized("Close"))
-        if alert.runModal() == .alertFirstButtonReturn,
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            repairStaleTrust()
+        case .alertSecondButtonReturn:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+            TerminalTapController.shared.retryNow()
+        default:
+            TerminalTapController.shared.retryNow()
+        }
+    }
+
+    /// Delete our own TCC row, then ask for the permission again so macOS writes a fresh
+    /// one against the CURRENT signature. The re-prompt must come from THIS process (it is
+    /// the requesting code identity), so we do not exit; the grant toggle then fires the
+    /// com.apple.accessibility.api notification and the tap starts on its own.
+    private func repairStaleTrust() {
+        let didReset = Accessibility.resetOwnGrant()
+        DebugLog.log("stale-grant repair: tccutil reset \(didReset ? "ok" : "FAILED") "
+            + "→ trusted=\(AXIsProcessTrusted()) canPost=\(Accessibility.canPostEvents)")
+        // Ask again. When the row is gone this shows the system TCC dialog; when macOS
+        // kept it (MDM-managed), nothing appears — hence the manual fallback below.
+        Accessibility.requestIfNeeded()
+        TerminalTapController.shared.retryNow()
+        let done = NSAlert()
+        done.messageText = VTLocalized(didReset ? "Repair started title" : "Repair failed title")
+        done.informativeText = VTLocalized(didReset ? "Repair started body" : "Repair failed body")
+        done.addButton(withTitle: VTLocalized("Open Accessibility Settings"))
+        done.addButton(withTitle: VTLocalized("Close"))
+        NSApp.activate(ignoringOtherApps: true)
+        done.window.level = .floating
+        done.window.orderFrontRegardless()
+        if done.runModal() == .alertFirstButtonReturn,
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }

@@ -73,15 +73,84 @@ enum Accessibility {
 
     static func invalidateCache() { lock.withLock { lastCheckNs = 0 } }
 
+    /// GROUND TRUTH for "may I actually post/tap?", unlike `AXIsProcessTrusted()`.
+    /// In the stale-grant state AXIsProcessTrusted keeps answering TRUE (Settings shows
+    /// the checkbox on, the stored TCC requirement no longer matches this binary), while
+    /// the privilege-specific preflight answers correctly — this is what Apple DTS
+    /// recommends over the AX call (developer.apple.com/forums/thread/727984, and the
+    /// Sequoia case in thread 758554 where tapCreate returned NULL with AX true).
+    /// Not cached and not on the keystroke path: called at launch and when a tap fails.
+    static var canPostEvents: Bool { CGPreflightPostEventAccess() }
+    static var canListenEvents: Bool { CGPreflightListenEventAccess() }
+
+    /// The stale-grant fingerprint: macOS says we're trusted, but the privilege the tap
+    /// needs is refused. Either half alone is a normal state (not granted yet / all good).
+    static var grantLooksStale: Bool { AXIsProcessTrusted() && !CGPreflightPostEventAccess() }
+
+    /// RESET this app's own TCC rows so the next prompt writes a FRESH row against the
+    /// CURRENT code signature — the programmatic equivalent of the minus-button dance we
+    /// used to ask users to perform by hand. `tccutil reset <service> <bundle-id>` is
+    /// scoped to one bundle id (Quinn, developer.apple.com/forums/thread/696174) and
+    /// needs no privileges to reset YOURSELF; it can only ever REMOVE a grant, never
+    /// give one. Kept behind an explicit user action (never silent, never on a timer) —
+    /// Apple has said they may restrict tccutil if apps abuse it to re-nag users.
+    /// Returns true when the reset command succeeded.
+    @discardableResult
+    static func resetOwnGrant() -> Bool {
+        let id = Bundle.main.bundleIdentifier ?? "com.viettelex.inputmethod.telex"
+        var ok = false
+        // Accessibility covers the tap; ListenEvent (Input Monitoring) can hold a stale
+        // row of its own, and resetting a service we never used is a no-op.
+        for service in ["Accessibility", "ListenEvent"] {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            p.arguments = ["reset", service, id]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            do {
+                try p.run()
+                p.waitUntilExit()
+                DebugLog.log("tccutil reset \(service) \(id) → exit \(p.terminationStatus)")
+                if service == "Accessibility" { ok = p.terminationStatus == 0 }
+            } catch {
+                DebugLog.log("tccutil reset \(service) failed to launch: \(error.localizedDescription)")
+            }
+        }
+        invalidateCache()
+        return ok
+    }
+
     /// Prompt for Accessibility permission (opens System Settings). Safe when already
     /// trusted (returns true, no prompt).
+    ///
+    /// A build that is NOT signed with our Developer ID must never prompt: the row macOS
+    /// then writes pins THAT build's identity (an ad-hoc signature pins the cdhash), and
+    /// every properly signed release afterwards is refused while the checkbox still shows
+    /// allowed — the permanently-stuck state, created by us. `project.yml` builds ad-hoc
+    /// (`CODE_SIGN_IDENTITY: "-"`) so a plain `xcodebuild` run of the app can reach here.
     @discardableResult
     static func requestIfNeeded() -> Bool {
         invalidateCache()
         if AXIsProcessTrusted() { return true }
+        guard isOurSignedBuild else {
+            DebugLog.log("skip AX prompt: this build is not Developer ID-signed by our team "
+                + "(would poison the TCC row for every signed release)")
+            return false
+        }
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         return AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
+
+    /// Team identifier of the RUNNING code, or nil (ad-hoc / unsigned).
+    static var ownTeamIdentifier: String? {
+        var codeRef: SecCode?
+        guard SecCodeCopySelf([], &codeRef) == errSecSuccess, let code = codeRef else { return nil }
+        var infoRef: CFDictionary?
+        guard SecCodeCopySigningInformation(code as! SecStaticCode, [], &infoRef) == errSecSuccess,
+              let info = infoRef as? [String: Any] else { return nil }
+        return info["teamid"] as? String
+    }
+    static var isOurSignedBuild: Bool { ownTeamIdentifier == "84T567KMYD" }
 }
 
 /// Cached frontmost-app bundle id. `NSWorkspace.shared.frontmostApplication` is an
@@ -1001,6 +1070,13 @@ final class TerminalTapController {
             if let tap = self.stateLock.withLock({ self.tap }), CGEvent.tapIsEnabled(tap: tap) {
                 self.stateLock.withLock { self.probeSentTick &+= 1 }
                 SyntheticKeyboard.postProbe()
+            } else if Accessibility.grantLooksStale, !self.trustLooksStale {
+                // No tap AND the privilege preflight refuses while macOS still calls us
+                // trusted: that is the stale row, and we can say so WITHOUT waiting for
+                // the user to type into Terminal/Chrome and find nothing works. Marks the
+                // menu so the repair is one click away from the moment it breaks.
+                self.trustLooksStale = true
+                DebugLog.log("watchdog: grant looks stale (trusted but canPost=false) → offer repair")
             }
         }
         t.tolerance = 1
@@ -1059,6 +1135,12 @@ final class TerminalTapController {
             // Trusted but the system refused the tap → stale grant (field case
             // 2026-07-22: dev re-sign; can also follow unusual upgrade paths).
             trustLooksStale = true
+            // Record WHY: the preflight is the privilege-specific ground truth, so
+            // canPost=false with trusted=true names the stale row outright (Apple DTS
+            // recommends these over AXIsProcessTrusted — forums/thread/727984).
+            Signposts.log.fault("tap create refused: trusted=\(AXIsProcessTrusted(), privacy: .public) canPost=\(Accessibility.canPostEvents, privacy: .public) canListen=\(Accessibility.canListenEvents, privacy: .public)")
+            DebugLog.log("tap create refused: trusted=\(AXIsProcessTrusted()) "
+                + "canPost=\(Accessibility.canPostEvents) canListen=\(Accessibility.canListenEvents)")
             quarantine(60)
             Signposts.log.fault("tap create FAILED while trusted — stale Accessibility grant; remove + re-add VietTelex in System Settings")
             DebugLog.log("tap create failed while trusted → stale TCC grant (retry in 60s)")
@@ -1122,6 +1204,15 @@ final class TerminalTapController {
     /// `guard !isTrusted else return` skipped the teardown on exactly that race and
     /// left the wedged tap alive. Rebuilding a healthy tap ~1.5s later costs
     /// nothing; guessing wrong costs the user's keyboard and mouse.
+    /// Tear the tap down for an imminent bundle replacement (self-update). Also
+    /// quarantines, so nothing in this process re-creates a tap against a bundle that is
+    /// about to disappear; the process exits right after the swap.
+    func stopForUpdate() {
+        DebugLog.log("update: tearing down tap before bundle swap")
+        quarantine(600)
+        teardown()
+    }
+
     /// Called from the menu repair flow / TCC change notification: the user just
     /// DID something about the permission — drop the backoff and re-evaluate now.
     func retryNow() {

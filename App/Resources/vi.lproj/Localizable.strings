@@ -154,7 +154,9 @@
 
 "Stale permission title" = "Quyền Trợ năng bị kẹt sau khi cập nhật";
 
-"Stale permission body" = "macOS đang liệt kê VietTelex là được phép, nhưng từ chối cấp event tap — thường xảy ra khi bản cập nhật được ký lại nằm dưới quyền cũ.\n\nCách sửa (một lần):\n1. Mở System Settings → Privacy & Security → Accessibility\n2. Chọn VietTelex, bấm nút − để XÓA khỏi danh sách\n3. Bấm + và thêm lại VietTelex (trong ~/Library/Input Methods)\n4. Chuyển bàn phím qua ABC rồi quay lại VietTelex";
+"Stale permission body" = "macOS đang liệt kê VietTelex là được phép, nhưng từ chối cấp event tap — quyền cũ đang ghim một chữ ký khác, nên cái tick đó không còn giá trị.
+
+Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chính nó rồi xin lại quyền, bạn chỉ cần đồng ý một lần. Không cần khởi động lại máy.";
 
 "Open Accessibility Settings" = "Mở cài đặt Trợ năng";
 
@@ -184,3 +186,8 @@
 "How to report a bug" = "Hướng dẫn báo lỗi";
 "Downloading and installing…" = "Đang tải và cài đặt…";
 "Add diacritics to the word before the caret (experimental)" = "Gõ thêm dấu cho từ ngay trước con trỏ (thử nghiệm)";
+"Repair automatically" = "Sửa tự động";
+"Repair started title" = "Đã xoá quyền cũ — cấp lại một lần nữa";
+"Repair started body" = "VietTelex đã tự xoá mục bị kẹt của chính nó. macOS sẽ hỏi lại quyền Trợ năng: bạn bấm đồng ý, hoặc mở cài đặt Trợ năng rồi tick VietTelex. Gõ trong Terminal/Chrome chạy lại ngay khi tick, không cần khởi động lại.";
+"Repair failed title" = "Không xoá được quyền cũ";
+"Repair failed body" = "macOS từ chối xoá mục này (thường do quyền bị tổ chức của bạn quản lý). Cách sửa tay: mở cài đặt Trợ năng, chọn VietTelex, bấm − để xoá, rồi bấm + thêm lại từ ~/Library/Input Methods.";

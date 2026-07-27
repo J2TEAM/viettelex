@@ -9,6 +9,57 @@ Info.plist again — every item below cost real time to discover.
 > selection lives in `TYPING-STRATEGIES.md` + `typing-modes.yml`; app lists
 > named below may be stale.
 
+## "Quyền Trợ năng bị kẹt": nguyên nhân thật và cách sửa dứt điểm — 2026-07-27
+
+**Cơ chế.** Grant Accessibility nằm ở TCC.db hệ thống, mỗi dòng gồm bundle id + một
+blob **`csreq`** — chính Designated Requirement của app lúc được cấp. Khi app xin event
+tap, tccd đối chiếu chữ ký của tiến trình với `csreq` đó. Còn cái tick trong System
+Settings thì **chỉ vẽ theo bundle id/path**, không verify lại `csreq`. Vì vậy trạng thái
+"tick vẫn bật mà bị từ chối" là hoàn toàn có thật và người dùng không thể nhìn ra.
+
+**`AXIsProcessTrusted()` KHÔNG đáng tin trong trạng thái này** — nó vẫn trả `true`
+(Apple forums 758554: `tapCreate` trả NULL trong khi AX nói trusted). Dùng preflight
+đúng quyền thay thế (DTS khuyến nghị, forums 727984):
+`CGPreflightPostEventAccess()` / `CGPreflightListenEventAccess()`. Dấu vân tay của
+trạng thái kẹt: `AXIsProcessTrusted() == true && CGPreflightPostEventAccess() == false`.
+
+**Nguyên nhân xếp theo xác suất:**
+1. Dòng TCC được tạo bởi một build **không phải** Developer ID của mình (ad-hoc/Xcode/
+   XCTest host): `csreq` khi đó ghim cdhash hoặc leaf cert → mọi bản ký đúng sau này đều
+   trượt, vĩnh viễn. `project.yml` build ad-hoc, nên `requestIfNeeded()` từ 27/07 **từ
+   chối prompt** nếu team ≠ 84T567KMYD (`Accessibility.isOurSignedBuild`).
+2. **Thay bundle khi tiến trình còn chạy**: inode cũ bị unlink, tiến trình đang chạy
+   trượt validation. Apple ("Updating Mac Software", Quinn forums 703188) yêu cầu quit
+   trước rồi swap. `SelfUpdater` nay `stopForUpdate()` (tháo tap) TRƯỚC `replaceItemAt`.
+3. **Merge residue phá code seal.** Installer của `.pkg` **merge** payload: file bản cũ
+   mà bản mới bỏ đi vẫn nằm lại → seal hỏng → tccd từ chối. `SelfUpdater` vốn dùng
+   `replaceItemAt` (atomic, không merge); từ 27/07 `.pkg` có **preinstall** xoá bundle cũ
+   để có cùng bảo đảm đó.
+4. Bug tccd/Settings (macOS 13+), và trên Sequoia: tiến trình `LSBackgroundOnly` bị từ
+   chối tap dù có grant (forums 758554) — VietTelex dùng `LSUIElement`/accessory nên
+   **không** thuộc ca này (đã kiểm 27/07).
+
+**Cách sửa trong app (thay 4 bước làm tay).** `tccutil reset Accessibility <bundle-id>`
+xoá đúng dòng của mình → prompt lại sẽ ghi dòng MỚI theo chữ ký hiện tại; đây chính là
+hiệu ứng của nút `−` rồi `+`, làm bằng code. Không cần root để reset **chính mình**, và
+nó chỉ có thể XOÁ quyền, không bao giờ cấp. Quinn (forums 696174) cảnh báo Apple có thể
+siết `tccutil` nếu app lạm dụng để nag người dùng ⇒ **chỉ chạy khi người dùng bấm nút**,
+không bao giờ tự động/định kỳ. Prompt lại phải phát từ **chính tiến trình này** (nó là
+code identity đang xin), nên không được `exit` trước khi prompt.
+
+Không có tác dụng: kill tccd (respawn, không sửa csreq), sửa TCC.db trực tiếp (SIP),
+`lsregister -kill` (đó là chuyện LaunchServices, không phải TCC).
+
+**Các app khác ship gì:** espanso (#2562) và Karabiner: hướng dẫn làm tay; Hammerspoon
+FAQ: `tccutil reset All org.hammerspoon.Hammerspoon`; BetterTouchTool: khuyên remove/
+re-add. **Không ai tự động hoá im lặng** — state of the art là *phát hiện + một nút
+reset & xin lại*, đúng cái VietTelex làm từ 1.4.18.
+
+**Checklist phòng ngừa (mỗi release):** DR phải identity-based (bundle id + team OU,
+không cdhash) — `make-release.sh` **fail build** nếu DR lệch; grant đầu tiên chỉ được
+tạo từ bản notarized; quit/tháo tap trước khi swap bundle; pkg xoá bundle cũ; tap owner
+không được `LSBackgroundOnly`; sau update tự kiểm bằng preflight + tapCreate.
+
 ## Debug logging KHÔNG được nằm trên hot path — 2026-07-27
 
 `reprobeDeferred` (experiment log-only) chạy **đồng bộ trong `handle()`** ở phím ngay

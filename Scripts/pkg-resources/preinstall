@@ -1,0 +1,31 @@
+#!/bin/bash
+# pkg preinstall — runs (as root) BEFORE the payload is written to
+# ~/Library/Input Methods.
+#
+# Why this exists: the macOS Installer MERGES a payload into an existing bundle —
+# it overwrites same-named files but leaves behind anything the new version
+# dropped or renamed. Those orphans break the bundle's code seal, and a broken
+# seal is what makes tccd refuse the event tap while System Settings still shows
+# the Accessibility checkbox ON ("Quyền Trợ năng bị kẹt"). TCC identifies us by
+# code signature, so the bundle must be EXACTLY the signed+notarized artifact,
+# byte for byte. The self-updater solves this with an atomic replaceItemAt; the
+# pkg path needs this explicit removal to get the same guarantee.
+#
+# Also stop the running instance first: replacing the bundle under a live process
+# whose tap is open is the other half of the stale-grant recipe.
+set +e
+
+consoleUser="$(stat -f%Su /dev/console)"
+[ -z "$consoleUser" ] && consoleUser="$USER"
+uid="$(id -u "$consoleUser")"
+APP="/Users/$consoleUser/Library/Input Methods/VietTelex.app"
+
+launchctl asuser "$uid" sudo -u "$consoleUser" pkill -x VietTelex 2>/dev/null
+
+if [ -d "$APP" ]; then
+    # Keep one backup so a failed install is recoverable by hand.
+    rm -rf "$APP.previous" 2>/dev/null
+    mv "$APP" "$APP.previous" 2>/dev/null || rm -rf "$APP"
+fi
+
+exit 0

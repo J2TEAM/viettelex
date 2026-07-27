@@ -35,7 +35,7 @@ if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "(an input method only registers when its own bundle is notarized)."; exit 1
 fi
 
-# 2. Fresh staging: payload (the app) + scripts (postinstall + register helper).
+# 2. Fresh staging: payload (the app) + scripts (pre/postinstall + register helper).
 rm -rf "$WORK"; mkdir -p "$WORK/payload" "$WORK/scripts"
 /usr/bin/ditto "$APP" "$WORK/payload/VietTelex.app"
 
@@ -44,6 +44,11 @@ swiftc -O "$RES/register-source.swift" -framework Carbon -o "$WORK/scripts/regis
 codesign --force --options runtime --timestamp --sign "$APP_SIGN_ID" "$WORK/scripts/register-source"
 cp "$RES/postinstall" "$WORK/scripts/postinstall"
 chmod +x "$WORK/scripts/postinstall"
+# preinstall REMOVES the old bundle first: the Installer merges payloads, and merge
+# residue breaks the code seal → tccd refuses the tap while the Accessibility checkbox
+# still shows allowed (the "permission stuck after update" bug). See the script header.
+cp "$RES/preinstall" "$WORK/scripts/preinstall"
+chmod +x "$WORK/scripts/preinstall"
 
 # 3. Component pkg — installs payload into <userHome>/Library/Input Methods.
 echo "→ pkgbuild"

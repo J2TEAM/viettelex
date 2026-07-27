@@ -25,6 +25,23 @@ if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "App is not notarized+stapled — run Scripts/notarize-install.sh first."; exit 1
 fi
 
+# TCC GUARD: the Accessibility grant is stored against the app's Designated
+# Requirement. As long as the DR stays identity-based (bundle id + team OU) a re-signed
+# update keeps the grant; if a release ever ships a DR that pins a cdhash or a specific
+# leaf certificate, every existing grant silently turns into the "listed but refused"
+# state on users' machines (espanso hit exactly this on a cert change). Cheap to check,
+# impossible to notice by hand — so the release refuses to build if the DR drifts.
+EXPECTED_DR='designated => identifier "com.viettelex.inputmethod.telex" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "84T567KMYD"'
+ACTUAL_DR=$(codesign -d -r- "$APP" 2>&1 | grep '^designated =>')
+if [ "$ACTUAL_DR" != "$EXPECTED_DR" ]; then
+    echo "✗ Designated Requirement CHANGED — shipping this would break every existing"
+    echo "  Accessibility grant (users would see 'Quyền Trợ năng bị kẹt')."
+    echo "  expected: $EXPECTED_DR"
+    echo "  actual:   $ACTUAL_DR"
+    exit 1
+fi
+echo "→ DR ok (identity-based: bundle id + team, no cdhash pin)"
+
 # The built-in rules file ships alongside the binaries: users can read it,
 # edit a copy, and import it via Bảng cơ chế gõ → "Nhập từ plist…".
 cp typing-modes.yml "$OUTDIR/typing-modes.yml"
