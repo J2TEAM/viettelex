@@ -34,6 +34,7 @@ Trịnh — có từ viết hoa, tên riêng nước ngoài, số, dấu câu; x
 | 2026-07-19 | 1.0 | Apple Silicon (darwin 25.5) | **0.129** | **0.159** | **0.0079** | sau khi thêm os_signpost (app layer) — engine không đổi, dao động run-to-run |
 | 2026-07-26 | 1.4.16-dev | Apple Silicon (darwin 25.5) | **0.138** | **0.150** | **0.0073** | sau đợt tone-cancel + từ điển 757 từ ([`REGRESSION.md`](REGRESSION.md)) — engine hot path không đổi |
 | 2026-07-27 | 1.4.16-dev | Apple Silicon (darwin 25.5) | **0.138** | **0.154** | **0.0082** | sau guard bounds trong `ClassTrie.step` (fix crash VNI, issue #28) — 1 phép so sánh/step |
+| 2026-07-27 | 1.4.17-dev | Apple Silicon (darwin 25.5) | **0.144** | **0.157** | **0.0075** | validator thử mọi cách đọc onset/rime (fix quýt/giếc, issue #29) — thêm ≤2 lần walk trie khi cách đọc đầu trượt |
 
 Đơn vị: µs/keystroke, release build.
 

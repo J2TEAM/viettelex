@@ -121,6 +121,35 @@ Bảng đánh giá tay cho nhóm ambiguous (mỗi từ distinct 1 dòng: output 
 context, cờ whitelist/collision, note gốc của suite, mức ưu tiên review) sinh theo
 yêu cầu — không commit vào repo vì là artifact review, không phải nguồn sự thật.
 
+## Bộ suite này KHÔNG phủ tiếng Việt (và cách bịt)
+
+Issue #29 (27/07: gõ `quyts` ra `quyts` thay vì `quýt`) lọt qua toàn bộ 9.091 ca —
+đúng ra là phải lọt, vì:
+
+- **Suite này là suite TIẾNG ANH.** Phần `transform` chỉ 400 dòng và gần hết là
+  *chuỗi phím tiếng Anh → âm tiết Việt* (`of`→ò, `is`→í, `las`→lá): 4/5 dòng dài
+  ≤5 ký tự, không có một từ qu- + coda nào. Nó đo "engine có khôi phục đúng tiếng
+  Anh không", KHÔNG đo "engine gõ đúng tiếng Việt không".
+- **`testComposeIsIdempotentOverValidCombos`** (TypingMatrixTests) có sinh
+  `qu`×`uy`×`t`×`s`, nhưng nó `guard SyllableValidator.isValidSyllable(x)` — nên một
+  **false-negative của validator tự miễn trừ chính nó**: ca hỏng bị *skip*, không bị
+  *fail*. Bẫy tự-hoàn-thành.
+
+Đã thêm **`testEveryOnsetRimeToneComposesAndSurvives`**: quét TOÀN BỘ
+onset × rime × tone lấy trực tiếp từ bảng luật (~25.000 ca, +0,44s), gõ từng ca rồi
+đòi (a) composed phải được coi là âm tiết Việt hợp lệ, (b) auto-restore không được
+lật nó. Kỳ vọng lấy từ **bảng luật**, không hỏi engine/validator. Hai quy tắc quan
+trọng: tone hợp lệ suy từ chính tả rime (coda tắc ⇒ chỉ sắc/nặng), và nguyên âm dùng
+chung của glide được viết CẢ HAI cách (`qu`+`uyt` = `quyt`, một chữ u) — chỗ ambiguity
+đó là nơi cả hai bug nằm.
+
+Chạy ngược lại trên bản 1.4.16 (chưa fix): **62 ca fail**, gồm đúng nhóm
+quýt/quỳnh/quých — tức bộ test này bắt được issue #29. Nó còn lộ ra **bug thứ hai
+chưa ai báo**: `giếc` (cá giếc) và `giệc` bị split thành `gi` + `êc` (không phải rime)
+mà không bao giờ được thử lại thành `g` + `iêc` (là rime) → cũng bị auto-restore về
+chuỗi phím. Từ nay `isValidSyllable` thử MỌI cách đọc rồi mới kết luận, giống
+`isValidPrefix` vốn đã làm.
+
 ## Ghi chú
 
 - **`freeMarking` OFF khi đo**: bỏ dấu tự do reach-back rất mạnh, trong kiểu replay

@@ -89,6 +89,8 @@ final class TypingMatrixTests: XCTestCase {
         "mùa", "múa", "của", "chưa", "mưa", "nữa", "bữa", "mía", "kia", "tia",
         // ---- qu / gi onsets ----
         "quý", "quà", "quân", "quốc", "quyển", "già", "giữ", "gì", "giá", "giường",
+        // issue #29 (2026-07-27): rejected by the validator's single onset/rime split
+        "quýt", "quỳnh", "quých", "quỵt", "giếc", "giệc", "huýt", "tuýt",
         // ---- oa / oe / uy (old style) ----
         "hóa", "hòa", "khỏe", "hòe", "thúy", "thủy", "khuya", "tuyển",
         // ---- coda families / all tones on sonorant codas ----
@@ -126,6 +128,60 @@ final class TypingMatrixTests: XCTestCase {
     // compose(keys) == compose(telexKeys(compose(keys))). This exercises far more of
     // the tone-placement / propagation machine than any hand table, and can only fail
     // if the engine composes the same sound two different ways.
+    // MARK: - 3. Exhaustive onset × rime × tone matrix (table-driven)
+
+    /// EVERY onset in the table, EVERY rime in the table, every tone the rime allows:
+    /// type it and the engine must compose a VALID syllable that auto-restore leaves
+    /// alone. The expectations come from the RULE TABLES, never from the engine or the
+    /// validator — that is the whole point.
+    ///
+    /// This is the net that issue #29 (2026-07-27, "quyts" → quyts) slipped through:
+    ///  • the 9.091-case regression suite is an ENGLISH suite — its Vietnamese side is
+    ///    400 short tokens (`of`→ò, `las`→lá) with no qu- + coda word at all;
+    ///  • `testComposeIsIdempotentOverValidCombos` below does cover qu-/uy-/-t, but it
+    ///    SKIPS any combo the validator calls invalid (`guard isValidSyllable(x)`), so a
+    ///    validator false-negative silently excused itself — self-fulfilling.
+    /// Whence the two rules here: tone masks are derived from the rime spelling (stop
+    /// coda ⇒ sắc/nặng only), and the glide's shared vowel is spelled BOTH ways
+    /// ("qu" + "uyt" = "quyt", one u) because that ambiguity is where both bugs lived.
+    func testEveryOnsetRimeToneComposesAndSurvives() {
+        let tones: [(Tone, String)] = [(.none, ""), (.acute, "s"), (.grave, "f"),
+                                       (.hook, "r"), (.tilde, "x"), (.dot, "j")]
+        let vowels = "aăâeêioôơuưy"
+        var checked = 0
+        for onset in SyllableValidator.onsets {
+            for rime in SyllableValidator.rimes {
+                let stopCoda = ["p", "t", "c", "ch", "k"].contains { rime.hasSuffix($0) }
+                for (tone, tk) in tones {
+                    if stopCoda, tone != .acute, tone != .dot { continue }
+                    var spellings = [Self.telexKeys(onset + rime) + tk]
+                    // qu-/gi- glide: the onset's vowel IS the rime's first letter when a
+                    // vowel follows it ("qu" + "uyt" → "quyt", "gi" + "iêc" → "giêc").
+                    let secondIsVowel = rime.dropFirst().first.map { vowels.contains($0) } ?? false
+                    if secondIsVowel, (onset == "qu" && rime.hasPrefix("u")) || (onset == "gi" && rime.hasPrefix("i")) {
+                        spellings.append(onset + Self.telexKeys(String(rime.dropFirst())) + tk)
+                    }
+                    for keys in spellings where keys.count <= 12 {
+                        var e = TelexEngine()
+                        e.englishWordRestore = false      // rule coverage, not English policy
+                        e.liveSpellCheck = true           // shipped default: freezing must not bite
+                        for ch in keys { _ = e.feed(ch) }
+                        let composed = e.composed
+                        let committed = e.commitText(autoRestore: true)
+                        XCTAssertTrue(SyllableValidator.isValidSyllable(composed),
+                                      "\(onset)+\(rime)+\(tk) typed \(keys) composed \(composed) — not judged Vietnamese")
+                        XCTAssertEqual(committed, composed,
+                                       "\(onset)+\(rime)+\(tk) typed \(keys) composed \(composed) but auto-restore reverted it")
+                        checked += 1
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 20_000, "matrix unexpectedly small (\(checked))")
+    }
+
+    // MARK: - 4. Idempotence over a generated combo space
+
     func testComposeIsIdempotentOverValidCombos() {
         let onsets = ["", "b", "c", "m", "t", "th", "tr", "ng", "nh", "kh", "ph", "d", "dd", "qu", "gi"]
         let vowels = ["a", "aa", "aw", "e", "ee", "i", "o", "oo", "ow", "u", "uw", "y",

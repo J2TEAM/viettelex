@@ -136,13 +136,17 @@ public enum SyllableValidator {
             return (rimeExact.mask(rnode) >> tone.rawValue) & 1 == 1
         }
 
+        // EVERY reading is tried and any one accepting is enough — the same permissive
+        // contract `isValidPrefix` has always had. A single deterministic split silently
+        // rejected real words (issue #29, 2026-07-27):
+        //  • qu- glide: the u counts in BOTH the onset ("qu") and the rime ("uy…") —
+        //    "quýt" = qu + uyt, the very rime huýt/tuýt/khuýt use. The rime table has no
+        //    standalone "yt"/"ynh", and ADDING those would bless "hyt"/"bynh" too.
+        //  • the glide split must not shadow the PLAIN one: "giếc" (cá giếc) split as
+        //    gi + "êc" (not a rime) and never got tried as g + "iêc" (which is one).
         if accepts(onsetEnd: onsetEnd, rimeStart: onsetEnd) { return true }
-        // qu- glide, second reading: the u counts in BOTH the onset ("qu") and the rime
-        // ("uy…"). "quýt" is qu + uyt — the very rime huýt/tuýt/khuýt use — and the
-        // rime table has no standalone "yt"/"ynh", so the single split rejected quýt /
-        // quỳnh outright (issue #29, 2026-07-27: "quyts" committed as raw keys).
-        // Adding "yt"/"ynh" as rimes instead would also bless "hyt"/"bynh".
-        return quGlide && accepts(onsetEnd: onsetEnd, rimeStart: pos)
+        if quGlide, accepts(onsetEnd: onsetEnd, rimeStart: pos) { return true }
+        return onsetEnd != pos && accepts(onsetEnd: pos, rimeStart: pos)
     }
 
     /// Returns true if `word` is a well-formed Vietnamese syllable. String façade

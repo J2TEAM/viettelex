@@ -1525,10 +1525,12 @@ private extension SyllableValidator {
             return (rimeExact.mask(rnode) >> tone.rawValue) & 1 == 1
         }
 
+        // Every reading is tried (see the Array twin for why): the qu- glide's u counted
+        // twice ("quýt" = qu + uyt), and the plain split as a fallback so the glide
+        // reading can't shadow it ("giếc" = g + iêc, not gi + êc).
         if accepts(onsetEnd: onsetEnd, rimeStart: onsetEnd) { return true }
-        // qu- glide, second reading (see the Array twin): the u counts in both the onset
-        // and the rime — "quýt" = qu + uyt.
-        return quGlide && accepts(onsetEnd: onsetEnd, rimeStart: pos)
+        if quGlide, accepts(onsetEnd: onsetEnd, rimeStart: pos) { return true }
+        return onsetEnd != pos && accepts(onsetEnd: pos, rimeStart: pos)
     }
 }
 
