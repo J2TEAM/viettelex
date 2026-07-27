@@ -201,6 +201,15 @@ final class TelexInputController: IMKInputController {
         // engine drop is the only safe teardown. (endComposition is also wrong: its
         // marked-text branch finalizes with insertText(engine.composed), the very
         // injection we must avoid in a secure field.)
+        // A password field is off limits for composition. `IsSecureEventInputEnabled()`
+        // catches native secure input; SecureFieldDetector catches the web
+        // `<input type="password">` case, which does NOT switch secure input on and was
+        // therefore composed into normally (field report 2026-07-27).
+        if SecureFieldDetector.isSecure {
+            engine.reset(); tracking = false; onLen = 0
+            logDecision("handle \(AppState.shared.currentBundleID ?? "?"): secure FIELD → passthrough (no compose)")
+            return false
+        }
         if IsSecureEventInputEnabled() {
             logDecision("handle \(AppState.shared.currentBundleID ?? "?"): secure-input → discard (raw passthrough)")
             discardComposition(); return false
@@ -1043,6 +1052,7 @@ final class TelexInputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
+        SecureFieldDetector.invalidate()   // new field: re-scan whether it is a password field
         dropComposition(cause: "activateServer")
         engine.resetContext()   // new field/app: don't inherit the last word's English context
         fieldVerified = false

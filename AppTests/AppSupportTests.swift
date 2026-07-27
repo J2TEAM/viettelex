@@ -375,3 +375,21 @@ final class TrackedWindowFreshnessTests: XCTestCase {
         XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 0, selectionLength: 0, expected: 0))
     }
 }
+
+// Password fields must never be composed into. `IsSecureEventInputEnabled()` only covers
+// apps that switch secure input on — a web <input type="password"> does not, and the
+// `.emptyReset` strategy's U+202F placeholder then lands in the password as a stray
+// character (field report 2026-07-27: "điền password thấy nó inject thêm 1-2 ký tự").
+// The AX subrole is the signal; this pins its polarity, because a false POSITIVE would
+// silently stop Vietnamese typing everywhere.
+final class SecureFieldDetectionTests: XCTestCase {
+
+    func testOnlyTheExplicitPasswordSubroleCounts() {
+        XCTAssertTrue(SecureFieldDetector.isSecureSubrole("AXSecureTextField"))
+        // Ordinary fields and every "we don't know" answer must read as NOT secure.
+        for subrole in ["AXStandardWindow", "AXSearchField", "AXTextField", "", "AXUnknown"] {
+            XCTAssertFalse(SecureFieldDetector.isSecureSubrole(subrole), "'\(subrole)' is not a password field")
+        }
+        XCTAssertFalse(SecureFieldDetector.isSecureSubrole(nil), "no subrole → compose as usual")
+    }
+}

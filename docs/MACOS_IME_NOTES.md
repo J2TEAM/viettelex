@@ -9,6 +9,39 @@ Info.plist again — every item below cost real time to discover.
 > selection lives in `TYPING-STRATEGIES.md` + `typing-modes.yml`; app lists
 > named below may be stale.
 
+## Ô mật khẩu: `IsSecureEventInputEnabled()` KHÔNG đủ — 2026-07-27
+
+Field report: "điền password thấy nó inject thêm 1-2 ký tự".
+
+`IsSecureEventInputEnabled()` chỉ đúng với app **tự bật secure input**: login window,
+Keychain Access, `sudo` trong terminal, `NSSecureTextField` native. Một
+`<input type="password">` trên web **KHÔNG** bật nó. Nên trước 1.4.19 engine vẫn compose
+bình thường trong form đăng nhập của browser, và:
+
+- chiến lược `.emptyReset` (omnibox browser + Office) chèn **U+202F** để huỷ inline
+  autocomplete rồi backspace xoá đi — nếu ô password có JS handler nuốt/đổi thứ tự thì
+  ký tự đó **sống sót** = đúng "1 ký tự lạ";
+- `.selection` bấm Shift+← rồi ghi đè — trong ô password là ăn/thêm ký tự;
+- và ô password rơi vào `.emptyReset` dễ hơn tưởng: per-field detector không đọc được
+  cây AX (Gecko, hoặc Chromium chưa build tree) thì mặc định là *selection*.
+
+**Tín hiệu đúng: subrole `AXSecureTextField`** (AppKit `NSSecureTextField` và mapping của
+WebKit/Chromium cho password input đều dùng nó) → `SecureFieldDetector`. Hai đường bàn
+phím đều passthrough hoàn toàn khi thấy nó, engine reset, không emit gì.
+
+Ba chi tiết phải giữ:
+1. **Chỉ subrole khớp CHÍNH XÁC mới tính secure.** Subrole thiếu/không đọc được phải coi
+   là *không* secure — false positive là im lặng tắt gõ tiếng Việt ở mọi nơi.
+2. **Không post health probe (F20) khi ô password đang focus.** Dưới secure input tap
+   không nhận event, nên marker mình post không được chính mình nuốt → nó rơi vào app
+   đang focus. Và watchdog phải **không** tính đó là probe miss, kẻo báo "stale grant"
+   oan rồi tear down tap đang lành.
+3. Probe post cả **keyUp** (trước chỉ có keyDown → phím logic bị giữ ở app theo dõi
+   key state).
+
+Cache: TTL 300ms + invalidate khi `activateServer` (đổi ô/đổi app). Ký tự ĐẦU của
+password mà đọc trễ thì vô hại — engine chỉ ghi lại text từ phím thứ hai của âm tiết.
+
 ## "Quyền Trợ năng bị kẹt": nguyên nhân thật và cách sửa dứt điểm — 2026-07-27
 
 **Cơ chế.** Grant Accessibility nằm ở TCC.db hệ thống, mỗi dòng gồm bundle id + một

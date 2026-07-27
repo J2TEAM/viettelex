@@ -265,6 +265,78 @@ enum SpotlightDetector {
     }
 }
 
+/// Is the FOCUSED field a password field? `IsSecureEventInputEnabled()` only covers
+/// apps that switch on secure event input (login window, Keychain Access, `sudo` in a
+/// terminal, native NSSecureTextField). A web `<input type="password">` normally does
+/// NOT — so without this check the engine happily composes inside a browser login form,
+/// and any edit strategy that types placeholder/selection keys writes visible junk into
+/// the password the user cannot proofread (field report 2026-07-27: "điền password thấy
+/// nó inject thêm 1-2 ký tự" — the `.emptyReset` strategy posts U+202F to cancel inline
+/// autocomplete, which is exactly one extra character).
+///
+/// Accessibility exposes it as the SUBROLE `AXSecureTextField` (AppKit's
+/// NSSecureTextField and the WebKit/Chromium mapping for password inputs both use it).
+/// Same threading/caching shape as FocusedFieldDetector: the AX read never runs on a
+/// keystroke, and "unknown" is answered conservatively (see `isSecure`).
+enum SecureFieldDetector {
+    private static let lock = NSLock()
+    private static var cached = false
+    private static var lastCheckNs: UInt64 = 0
+    private static var refreshing = false
+    private static let ttlNs: UInt64 = 300_000_000        // 300ms: focus changes must be seen fast
+    private static let scanQueue = DispatchQueue(label: "com.viettelex.secure-scan", qos: .userInitiated)
+
+    /// True when the focused field is a password field. Cached with a short TTL and
+    /// refreshed in the background; a focus change is therefore seen at most one
+    /// keystroke late — and the first character of a password is the one case where a
+    /// stale "false" is harmless (a single letter cannot compose into anything yet: the
+    /// engine only rewrites text from the SECOND key of a syllable onward).
+    static var isSecure: Bool {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let (stale, value): (Bool, Bool) = lock.withLock {
+            let needsRefresh = now &- lastCheckNs >= ttlNs && !refreshing
+            if needsRefresh { refreshing = true }
+            return (needsRefresh, cached)
+        }
+        if stale {
+            scanQueue.async {
+                let secure = scan()
+                lock.withLock {
+                    cached = secure
+                    lastCheckNs = DispatchTime.now().uptimeNanoseconds
+                    refreshing = false
+                }
+            }
+        }
+        return value
+    }
+
+    /// Forget the cached answer (focus/app switch) so the next read re-scans.
+    static func invalidate() { lock.withLock { lastCheckNs = 0 } }
+
+    private static func scan() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05)
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID()
+        else { return false }
+        let element = focused as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        var subroleRef: CFTypeRef?
+        let ok = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef) == .success
+        return isSecureSubrole(ok ? subroleRef as? String : nil)
+    }
+
+    /// The subrole test, split out so it can be pinned by tests. ONLY an explicit
+    /// password subrole counts: a missing/unknown subrole must read as "not secure", or a
+    /// browser that fails to answer would silently stop composing Vietnamese everywhere.
+    static func isSecureSubrole(_ subrole: String?) -> Bool {
+        subrole == "AXSecureTextField"
+    }
+}
+
 /// Per-FIELD mode resolution for apps pinned to `.axDetect` (Bảng chế độ gõ →
 /// "Tự dò theo ô"): a browser's address/search bar needs selection-replace (its
 /// inline autocomplete races in-place edits — the Safari smart-search bug), while
@@ -618,8 +690,18 @@ enum SyntheticKeyboard {
     static let probeKeycode: Int64 = 90   // kVK_F20 — not on any physical Apple keyboard; keycode 127 gets FILTERED by the OS (never re-enters the tap)
     static func postProbe() {
         guard let src = source else { return }
-        guard let ev = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(probeKeycode), keyDown: true) else { return }
-        ev.post(tap: .cgSessionEventTap)
+        // NEVER post the probe while a password field has focus. Under secure input our
+        // tap does not receive events, so the marker is not swallowed by us — it lands in
+        // the focused app instead (field report 2026-07-27: stray characters while typing
+        // a password). Health monitoring is not worth touching a password field.
+        if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure { return }
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(probeKeycode), keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(probeKeycode), keyDown: false)
+        else { return }
+        // keyUp as well: a lone keyDown leaves the key logically held in apps that track
+        // key state, and an unbalanced function key was observed as a stuck modifier.
+        down.post(tap: .cgSessionEventTap)
+        up.post(tap: .cgSessionEventTap)
     }
 
     /// IMKit-path recognizer: match ONLY on the private source's `magic` userData,
@@ -1067,7 +1149,12 @@ final class TerminalTapController {
             } else {
                 self.probeMisses = 0
             }
-            if let tap = self.stateLock.withLock({ self.tap }), CGEvent.tapIsEnabled(tap: tap) {
+            if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure {
+                // Password field in focus: we do not post the probe there (see postProbe),
+                // so there is nothing to ack — counting that as a miss would raise a false
+                // "stale grant" and tear down a perfectly healthy tap.
+                self.probeMisses = 0
+            } else if let tap = self.stateLock.withLock({ self.tap }), CGEvent.tapIsEnabled(tap: tap) {
                 self.stateLock.withLock { self.probeSentTick &+= 1 }
                 SyntheticKeyboard.postProbe()
             } else if Accessibility.grantLooksStale, !self.trustLooksStale {
@@ -1455,7 +1542,12 @@ final class TerminalTapController {
         } else {
             engine.reset(); return pass
         }
-        if IsSecureEventInputEnabled() { engine.reset(); return pass }
+        // Secure input (native password prompts) OR an AX-reported password field (web
+        // login forms, which do NOT switch secure input on): never compose, never emit —
+        // pass the raw key through untouched. See SecureFieldDetector.
+        if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure {
+            engine.reset(); return pass
+        }
 
         // Reflect the current "bỏ dấu tự do" setting (feed/backspace/boundary all
         // re-parse `raw` and honor it).
