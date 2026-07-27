@@ -426,6 +426,14 @@ final class TelexInputController: IMKInputController {
             }
         }
 
+        // RE-EDIT (experimental, opt-in): a tone/mark key on an EMPTY engine right after a
+        // word means "add this diacritic to that word" ("toan" + s → toán). Seed the
+        // engine from the text on screen so the normal replace machinery does the edit.
+        if engine.isEmpty, tracking, selToClear == 0,
+           AppState.shared.reEditWord, Self.isDiacriticOnlyKey(ascii, vni: engine.vniMode) {
+            tryReEditWord(caret: anchor, client, id: id)
+        }
+
         let action = engine.feed(ch)
         if usesMarkedNow(id) { updateMarked(client); return true }
         switch action {
@@ -448,6 +456,73 @@ final class TelexInputController: IMKInputController {
             applyInPlace(bs: bs, insert: insert, client)
             return true
         }
+    }
+
+
+    // MARK: - Re-edit the word before the caret (experimental)
+
+    /// Keys that can only ever ADD a diacritic, never a letter: the Telex tone keys
+    /// (s f r x j), the tone remover (z) and the horn/breve modifier (w) — or, in VNI,
+    /// the digits. The doubler letters (a e o d) are deliberately NOT here: they are
+    /// ordinary letters too, so a plain "ca" + "a" keeps behaving exactly as before and
+    /// re-edit costs a text read-back only on keys that are unambiguously modifiers.
+    static func isDiacriticOnlyKey(_ ascii: UInt8, vni: Bool) -> Bool {
+        if vni { return isAsciiDigit(ascii) }
+        switch ascii | 0x20 {                     // fold case
+        case UInt8(ascii: "s"), UInt8(ascii: "f"), UInt8(ascii: "r"), UInt8(ascii: "x"),
+             UInt8(ascii: "j"), UInt8(ascii: "z"), UInt8(ascii: "w"):
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The trailing word in `text` (the characters just before the caret) that a
+    /// diacritic key could still modify. Letters only — it stops at a space, digit,
+    /// punctuation or symbol, so "mp3", "a-b" and "x)" have no re-editable tail. Returns
+    /// nil when there is none, or when the run is longer than a syllable can be (the
+    /// engine would refuse it anyway, and reading further is pointless).
+    static func trailingWord(_ text: String, maxLength: Int = 12) -> String? {
+        var word = ""
+        for ch in text.reversed() {
+            guard ch.isLetter else { break }
+            word.insert(ch, at: word.startIndex)
+            if word.count > maxLength { return nil }
+        }
+        return word.isEmpty ? nil : word
+    }
+
+    /// Seed the engine from the word already on screen so the key about to be fed edits
+    /// IT instead of starting a new one. Silent no-op whenever anything is uncertain —
+    /// the alternative is rewriting text the user never asked to change:
+    ///  • only apps already PROVEN to honor in-place replacement (learned in-place),
+    ///    never a marked-text field and never a per-field/omnibox browser field whose
+    ///    inline autocomplete rewrites text underneath us;
+    ///  • only a canonical (precomposed) read-back — an NFD field would make our UTF-16
+    ///    arithmetic cut into combining marks;
+    ///  • only when `engine.seed` ROUND-TRIPS the word, which is what rejects English
+    ///    words, other tone-placement styles and anything untypable.
+    private func tryReEditWord(caret: Int, _ client: IMKTextInput, id: String?) {
+        guard caret > 0, AppState.shared.isLearnedInPlace(id),
+              !AppState.shared.usesAxDetect(id), !usesMarkedNow(id) else { return }
+        let window = min(caret, 24)
+        guard let sub = client.attributedSubstring(from: NSRange(location: caret - window,
+                                                                 length: window)) else { return }
+        let text = sub.string
+        guard text == text.precomposedStringWithCanonicalMapping else {
+            DebugLog.log("re-edit \(id ?? "?"): skipped (field text is not precomposed)")
+            return
+        }
+        guard let word = Self.trailingWord(text) else { return }
+        let wordLen = (word as NSString).length
+        guard wordLen <= caret, engine.seed(word) else { return }
+        // The composition now IS that on-screen word: point the tracking window at it so
+        // the next replace lands on the word's own characters. `anchorVerified` is set —
+        // the anchor came from a caret read taken one line ago, not a stale word start.
+        anchor = caret - wordLen
+        onLen = wordLen
+        anchorVerified = true
+        DebugLog.log("re-edit \(id ?? "?"): seeded \(wordLen) chars before caret")
     }
 
     // MARK: - In-place mode (default: no marked text, caret stays at end)

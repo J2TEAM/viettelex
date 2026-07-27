@@ -89,8 +89,11 @@ enum UpdateCheck {
         }
     }
 
-    /// Network happens ONLY here (and checkStable above). Called from the About
-    /// tab's button — the manual path checks the NEWEST release, stable or not.
+    /// Network happens ONLY here (and checkStable above). Called from the About tab's
+    /// button. NOTE: GitHub's `/releases/latest` deliberately SKIPS pre-releases, so this
+    /// is the newest STABLE release — a pre-release (v1.4.16 while stable is 1.4.15) is
+    /// never pushed onto someone who just clicked "check". Same channel as the weekly
+    /// auto-check in spirit; testers install a pre-release by hand.
     static func check() async -> Outcome {
         let current = currentVersion()
         guard let api = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else {
@@ -136,7 +139,10 @@ enum UpdateCheck {
 /// next keystroke; already-open apps may need an input-source flip, same as
 /// any IME restart).
 enum SelfUpdater {
-    static func run(version: String) {
+    /// `onFailure` runs on the main thread when the install did NOT happen (network,
+    /// signature gate, unzip, swap). There is no success callback on purpose: a
+    /// successful install ends in `exit(0)`.
+    static func run(version: String, onFailure: (() -> Void)? = nil) {
         let zipURL = URL(string:
             "https://github.com/ptrinh/viettelex/releases/download/v\(version)/VietTelex-\(version).app.zip")!
         Task.detached {
@@ -185,6 +191,7 @@ enum SelfUpdater {
                 }
             } catch {
                 await MainActor.run {
+                    onFailure?()
                     let fail = NSAlert()
                     fail.messageText = VTLocalized("Update failed")
                     fail.informativeText = String(format: VTLocalized("Update failed body"), error.localizedDescription)

@@ -35,6 +35,7 @@ final class AppState: @unchecked Sendable {
         static let quickTelex = "quickTelex"
         static let vniMode = "vniMode"
         static let contextualEnglish = "contextualEnglish"
+        static let reEditWord = "reEditWord"
         static let shortcuts = "shortcuts"
         static let fallbackApps = "fallbackApps"      // learned: ignore replacementRange
         static let probedApps = "probedApps"          // learned: verified good
@@ -160,6 +161,15 @@ final class AppState: @unchecked Sendable {
     var vniMode: Bool {
         get { defaults.object(forKey: Key.vniMode) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.vniMode) }
+    }
+
+    /// Re-edit the word BEFORE the caret (EXPERIMENTAL, default OFF): a tone/mark key
+    /// typed on an empty engine seeds it from the text already on screen, so "toan" + `s`
+    /// becomes "toán" without retyping the word. Only in apps already proven to honor
+    /// in-place replacement, never in an omnibox-style field — see `tryReEditWord`.
+    var reEditWord: Bool {
+        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
     /// Context-based decision (EXPERIMENTAL, default OFF). See `TelexEngine.contextualEnglish`.

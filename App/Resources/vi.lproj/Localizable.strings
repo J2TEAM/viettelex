@@ -182,3 +182,5 @@
 "OK" = "OK";
 "Learn Telex typing" = "Học gõ Telex";
 "How to report a bug" = "Hướng dẫn báo lỗi";
+"Downloading and installing…" = "Đang tải và cài đặt…";
+"Add diacritics to the word before the caret (experimental)" = "Gõ thêm dấu cho từ ngay trước con trỏ (thử nghiệm)";

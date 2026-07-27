@@ -128,6 +128,76 @@ final class TypingMatrixTests: XCTestCase {
     // compose(keys) == compose(telexKeys(compose(keys))). This exercises far more of
     // the tone-placement / propagation machine than any hand table, and can only fail
     // if the engine composes the same sound two different ways.
+    // MARK: - Re-edit seeding (engine.seed)
+
+    /// `seed` rebuilds the engine from text ALREADY on screen so the next key can add a
+    /// diacritic to it. Contract: it either round-trips the word exactly, or it refuses.
+    func testSeedThenOneMoreKeyEditsTheWord() {
+        let cases = [("toan", "s", "toán"), ("toan", "f", "toàn"), ("toán", "f", "toàn"),
+                     ("viet", "j", "viẹt"), ("truong", "w", "trương"), ("Toan", "s", "Toán"),
+                     ("đô", "j", "độ"), ("ban", "r", "bản"), ("thu", "w", "thư")]
+        for (word, key, want) in cases {
+            var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+            XCTAssertTrue(e.seed(word), "should seed '\(word)'")
+            XCTAssertEqual(e.composed, word, "seed must reproduce '\(word)' before any key")
+            _ = e.feed(Character(key))
+            XCTAssertEqual(e.composed, want, "'\(word)' + \(key)")
+        }
+    }
+
+    func testSeedRoundTripsEveryRealWord() {
+        for word in Self.realWords {
+            var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+            guard e.seed(word) else {
+                // Only a tone-placement STYLE mismatch may refuse a real word: with the
+                // old-style default, "hoà"/"thuỷ" are spelled "hòa"/"thủy" here.
+                var t = TelexEngine(); t.freeMarking = true; t.modernTone = true
+                XCTAssertTrue(t.seed(word), "'\(word)' round-trips in neither style")
+                continue
+            }
+            XCTAssertEqual(e.composed, word)
+            XCTAssertTrue(e.rawKeystrokes.allSatisfy { $0.isASCII }, "seed keys must be ascii")
+        }
+    }
+
+    func testSeedRefusesWhatItCannotReproduce() {
+        for word in ["google", "office", "abc123", "café", "naïve", "hello!", "", "ĐƯỜNGXÁLỚN"] {
+            var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+            if e.seed(word) {
+                // If it DID seed, the round-trip guarantee must still hold exactly.
+                XCTAssertEqual(e.composed, word, "seeded '\(word)' but composed differently")
+            } else {
+                XCTAssertTrue(e.isEmpty, "a refused seed must leave the engine empty")
+            }
+        }
+    }
+
+    /// VNI: seeding uses the DIGIT spelling, so a VNI tone digit edits the word.
+    func testSeedInVniMode() {
+        for (word, digit, want) in [("toan", "1", "toán"), ("đô", "5", "độ"), ("viet", "5", "viẹt")] {
+            var e = TelexEngine(); e.vniMode = true; e.liveSpellCheck = true
+            XCTAssertTrue(e.seed(word), "should seed '\(word)' in VNI")
+            _ = e.feed(Character(digit))
+            XCTAssertEqual(e.composed, want, "VNI '\(word)' + \(digit)")
+        }
+    }
+
+    /// A seeded word must still behave like a typed one at the boundary: valid Vietnamese
+    /// is kept, and ⌫ walks back through the composition instead of nuking it.
+    func testSeededWordCommitsAndBackspacesNormally() {
+        var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+        XCTAssertTrue(e.seed("toan"))
+        _ = e.feed("s")
+        XCTAssertEqual(e.commitText(autoRestore: true), "toán", "valid VN must not restore")
+
+        var b = TelexEngine(); b.freeMarking = true; b.liveSpellCheck = true
+        XCTAssertTrue(b.seed("toán"))
+        _ = b.backspace()
+        // ⌫ drops the 'n' AND re-places the tone on the new nucleus — exactly what a
+        // typed "toans" does ("toán" → "tóa"), proof the seeded state is the real thing.
+        XCTAssertEqual(b.composed, "tóa", "⌫ on a seeded word behaves like a typed one")
+    }
+
     // MARK: - 3. Exhaustive onset × rime × tone matrix (table-driven)
 
     /// EVERY onset in the table, EVERY rime in the table, every tone the rime allows:

@@ -62,6 +62,7 @@ final class SettingsModel: ObservableObject {
     @Published var quickTelex: Bool { didSet { AppState.shared.quickTelex = quickTelex } }
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
+    @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
     @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
     @Published var tapSkipSyntheticKeyUp: Bool { didSet { AppState.shared.tapSkipSyntheticKeyUp = tapSkipSyntheticKeyUp } }
@@ -107,6 +108,7 @@ final class SettingsModel: ObservableObject {
         quickTelex = AppState.shared.quickTelex
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
+        reEditWord = AppState.shared.reEditWord
         tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
         axSelectionReplace = AppState.shared.axSelectionReplace
@@ -610,6 +612,8 @@ struct ExperimentalTab: View {
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Context-based decision (experimental)"), isOn: $model.contextualEnglish)
+                Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
+                       isOn: $model.reEditWord)
                 Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -695,7 +699,7 @@ struct ExperimentalTab: View {
             "learned fallback (tap/marked): \(fallback.isEmpty ? "(none)" : fallback.joined(separator: ", "))",
             "manual overrides: \(manual.isEmpty ? "(none)" : manual.joined(separator: ", "))",
             "flags: modifyInPlace=\(s.tapModifyEventInPlace) skipKeyUp=\(s.tapSkipSyntheticKeyUp) axReplace=\(s.axSelectionReplace) breaker=\(s.tapCascadeBreaker)",
-            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish)",
+            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord)",
         ]
     }
 }
@@ -728,7 +732,10 @@ struct AboutTab: View {
 
     @State private var checking = false
     @State private var status: String?     // result line under the button
-    @State private var updateURL: URL?     // set only when a newer release exists
+    /// Set only when a newer release exists — the version the button will install.
+    /// (No URL state: SelfUpdater's own failure alert offers the releases page.)
+    @State private var updateVersion: String?
+    @State private var installing = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -749,11 +756,24 @@ struct AboutTab: View {
             // Manual update check — the only thing that touches the network, and
             // only on this click (see Updater.swift).
             VStack(spacing: 4) {
-                if checking {
+                if checking || installing {
                     ProgressView().controlSize(.small)
-                } else if let updateURL {
-                    Button(model.loc("Download update…")) { NSWorkspace.shared.open(updateURL) }
-                        .prominentGlass()
+                } else if let updateVersion {
+                    // Self-install, the SAME path the weekly notification's "Update now"
+                    // uses: download the release app.zip → verify Developer ID + our team
+                    // → atomic bundle swap → relaunch. This button used to only open the
+                    // releases page, so the "I want it now" path was the manual one
+                    // (user decision 2026-07-27). A failure falls back to that page via
+                    // SelfUpdater's own alert.
+                    Button(model.loc("Update now")) {
+                        installing = true
+                        status = model.loc("Downloading and installing…")
+                        SelfUpdater.run(version: updateVersion) {
+                            installing = false
+                            status = nil                     // SelfUpdater showed the reason
+                        }
+                    }
+                    .prominentGlass()
                 } else {
                     Button(model.loc("Check for updates")) { runCheck() }
                         .prominentGlass()
@@ -775,7 +795,7 @@ struct AboutTab: View {
     }
 
     private func runCheck() {
-        checking = true; status = nil; updateURL = nil
+        checking = true; status = nil; updateVersion = nil
         Task {
             let outcome = await UpdateCheck.check()
             await MainActor.run {
@@ -783,8 +803,9 @@ struct AboutTab: View {
                 switch outcome {
                 case .upToDate(let v):
                     status = String(format: model.loc("You’re up to date (%@)."), v)
-                case .update(let latest, let url):
-                    status = String(format: model.loc("Update available: %@"), latest); updateURL = url
+                case .update(let latest, _):
+                    status = String(format: model.loc("Update available: %@"), latest)
+                    updateVersion = latest
                 case .failed(let e):
                     status = String(format: model.loc("Couldn’t check — %@."), e)
                 }

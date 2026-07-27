@@ -210,6 +210,93 @@ public struct TelexEngine {
 
     // MARK: - Public entry points
 
+    /// RE-EDIT an already committed word: rebuild the engine state from TEXT that is
+    /// already on screen, so the next keystroke can add a diacritic to it ("toan" + `s`
+    /// → "toán"). Returns true only when the word round-trips EXACTLY.
+    ///
+    /// How: the word is turned back into the keystrokes that would have produced it
+    /// (detone → mark expansion → trailing tone key, or the VNI digits in VNI mode) and
+    /// those keys are replayed through `feed`. Everything downstream — tone placement,
+    /// ươ propagation, ⌫ mapping, boundary restore — therefore behaves exactly as if the
+    /// user had just typed the word, with no second code path to keep in sync.
+    ///
+    /// The round-trip check is the SAFETY: if replaying the keys does not reproduce the
+    /// word character-for-character, the engine is reset and false is returned, so the
+    /// caller must leave the text alone. That is what refuses
+    ///   • non-Vietnamese text ("google" → keys "google" → composes "gôgle" ✗),
+    ///   • a tone-placement style the current settings spell differently
+    ///     ("hòa" on screen while `modernTone` produces "hoà" ✗),
+    ///   • anything with a character no keystroke can produce (digits, symbols, é/ñ…).
+    /// Refusing costs the user nothing (the word simply isn't re-editable); guessing
+    /// would rewrite text they never asked to change.
+    public mutating func seed(_ word: String) -> Bool {
+        reset()
+        guard !word.isEmpty, word.count <= Self.capacity / 2 else { return false }
+        guard let keys = Self.seedKeystrokes(for: word, vni: vniMode) else { return false }
+        guard keys.count <= Self.capacity else { reset(); return false }
+        for ch in keys { _ = feed(ch) }
+        guard composed == word else { reset(); return false }
+        return true
+    }
+
+    /// Keystrokes that would compose `word`, or nil if some character can't be typed.
+    /// Telex: marks expand (â→aa, ư→uw, đ→dd) and the tone key goes last, the way the
+    /// generator in the typing-matrix tests does it. VNI: letters stay literal, marks
+    /// are digits (6 circumflex, 7 horn, 8 breve, 9 đ) and tones are 1-5, also last.
+    private static func seedKeystrokes(for word: String, vni: Bool) -> String? {
+        var out = ""
+        var toneKey: Character?
+        for ch in word {
+            let isUpper = ch.isUppercase
+            let lower = Character(ch.lowercased())
+            // Strip the tone first: "ấ" → ("â", acute).
+            var toneless = lower
+            if lower.unicodeScalars.count == 1, let sc = lower.unicodeScalars.first,
+               let (base, t) = Tables.detoneTable[sc.value] {
+                if t != .none {
+                    guard toneKey == nil else { return nil }   // two tones in one syllable
+                    toneKey = vni ? Self.vniToneKey(t) : Self.telexToneKey(t)
+                }
+                toneless = Character(Unicode.Scalar(base)!)
+            }
+            let expanded: String
+            if let e = (vni ? Self.vniMarkExpansion : Self.telexMarkExpansion)[toneless] {
+                expanded = e
+            } else {
+                guard toneless.isASCII, toneless.isLetter else { return nil }
+                expanded = String(toneless)
+            }
+            // A mark digit is never uppercased; a mark LETTER follows the letter's case.
+            out += isUpper ? (vni ? Self.upperFirst(expanded) : expanded.uppercased()) : expanded
+        }
+        if let toneKey { out.append(toneKey) }
+        return out
+    }
+
+    private static let telexMarkExpansion: [Character: String] = [
+        "â": "aa", "ă": "aw", "ê": "ee", "ô": "oo", "ơ": "ow", "ư": "uw", "đ": "dd",
+    ]
+    private static let vniMarkExpansion: [Character: String] = [
+        "â": "a6", "ê": "e6", "ô": "o6", "ơ": "o7", "ư": "u7", "ă": "a8", "đ": "d9",
+    ]
+    private static func telexToneKey(_ t: Tone) -> Character? {
+        switch t {
+        case .acute: return "s"; case .grave: return "f"; case .hook: return "r"
+        case .tilde: return "x"; case .dot: return "j"; case .none: return nil
+        }
+    }
+    private static func vniToneKey(_ t: Tone) -> Character? {
+        switch t {
+        case .acute: return "1"; case .grave: return "2"; case .hook: return "3"
+        case .tilde: return "4"; case .dot: return "5"; case .none: return nil
+        }
+    }
+    /// "a6" → "A6" (only the LETTER takes the case; the mark digit must stay a digit).
+    private static func upperFirst(_ s: String) -> String {
+        guard let f = s.first else { return s }
+        return String(f).uppercased() + String(s.dropFirst())
+    }
+
     /// Feed one typed character. Only ascii letters compose; other characters
     /// should be routed through `commitBoundary` by the caller.
     public mutating func feed(_ ch: Character) -> TelexAction {

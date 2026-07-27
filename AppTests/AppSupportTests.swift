@@ -313,3 +313,45 @@ final class WordKeyRoutingTests: XCTestCase {
         }
     }
 }
+
+// Re-edit the word before the caret (experimental, opt-in): the two PURE pieces of the
+// decision — which keys may trigger a read-back, and which trailing text counts as a
+// re-editable word. The seeding itself is engine-side (TelexEngine.seed, round-trip
+// checked there); the IMKit wiring needs a live client and is covered by hand.
+final class ReEditWordTests: XCTestCase {
+
+    func testOnlyModifierKeysTrigger() {
+        for c in "sfrxjzwSFRXJZW".utf8 {
+            XCTAssertTrue(TelexInputController.isDiacriticOnlyKey(c, vni: false),
+                          "'\(Character(UnicodeScalar(c)))' is a Telex modifier")
+        }
+        // Ordinary letters — including the doublers a/e/o/d — must NOT trigger a read-back.
+        for c in "abcdeghiklmnopqtuvy".utf8 {
+            XCTAssertFalse(TelexInputController.isDiacriticOnlyKey(c, vni: false),
+                           "'\(Character(UnicodeScalar(c)))' is a letter, not a modifier")
+        }
+        // VNI: the digits carry the diacritics, letters never do.
+        for c in "0123456789".utf8 {
+            XCTAssertTrue(TelexInputController.isDiacriticOnlyKey(c, vni: true))
+        }
+        for c in "sfrxjw".utf8 {
+            XCTAssertFalse(TelexInputController.isDiacriticOnlyKey(c, vni: true),
+                           "in VNI a letter is always literal")
+        }
+    }
+
+    func testTrailingWordExtraction() {
+        XCTAssertEqual(TelexInputController.trailingWord("xin chao toan"), "toan")
+        XCTAssertEqual(TelexInputController.trailingWord("toan"), "toan")
+        XCTAssertEqual(TelexInputController.trailingWord("Đường"), "Đường")
+        XCTAssertEqual(TelexInputController.trailingWord("(hoa"), "hoa")
+        // Stops at anything that is not a letter — no re-editable tail at all.
+        XCTAssertNil(TelexInputController.trailingWord("mp3"))
+        XCTAssertNil(TelexInputController.trailingWord("a-b-"))
+        XCTAssertNil(TelexInputController.trailingWord("done "))
+        XCTAssertNil(TelexInputController.trailingWord(""))
+        XCTAssertNil(TelexInputController.trailingWord("x)"))
+        // Longer than any syllable → not worth reading (the engine would refuse it).
+        XCTAssertNil(TelexInputController.trailingWord("abcdefghijklmnop"))
+    }
+}
