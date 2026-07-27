@@ -538,8 +538,15 @@ final class TelexInputController: IMKInputController {
     ///  • only when `engine.seed` ROUND-TRIPS the word, which is what rejects English
     ///    words, other tone-placement styles and anything untypable.
     private func tryReEditWord(caret: Int, _ client: IMKTextInput, id: String?) {
-        guard caret > 0, AppState.shared.isLearnedInPlace(id),
-              !AppState.shared.usesAxDetect(id), !usesMarkedNow(id) else { return }
+        guard caret > 0, AppState.shared.isLearnedInPlace(id), !usesMarkedNow(id) else { return }
+        // Browsers are excluded PER FIELD, not per app: only the address/search bar has the
+        // inline autocomplete that makes re-editing unsafe, and blanket-excluding every
+        // browser turned the feature off exactly where people type most — inside the page
+        // (report 2026-07-27: "đưa con trỏ về sau chữ 'toán', ấn 2 … không được", in Zen).
+        if AppState.shared.usesAxDetect(id), FocusedFieldDetector.wantsSelection {
+            DebugLog.log("re-edit \(id ?? "?"): skipped (field resolves to selection-replace)")
+            return
+        }
         let window = min(caret, 24)
         guard let sub = client.attributedSubstring(from: NSRange(location: caret - window,
                                                                  length: window)) else { return }

@@ -230,6 +230,17 @@ enum FocusedFieldDetector {
             scanQueue.async {
                 pokeChromiumAX()
                 let wants = scan()
+                // Diagnostic (debug logging only, and off the keystroke path): WHY this
+                // verdict. A browser whose AX tree we cannot read falls back to
+                // selection-replace for EVERY field — including page content, where each
+                // tone edit then shows as a visible flicker (Zen report 2026-07-27, where
+                // pinning the app to in-place was "cực kì mượt"). Without the role chain in
+                // the log there is no way to tell "toolbar, correctly detected" from "read
+                // nothing, guessed". Role names only — never text or values.
+                if AppState.shared.debugLogging {
+                    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) roles=[\(roleChain())]")
+                }
                 lock.withLock {
                     cached = wants
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
@@ -319,6 +330,30 @@ enum FocusedFieldDetector {
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, 0.05)
         return element
+    }
+
+    /// The focused element's ancestor ROLES, joined — diagnostics only (see the caller).
+    private static func roleChain() -> String {
+        guard var el = focusedElementForScan() else { return "no-focused-element" }
+        var roles: [String] = []
+        for _ in 0..<12 {
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            var r: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &r) == .success,
+               let role = r as? String {
+                roles.append(role)
+                if role == "AXWebArea" || role == "AXToolbar" { break }
+            } else {
+                roles.append("?")
+            }
+            var p: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(el, kAXParentAttribute as CFString, &p) == .success,
+                  let par = p, CFGetTypeID(par) == AXUIElementGetTypeID() else {
+                roles.append("no-parent"); break
+            }
+            el = par as! AXUIElement
+        }
+        return roles.joined(separator: "→")
     }
 
     private static func scan() -> Bool {
