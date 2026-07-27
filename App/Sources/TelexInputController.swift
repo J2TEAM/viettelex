@@ -106,6 +106,10 @@ final class TelexInputController: IMKInputController {
     // from Chromium, which reports the whole window as one IMK client.
     private var fieldVerified = false
     private var fieldForcedMarked = false
+    /// Last shadow probe (seconds, reference date) — see `shadowProbeInterval`.
+    private var lastShadowProbe: TimeInterval = 0
+    private static let shadowProbeInterval: TimeInterval = 1.0
+
     private var fieldVerifyStrikes = 0
     /// Probes whose self-report was IMPOSSIBLE (caret before our anchor) in this focus.
     /// They teach nothing, but a field that only ever produces them must still land in a
@@ -527,21 +531,40 @@ final class TelexInputController: IMKInputController {
             && AppState.shared.isLearnedInPlace(id)
             && InPlaceProbe.shouldProbe(insertLength: (insert as NSString).length,
                                         bs: bs, clear: clear, needsProbe: true)
-        let shadowProbe = !realProbe && !verifyProbe && AppState.shared.debugLogging
+        // Throttled: the shadow probe costs an IMK read-back + an AX read PER EDIT, i.e.
+        // per diacritic key. Unthrottled it made typing feel slow for every tester who
+        // turned Debug logging on (issue #28, 2026-07-27) — and a sample every
+        // `shadowProbeInterval` carries the same diagnostic signal.
+        let shadowDue = Date.timeIntervalSinceReferenceDate - lastShadowProbe >= Self.shadowProbeInterval
+        let shadowProbe = !realProbe && !verifyProbe && AppState.shared.debugLogging && shadowDue
             && InPlaceProbe.shouldProbe(insertLength: (insert as NSString).length,
                                         bs: bs, clear: clear, needsProbe: true)
+        if shadowProbe { lastShadowProbe = Date.timeIntervalSinceReferenceDate }
         if realProbe || verifyProbe || shadowProbe {
             probeInPlace(inserted: insert, start: start, bs: bs, client,
                          kind: realProbe ? .real : (verifyProbe ? .verify : .shadow))
         }
     }
 
+
+    /// Drop the composition, LOGGING the cause when it wasn't empty. A silent mid-word
+    /// drop is what turns a VNI word into its raw tail: the tone DIGIT then lands on an
+    /// empty engine, where it has no vowel to mark and stays literal ("d9o65" → "đô5",
+    /// report issue #28 2026-07-27). Telex hides the same fault better (a stray "s"),
+    /// so the causes were never worth naming before — now they are.
+    private func dropComposition(cause: String) {
+        if !engine.isEmpty {
+            DebugLog.log("composition dropped mid-word (cause=\(cause)) len=\((engine.composed as NSString).length)")
+        }
+        engine.reset()
+        tracking = false
+    }
+
     /// In-place aborted before inserting anything (bogus selectedRange): condemn the
     /// app to marked text (persisted) and abandon the composition.
     private func inPlaceFailedHard(_ id: String?) {
         AppState.shared.markUsesMarkedText(id)
-        engine.reset()
-        tracking = false
+        dropComposition(cause: "in-place-failed-hard")
     }
 
     /// After a real in-place REPLACE into an unknown app, verify the old characters
@@ -626,8 +649,7 @@ final class TelexInputController: IMKInputController {
                     fieldVerified = true
                     fieldForcedMarked = true
                     DebugLog.log("verify: appended twice → marked text for this focus")
-                    engine.reset()
-                    tracking = false
+                    dropComposition(cause: "verify-appended")
                 } else {
                     DebugLog.log("verify: appended (strike 1/2) — will re-probe next replace")
                 }
@@ -643,8 +665,7 @@ final class TelexInputController: IMKInputController {
                     fieldVerified = true
                     fieldForcedMarked = true
                     DebugLog.log("verify: \(fieldInconclusive)× impossible caret → marked text for this focus")
-                    engine.reset()
-                    tracking = false
+                    dropComposition(cause: "verify-impossible-caret")
                 } else {
                     DebugLog.log("verify: impossible caret (caret < anchor) — no verdict "
                         + "(\(fieldInconclusive)/\(Self.maxInconclusive)), will re-probe")
@@ -698,8 +719,7 @@ final class TelexInputController: IMKInputController {
             } else {
                 AppState.shared.markUsesMarkedText(id)
             }
-            engine.reset()
-            tracking = false
+            dropComposition(cause: "probe-appended")
         }
     }
 
@@ -740,8 +760,7 @@ final class TelexInputController: IMKInputController {
             // Abandon the composition ONLY if the user is still in the condemned app —
             // by the time the read lands, focus (and the engine) may belong elsewhere.
             if AppState.shared.currentBundleID == id {
-                engine.reset()
-                tracking = false
+                dropComposition(cause: "probe-ax-appended")
             }
         }
     }
@@ -766,18 +785,26 @@ final class TelexInputController: IMKInputController {
             DebugLog.log("reprobe \(p.id ?? "?"): skipped (focus now \(nowID ?? "?"))")
             return
         }
-        let ax2 = AXTextEdit.readString(at: p.start, length: p.len)
-        let axLen = AXTextEdit.readLength()
+        // The IMK reads must stay on the main thread; the AX ones must NOT run here.
+        // Each AXTextEdit call can block for its 50ms messaging timeout, and this runs
+        // INSIDE handle() on the key right after every diacritic edit — a log-only
+        // experiment was stalling real typing whenever a tester enabled Debug logging
+        // ("gõ đến ký tự có dấu bị chậm", issue #28 2026-07-27). Read AX on the probe
+        // queue and log from there; the verdict was never acted on anyway.
         var imk2: String? = nil
         if let sub = client.attributedSubstring(from: NSRange(location: p.start, length: p.len)) {
             imk2 = sub.string
         }
         let sel = client.selectedRange()
-        DebugLog.log("reprobe \(p.id ?? "?"): t0=\(p.verdict) start=\(p.start) bs=\(p.bs) len=\(p.len) "
-            + "axMatch2=\(ax2.map { $0 == p.inserted ? "yes" : "no" } ?? "nil") "
-            + "imkMatch2=\(imk2.map { $0 == p.inserted ? "yes" : "no" } ?? "nil") "
-            + "axLen=\(axLen.map(String.init) ?? "nil") "
-            + "caret2=\(sel.location == NSNotFound ? "none" : String(sel.location))")
+        Self.axProbeQueue.async {
+            let ax2 = AXTextEdit.readString(at: p.start, length: p.len)
+            let axLen = AXTextEdit.readLength()
+            DebugLog.log("reprobe \(p.id ?? "?"): t0=\(p.verdict) start=\(p.start) bs=\(p.bs) len=\(p.len) "
+                + "axMatch2=\(ax2.map { $0 == p.inserted ? "yes" : "no" } ?? "nil") "
+                + "imkMatch2=\(imk2.map { $0 == p.inserted ? "yes" : "no" } ?? "nil") "
+                + "axLen=\(axLen.map(String.init) ?? "nil") "
+                + "caret2=\(sel.location == NSNotFound ? "none" : String(sel.location))")
+        }
     }
 
     // MARK: - Marked-text mode (fallback for Terminal-like apps)
@@ -899,9 +926,8 @@ final class TelexInputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
-        engine.reset()
+        dropComposition(cause: "activateServer")
         engine.resetContext()   // new field/app: don't inherit the last word's English context
-        tracking = false
         fieldVerified = false
         fieldForcedMarked = false
         fieldVerifyStrikes = 0
@@ -929,8 +955,7 @@ final class TelexInputController: IMKInputController {
             // IMK delivers that key to handle() through the same main run loop.
             resetObserver = NotificationCenter.default.addObserver(
                 forName: .telexResetComposition, object: nil, queue: .main) { [weak self] _ in
-                self?.engine.reset()
-                self?.tracking = false
+                self?.dropComposition(cause: "resetComposition-notification")
                 self?.fieldVerified = false
                 self?.fieldForcedMarked = false
                 self?.fieldVerifyStrikes = 0
@@ -955,8 +980,7 @@ final class TelexInputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
-        engine.reset()
-        tracking = false
+        dropComposition(cause: "deactivateServer")
         if let obs = resetObserver { NotificationCenter.default.removeObserver(obs); resetObserver = nil }
         // Input source switched away from VietTelex (or focus lost): the tap must not
         // transform keys, so the user really types English in terminals. BUT with

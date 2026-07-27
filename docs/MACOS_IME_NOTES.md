@@ -9,6 +9,23 @@ Info.plist again — every item below cost real time to discover.
 > selection lives in `TYPING-STRATEGIES.md` + `typing-modes.yml`; app lists
 > named below may be stale.
 
+## Debug logging KHÔNG được nằm trên hot path — 2026-07-27
+
+`reprobeDeferred` (experiment log-only) chạy **đồng bộ trong `handle()`** ở phím ngay
+sau mỗi lần replace, và gọi 2 lần `AXTextEdit` — mỗi call có thể block tới **50ms**
+messaging timeout. Cộng thêm `probe(shadow)` chạy mỗi lần replace (tức mỗi phím có
+dấu) với 1 IMK read-back + 1 AX read nữa.
+
+Hệ quả: **cứ tester nào bật "Nhật ký gỡ lỗi" là thấy gõ dấu bị chậm** — rồi báo lỗi
+latency, trong khi bản build bình thường (log tắt) không hề chậm (0.138 µs/phím).
+Đúng cái bẫy Heisenberg: dụng cụ đo làm sai kết quả đo. Report issue #28
+(meichengg, VNI trên Raycast).
+
+Từ 27/07: AX read của reprobe chạy trên `axProbeQueue` (async, log từ đó — verdict
+vốn không bao giờ được dùng), và shadow probe bị throttle 1 lần/giây. Quy tắc chung:
+**mọi thứ chỉ để chẩn đoán phải chạy ngoài `handle()`**, hoặc bị lấy mẫu, không bao
+giờ mỗi phím.
+
 ## Caret self-report có thể ở TOẠ ĐỘ KHÁC (Jira/ProseMirror) — 2026-07-27
 
 Probe in-place phân loại app bằng caret sau khi replace: honored = `start+len`,

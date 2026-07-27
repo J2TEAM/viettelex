@@ -72,6 +72,23 @@ com.vivaldi.Vivaldi: axDetect
 com.operasoftware.Opera: axDetect
 company.thebrowser.Browser: axDetect
 org.mozilla.firefox: axDetect
+# Firefox forks / các browser khác — cùng lớp "address bar có inline autocomplete".
+# Thiếu ở đây thì omnibox bị gõ như ô text thường và autocomplete giành chỗ với tone
+# edit → chữ nhảy loạn (report issue #28 2026-07-27: Zen new tab, gõ "thanh").
+app.zen-browser.zen: axDetect
+org.mozilla.firefoxdeveloperedition: axDetect
+org.mozilla.nightly: axDetect
+org.mozilla.librewolf: axDetect
+net.waterfox.waterfox: axDetect
+com.google.Chrome.dev: axDetect
+com.microsoft.edgemac.Dev: axDetect
+com.microsoft.edgemac.Canary: axDetect
+com.operasoftware.OperaGX: axDetect
+com.operasoftware.OperaDeveloper: axDetect
+com.duckduckgo.macos.browser: axDetect
+com.kagi.kagimacOS: axDetect
+ru.yandex.desktop.yandex-browser: axDetect
+com.sigmaos.sigmaos.macos: axDetect
 com.jetbrains.intellij: selection
 com.jetbrains.intellij.ce: selection
 com.jetbrains.WebStorm: selection
