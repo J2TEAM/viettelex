@@ -111,28 +111,38 @@ public enum SyllableValidator {
         var pos = 0
         while pos < n && !Tables.isVowelClass(classes[pos]) { pos += 1 }
         var onsetEnd = pos
+        var quGlide = false
         // qu / gi glide handling ("qu" + vowel: the unmarked u joins the onset).
         if pos >= 1, classes[0] == q, pos < n, classes[pos] == u,
            pos + 1 < n, Tables.isVowelClass(classes[pos + 1]) {
             onsetEnd = pos + 1
+            quGlide = true
         } else if n >= 3, classes[0] == g, classes[1] == i, Tables.isVowelClass(classes[2]) {
             onsetEnd = 2
         }
 
-        var node: Int32 = 0
-        for k in 0..<onsetEnd {
-            node = onsetExact.step(node, classes[k])
-            if node < 0 { return false }
+        @inline(__always) func accepts(onsetEnd: Int, rimeStart: Int) -> Bool {
+            var node: Int32 = 0
+            for k in 0..<onsetEnd {
+                node = onsetExact.step(node, classes[k])
+                if node < 0 { return false }
+            }
+            guard onsetExact.mask(node) != 0 else { return false }
+            var rnode: Int32 = 0
+            for k in rimeStart..<n {
+                rnode = rimeExact.step(rnode, classes[k])
+                if rnode < 0 { return false }
+            }
+            return (rimeExact.mask(rnode) >> tone.rawValue) & 1 == 1
         }
-        guard onsetExact.mask(node) != 0 else { return false }
 
-        var rnode: Int32 = 0
-        for k in onsetEnd..<n {
-            rnode = rimeExact.step(rnode, classes[k])
-            if rnode < 0 { return false }
-        }
-        let m = rimeExact.mask(rnode)
-        return (m >> tone.rawValue) & 1 == 1
+        if accepts(onsetEnd: onsetEnd, rimeStart: onsetEnd) { return true }
+        // qu- glide, second reading: the u counts in BOTH the onset ("qu") and the rime
+        // ("uy…"). "quýt" is qu + uyt — the very rime huýt/tuýt/khuýt use — and the
+        // rime table has no standalone "yt"/"ynh", so the single split rejected quýt /
+        // quỳnh outright (issue #29, 2026-07-27: "quyts" committed as raw keys).
+        // Adding "yt"/"ynh" as rimes instead would also bless "hyt"/"bynh".
+        return quGlide && accepts(onsetEnd: onsetEnd, rimeStart: pos)
     }
 
     /// Returns true if `word` is a well-formed Vietnamese syllable. String façade
@@ -197,18 +207,20 @@ public enum SyllableValidator {
         let giAlt = (bases[0] & 0x7F == UInt8(ascii: "g")
                      && n >= 2 && bases[1] == UInt8(ascii: "i")) ? 2 : -1
 
-        for start in [pos, quAlt, giAlt] {
-            guard start >= 0, start <= n else { continue }
+        // (onsetEnd, rimeStart) — normally the same index, EXCEPT the qu- glide's second
+        // reading where the u counts in both ("quýt" = qu + uyt, see isValidSyllable).
+        for (onsetEnd, rimeStart) in [(pos, pos), (quAlt, quAlt), (giAlt, giAlt), (quAlt, pos)] {
+            guard onsetEnd >= 0, onsetEnd <= n else { continue }
             var node: Int32 = 0
             var ok = true
-            for i in 0..<start {
+            for i in 0..<onsetEnd {
                 node = onsetFolded.step(node, cls(i))
                 if node < 0 { ok = false; break }
             }
             guard ok, onsetFolded.mask(node) != 0 else { continue }
             var rnode: Int32 = 0
             ok = true
-            for i in start..<n {
+            for i in rimeStart..<n {
                 rnode = rimeFolded.step(rnode, cls(i))
                 if rnode < 0 { ok = false; break }
             }

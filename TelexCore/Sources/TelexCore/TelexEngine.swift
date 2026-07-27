@@ -1500,28 +1500,35 @@ private extension SyllableValidator {
         var pos = 0
         while pos < n && !Tables.isVowelClass(classes[pos]) { pos += 1 }
         var onsetEnd = pos
+        var quGlide = false
         // qu / gi glide handling ("qu" + vowel: the unmarked u joins the onset).
         if pos >= 1, classes[0] == q, pos < n, classes[pos] == u,
            pos + 1 < n, Tables.isVowelClass(classes[pos + 1]) {
             onsetEnd = pos + 1
+            quGlide = true
         } else if n >= 3, classes[0] == g, classes[1] == i, Tables.isVowelClass(classes[2]) {
             onsetEnd = 2
         }
 
-        var node: Int32 = 0
-        for k in 0..<onsetEnd {
-            node = onsetExact.step(node, classes[k])
-            if node < 0 { return false }
+        @inline(__always) func accepts(onsetEnd: Int, rimeStart: Int) -> Bool {
+            var node: Int32 = 0
+            for k in 0..<onsetEnd {
+                node = onsetExact.step(node, classes[k])
+                if node < 0 { return false }
+            }
+            guard onsetExact.mask(node) != 0 else { return false }
+            var rnode: Int32 = 0
+            for k in rimeStart..<n {
+                rnode = rimeExact.step(rnode, classes[k])
+                if rnode < 0 { return false }
+            }
+            return (rimeExact.mask(rnode) >> tone.rawValue) & 1 == 1
         }
-        guard onsetExact.mask(node) != 0 else { return false }
 
-        var rnode: Int32 = 0
-        for k in onsetEnd..<n {
-            rnode = rimeExact.step(rnode, classes[k])
-            if rnode < 0 { return false }
-        }
-        let m = rimeExact.mask(rnode)
-        return (m >> tone.rawValue) & 1 == 1
+        if accepts(onsetEnd: onsetEnd, rimeStart: onsetEnd) { return true }
+        // qu- glide, second reading (see the Array twin): the u counts in both the onset
+        // and the rime — "quýt" = qu + uyt.
+        return quGlide && accepts(onsetEnd: onsetEnd, rimeStart: pos)
     }
 }
 

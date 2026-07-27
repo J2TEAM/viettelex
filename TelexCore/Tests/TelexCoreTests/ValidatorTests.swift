@@ -30,6 +30,30 @@ final class ValidatorTests: XCTestCase {
         }
     }
 
+    // qu- GLIDE, both readings (issue #29, 2026-07-27). "quýt" typed `quyts` came out
+    // as the raw keys: the qu-split left the rime as "yt", which the table does not have
+    // (huýt/tuýt use "uyt"), so the syllable was judged invalid → auto-restore. The u now
+    // counts in BOTH the onset and the rime for qu- words.
+    func testQuGlideKeepsTheUInTheRime() {
+        for w in ["quýt", "quỳnh", "quých", "quy", "quýt", "quyên", "quyệt", "quất", "quá"] {
+            XCTAssertTrue(SyllableValidator.isValidSyllable(w), "'\(w)' is Vietnamese")
+        }
+        for w in ["quyt", "quynh", "quych", "quyên", "quyêt"] {
+            XCTAssertTrue(SyllableValidator.isValidPrefix(w), "'\(w)' is a live prefix")
+        }
+        // The relaxation is scoped to the qu- glide: no other onset gains a y-nucleus
+        // rime, so these stay invalid (they would become valid if "yt"/"ynh" had been
+        // added to the rime table instead).
+        for w in ["hyt", "bynh", "tych", "myt"] {
+            XCTAssertFalse(SyllableValidator.isValidSyllable(w), "'\(w)' is not Vietnamese")
+        }
+        // Known permissiveness: rimes that exist for other onsets ("uyn" in "tuyn",
+        // "uyu" in "khuỷu") now also pass after qu-. The validator is deliberately
+        // permissive — a false accept only means "don't auto-restore", and these are
+        // not English words either.
+        XCTAssertTrue(SyllableValidator.isValidSyllable("quyn"))
+    }
+
     func testToneCodaConstraint() {
         // Stop codas p/t/c/ch only accept sắc (acute) or nặng (dot).
         XCTAssertTrue(SyllableValidator.isValidSyllable("các"))   // acute ok

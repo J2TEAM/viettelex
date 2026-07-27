@@ -918,4 +918,16 @@ final class EngineGoldenTests: XCTestCase {
         XCTAssertEqual(e.composed, "người")
         XCTAssertEqual(e.rawKeystrokes, "nguwowif")
     }
+
+    // Tone AFTER the coda on a qu- word — the report in issue #29 (Google Docs, Chrome).
+    func testQuWordsTakeTonesAfterTheCoda() {
+        let cases = [("quyts", "quýt"), ("quyjt", "quỵt"), ("quyst", "quýt"),
+                     ("quynhf", "quỳnh"), ("quychs", "quých"),
+                     ("huyts", "huýt"), ("tuyts", "tuýt"), ("quaats", "quất")]
+        for (keys, want) in cases {
+            var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+            for ch in keys { _ = e.feed(ch) }
+            XCTAssertEqual(e.commitText(autoRestore: true), want, "\(keys) → \(want)")
+        }
+    }
 }
