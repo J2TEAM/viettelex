@@ -355,3 +355,23 @@ final class ReEditWordTests: XCTestCase {
         XCTAssertNil(TelexInputController.trailingWord("abcdefghijklmnop"))
     }
 }
+
+// The ⌫ guard: our tracked composition window may only be rewritten while the app's
+// caret still agrees with it. Tester report 2026-07-27 (Chrome Web Store search box):
+// the first ⌫ ate TWO characters and afterwards nothing typed showed up until a space —
+// a React-controlled input had moved/re-rendered under the tracked range.
+final class TrackedWindowFreshnessTests: XCTestCase {
+
+    func testFreshOnlyWhenCaretSitsExactlyAtTheEndWithNoSelection() {
+        XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 12, selectionLength: 0, expected: 12))
+        // A selection (inline autocomplete suffix) would be swallowed by the rewrite.
+        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 12, selectionLength: 3, expected: 12))
+        // Caret moved / field re-rendered — in either direction.
+        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 11, selectionLength: 0, expected: 12))
+        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 13, selectionLength: 0, expected: 12))
+        // No caret at all → never rewrite blind.
+        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: nil, selectionLength: 0, expected: 12))
+        // Start of a field is a normal, fresh state.
+        XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 0, selectionLength: 0, expected: 0))
+    }
+}

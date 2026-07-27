@@ -328,6 +328,29 @@ final class TelexInputController: IMKInputController {
             // (undetermined → Vietnamese). In-word backspace (buffer non-empty) keeps it —
             // the preceding word hasn't changed.
             if engine.isEmpty { engine.resetContext(); return false }
+            // Our tracked window must still MATCH the field before we rewrite it. A
+            // ⌫-rewrite is `insertText(composed, range(anchor, onLen))`: if the app has
+            // meanwhile moved the caret, re-rendered (React-controlled inputs do), or
+            // holds a SELECTION (inline autocomplete suffix), that range covers text we
+            // never composed — the rewrite then eats an extra character, and every later
+            // insert targets a range that no longer exists, so nothing shows up until a
+            // space re-anchors the word. Tester report 2026-07-27 (Chrome Web Store search
+            // box: "lần đầu xóa liền 2 ký tự, sau đó gõ không hiện gì nữa"). On any
+            // disagreement, hand the key to the app and forget the composition: the user
+            // loses a diacritic re-placement on that ⌫, never text.
+            if tracking {
+                let sel = client.selectedRange()
+                let expected = anchor + onLen
+                if !Self.trackedWindowIsFresh(caret: sel.location == NSNotFound ? nil : sel.location,
+                                              selectionLength: sel.length, expected: expected) {
+                    DebugLog.log("backspace: tracked window stale "
+                        + "(caret=\(sel.location == NSNotFound ? "NotFound" : String(sel.location))"
+                        + " len=\(sel.length) expected=\(expected)) → pass through, drop composition")
+                    dropComposition(cause: "backspace-window-stale")
+                    onLen = 0
+                    return false
+                }
+            }
             let action = engine.backspace()
             if usesMarkedNow(id) { updateMarked(client); return true }
             if tracking {
@@ -458,6 +481,18 @@ final class TelexInputController: IMKInputController {
         }
     }
 
+
+    /// Does the app's caret still agree with our tracked composition window? Only then
+    /// may a ⌫ rewrite the window blind. Three ways it can lie, all fatal to the
+    /// arithmetic: no caret at all, a live SELECTION (an inline autocomplete suffix would
+    /// be swallowed by our replacementRange), or a caret anywhere other than exactly the
+    /// end of what we composed (the app re-rendered or moved it). Pure function so the
+    /// rule is pinned by tests — the failure it prevents (an extra character eaten, then
+    /// every later insert landing nowhere) is invisible in a log until it's too late.
+    static func trackedWindowIsFresh(caret: Int?, selectionLength: Int, expected: Int) -> Bool {
+        guard let caret else { return false }
+        return selectionLength == 0 && caret == expected
+    }
 
     // MARK: - Re-edit the word before the caret (experimental)
 
