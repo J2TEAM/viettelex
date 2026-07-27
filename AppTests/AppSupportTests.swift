@@ -284,3 +284,32 @@ extension AppSupportTests {
         _ = s.tapNativeFastPath
     }
 }
+
+// The key-ROUTING predicate shared by the IMKit controller and the terminal tap:
+// which keys belong to the word (→ engine.feed) vs end it (→ boundary commit).
+// Issue #28 (2026-07-27): VNI shipped working at the engine level but did nothing in
+// the app because BOTH key paths gated on letters only, so every VNI digit was eaten
+// as a word boundary ("a1" stayed "a1"). Pin the rule here.
+final class WordKeyRoutingTests: XCTestCase {
+
+    func testLettersAreAlwaysWordKeys() {
+        for c in "abzABZ".utf8 {
+            XCTAssertTrue(isWordKey(c, vniMode: false), "'\(Character(UnicodeScalar(c)))' must compose")
+            XCTAssertTrue(isWordKey(c, vniMode: true))
+        }
+    }
+
+    func testDigitsAreWordKeysOnlyInVNI() {
+        for c in "0123456789".utf8 {
+            XCTAssertFalse(isWordKey(c, vniMode: false), "a digit ends the word in Telex")
+            XCTAssertTrue(isWordKey(c, vniMode: true), "a digit carries the diacritic in VNI")
+        }
+    }
+
+    func testEverythingElseIsABoundaryInBothModes() {
+        for c in " \t.,;:!?-_/\\[]{}()'\"@#$%^&*+=<>|~`".utf8 {
+            XCTAssertFalse(isWordKey(c, vniMode: false))
+            XCTAssertFalse(isWordKey(c, vniMode: true))
+        }
+    }
+}

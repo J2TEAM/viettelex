@@ -207,6 +207,63 @@ final class VNITests: XCTestCase {
         XCTAssertEqual(e.composed, before, "digits must not mutate the Telex composition")
     }
 
+    // CRASH regression (issue #28, 2026-07-27). A literal DIGIT lands in the letter
+    // buffer whenever VNI can't use it as a diacritic ("mp3", "2020", "html5"), and live
+    // spell-check then runs the validator over those bases. `letterClass`/`cls()` map a
+    // base by `base &- "a"`, which WRAPS for a digit (48 - 97 → 207) and used to index
+    // the flat trie out of bounds — killing the IME mid-word (and silently returning
+    // garbage validity whenever the stray offset stayed inside the array).
+    func testLiteralDigitsSurviveLiveSpellCheck() {
+        for token in ["mp3", "2020", "html5", "ipv4", "a4b3", "x9", "0", "99999999"] {
+            var e = TelexEngine()
+            e.vniMode = true; e.liveSpellCheck = true; e.freeMarking = true
+            for ch in token { _ = e.feed(ch) }
+            _ = e.peekCommitText(autoRestore: true)
+            XCTAssertEqual(e.commitText(autoRestore: true), token,
+                           "'\(token)' must survive VNI + live spell-check verbatim")
+        }
+    }
+
+    // The same guard at its own level: a non-letter base is never a Vietnamese prefix,
+    // and an out-of-alphabet class must resolve to "no child" instead of a wild index.
+    func testValidatorRejectsNonLetterBases() {
+        XCTAssertFalse(SyllableValidator.isValidPrefix(bases: Array("mp3".utf8), count: 3))
+        XCTAssertFalse(SyllableValidator.isValidPrefix(bases: Array("2".utf8), count: 1))
+        XCTAssertTrue(SyllableValidator.isValidPrefix(bases: Array("ng".utf8), count: 2))
+        // classes straight from letterClass for digits are ≥ 33 (the alphabet size)
+        XCTAssertFalse(SyllableValidator.isValidSyllable(
+            classes: [Tables.letterClass(base: UInt8(ascii: "3"), mark: .none)],
+            count: 1, tone: .none))
+    }
+
+    // A bounded, DETERMINISTIC fuzz over VNI keystrokes × settings — the crash above only
+    // showed up on random digit/letter mixes, not on any hand-written case.
+    func testVniFuzzDoesNotTrap() {
+        struct LCG: RandomNumberGenerator {
+            var state: UInt64
+            mutating func next() -> UInt64 {
+                state = state &* 6364136223846793005 &+ 1442695040888963407
+                return state
+            }
+        }
+        let alphabet = Array("abcdeghiklmnopqrstuvwxyzAEIOU0123456789")
+        for seed in 1...4000 {
+            var rng = LCG(state: UInt64(seed))
+            var e = TelexEngine()
+            e.vniMode = true
+            e.freeMarking = Bool.random(using: &rng)
+            e.liveSpellCheck = Bool.random(using: &rng)
+            e.simpleTelex = Bool.random(using: &rng)
+            e.quickTelex = Bool.random(using: &rng)
+            for _ in 0..<Int.random(in: 1...14, using: &rng) {
+                if Int.random(in: 0..<8, using: &rng) == 0 { _ = e.backspace() }
+                else { _ = e.feed(alphabet.randomElement(using: &rng)!) }
+            }
+            _ = e.peekCommitText(autoRestore: true)
+            _ = e.commitText(autoRestore: true)
+        }
+    }
+
     // Flipping the mode between words (as the Settings toggle does) is clean: a VNI word,
     // then vniMode off + reset, then a Telex word — each composes correctly, no bleed.
     func testModeFlipBetweenWordsIsClean() {

@@ -1407,8 +1407,11 @@ final class TerminalTapController {
             return pass
         }
         let ch = Character(scalar)
-        guard let ascii = ch.asciiValue, isLetterAscii(ascii) else {
-            // Non-letter boundary (space, digit, punctuation). Brackets skip
+        // VNI: digits carry the diacritics, so they belong to the WORD, not the boundary
+        // (same fix as the IMKit path — issue #28, 2026-07-27).
+        guard let ascii = ch.asciiValue,
+              isWordKey(ascii, vniMode: engine.vniMode) else {
+            // Non-letter boundary (space, digit outside VNI, punctuation). Brackets skip
             // auto-restore (code context). Mirror the Return/Tab handling above: only
             // when a rewrite ACTUALLY happened (emitBoundary → true) or a synthetic
             // burst is still draining must we suppress + re-emit synthetically, so the

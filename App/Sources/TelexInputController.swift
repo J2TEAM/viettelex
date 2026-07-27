@@ -384,8 +384,12 @@ final class TelexInputController: IMKInputController {
             break
         }
 
-        guard let chars = event.characters, let ch = chars.first,
-              let ascii = ch.asciiValue, isAsciiLetter(ascii) else {
+        // VNI: the DIGITS carry the diacritics ("a1"→á, "tie61ng"→tiếng), so in VNI mode
+        // they must reach the engine instead of ending the word. In Telex a digit is a
+        // boundary as before (field report issue #28, 2026-07-27: VNI did nothing in the
+        // app because every digit was consumed here — engine-level VNI tests all passed).
+        guard let chars = event.characters, let ch = chars.first, let ascii = ch.asciiValue,
+              isWordKey(ascii, vniMode: engine.vniMode) else {
             // space / punctuation / any non-letter ends the word. Brackets signal a
             // code-ish context (arr[i], {json}, (x)); skip auto-restore there so a
             // token isn't "corrected" (auto-restore is off around [ ] { }).
@@ -1224,9 +1228,24 @@ extension TelexInputController: NSMenuDelegate {
 }
 
 @inline(__always)
-private func isAsciiLetter(_ c: UInt8) -> Bool {
+func isAsciiDigit(_ c: UInt8) -> Bool {
+    c >= UInt8(ascii: "0") && c <= UInt8(ascii: "9")
+}
+
+@inline(__always)
+func isAsciiLetter(_ c: UInt8) -> Bool {
     (c >= UInt8(ascii: "a") && c <= UInt8(ascii: "z")) ||
     (c >= UInt8(ascii: "A") && c <= UInt8(ascii: "Z"))
+}
+
+/// Does this key belong to the WORD (feed it to the engine) or end it (boundary)?
+/// The ONE routing rule both key paths (IMKit controller + terminal tap) must agree on.
+/// In VNI the digits carry the diacritics ("a1"→á), so they are word keys; in Telex a
+/// digit ends the word. Extracted so AppTests can pin it — issue #28 (2026-07-27) was
+/// exactly this predicate being letters-only while the engine happily accepted digits.
+@inline(__always)
+func isWordKey(_ c: UInt8, vniMode: Bool) -> Bool {
+    isAsciiLetter(c) || (vniMode && isAsciiDigit(c))
 }
 
 @inline(__always)

@@ -174,6 +174,9 @@ public enum SyllableValidator {
     public static func isValidPrefix(bases: [UInt8], count n: Int) -> Bool {
         if n == 0 { return true }
         @inline(__always) func cls(_ i: Int) -> UInt8 { (bases[i] & 0x7F) &- UInt8(ascii: "a") }
+        // Anything that isn't an ascii letter (VNI literal digits: "mp3", "html5") can
+        // never start a Vietnamese syllable — bail out before the class arithmetic.
+        for i in 0..<n where !isLetter(bases[i] & 0x7F) { return false }
 
         var pos = 0
         while pos < n && !isVowelAscii(bases[pos] & 0x7F) { pos += 1 }
@@ -277,7 +280,15 @@ struct ClassTrie: Sendable {
     /// One transition on a letter class. Returns -1 when absent.
     @inline(__always)
     func step(_ node: Int32, _ cls: UInt8) -> Int32 {
-        next[Int(node) * Tables.classCount + Int(cls)]
+        // A class OUT of the 33-letter alphabet has no child — and must never index the
+        // flat array. VNI puts literal DIGITS in the letter buffer ("mp3", "2020") and
+        // `letterClass`/`cls()` map those by `base &- "a"`, which wraps to 200+ → the
+        // subscript walked off the end and CRASHED the IME (issue #28, 2026-07-27; it
+        // only crashed when the offset happened to land outside the array, so it read
+        // garbage — wrong validity — the rest of the time). One unsigned compare, on a
+        // path that runs a handful of times per keystroke.
+        guard cls < UInt8(Tables.classCount) else { return -1 }
+        return next[Int(node) * Tables.classCount + Int(cls)]
     }
 
     /// Accept mask of a node (0 = not a full inserted word).
