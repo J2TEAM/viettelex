@@ -361,7 +361,8 @@ enum FocusedFieldDetector {
 ///   — where inline autocomplete offsets a plain Backspace).
 /// - `emptyReset`: insert U+202F to cancel the inline suggestion, then Backspace ×(N+1)
 ///   (delete the U+202F too) and type (MS Office — where Shift+Left would select the
-///   adjacent cell instead of characters).
+///   adjacent cell instead of characters). Only when there IS text to retype: on a pure
+///   deletion the placeholder has nothing to protect and only flashes on screen.
 enum TapEmit { case backspace, selection, emptyReset }
 
 /// D1 — replace trailing text via the Accessibility API instead of a posted-event
@@ -703,10 +704,16 @@ enum SyntheticKeyboard {
             postUnicode(text)
             return
         }
-        if mode == .emptyReset, backspaces > 0 {
+        // The U+202F dance exists to stop an INLINE SUGGESTION from swallowing the
+        // RETYPE. A pure deletion has no retype to protect, so the placeholder would be
+        // pure visible garbage: pressing ⌫ in a browser omnibox flashed a stray character
+        // before the delete ("ấn nút xóa thì bị thêm ký tự rồi xóa" — tester report
+        // 2026-07-27, shipped with the omnibox .emptyReset switch in 1.4.14). Plain
+        // Backspace ×N there: the app cancels its own suggestion on a delete anyway.
+        if mode == .emptyReset, backspaces > 0, !text.isEmpty {
             postUnicode("\u{202F}")                                    // cancel inline autocomplete
             for _ in 0..<(backspaces + 1) { postVirtual(CGKeyCode(kVK_Delete)) }  // +1 deletes the U+202F
-            if !text.isEmpty { postUnicode(text) }
+            postUnicode(text)
             return
         }
         for _ in 0..<max(0, backspaces) { postVirtual(CGKeyCode(kVK_Delete)) }
