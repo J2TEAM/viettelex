@@ -143,6 +143,46 @@ final class InPlaceProbeTests: XCTestCase {
                                             regionReadback: "ê", inserted: "ê"), .honored)
     }
 
+    // A caret BEFORE our anchor is IMPOSSIBLE for either outcome (replace → start+len,
+    // append → start+bs+len, both ≥ start), so it is a stale / foreign-coordinate report
+    // and must teach the classifier nothing. Tester log 2026-07-27 (Jira in Chrome:
+    // start=1339 caret=1338, and start=2 caret=0 while the AX tree confirmed the replace
+    // HAD landed) — reading that as "appended" demoted a healthy field to marked text
+    // mid-word, mangling the text and flashing a selection.
+    func testCaretBeforeAnchorIsInconclusive() {
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 1338, start: 1339, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ậ"), .inconclusive)
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 0, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ê"), .inconclusive)
+        // The window is narrow: a CONSTANT garbage caret (Lark answers 1 forever) is far
+        // behind the anchor mid-field, so it stays real evidence and still demotes.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 1, start: 29, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "á"), .appended)
+        // A caret AT or AFTER the anchor is still real evidence: the append position and
+        // any other forward position stay "appended".
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 4, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ê"), .appended)   // append position
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 2, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ê"), .appended)   // at the anchor
+        // Positive FAILURE evidence still wins over the impossible caret: if the target
+        // region does not hold our text, the replace demonstrably didn't land.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 0, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: "e",
+                                            inserted: "ê"), .appended)
+        // …and so does the AX ground truth, in both directions.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: "ê", caret: 0, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ê"), .honored)
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: "e", caret: 0, start: 2, bs: 1,
+                                            insertLength: 1, regionReadback: nil,
+                                            inserted: "ê"), .appended)
+    }
+
     func testRegionMismatchOverridesHonoredCaret() {
         // Lark: caret lands exactly at start+len (looks honored) but the target region
         // read-back shows our text never landed → the replace didn't happen. Positive

@@ -9,6 +9,35 @@ Info.plist again — every item below cost real time to discover.
 > selection lives in `TYPING-STRATEGIES.md` + `typing-modes.yml`; app lists
 > named below may be stale.
 
+## Caret self-report có thể ở TOẠ ĐỘ KHÁC (Jira/ProseMirror) — 2026-07-27
+
+Probe in-place phân loại app bằng caret sau khi replace: honored = `start+len`,
+appended = `start+bs+len`. **Cả hai đều ≥ `start`.** Log tester (v1.4.12, Jira trong
+Chrome, ô "Create bug"):
+
+```
+probe(verify) start=1339 bs=1 len=1 caret=1338 expReplace=1340 expAppend=1341 regionMatch=nil → appended
+verify: appended (strike 1/2)
+probe(verify) start=1339 … caret=1338 … → appended
+verify: appended twice → marked text for this focus
+…
+probe(verify) start=2 bs=1 len=1 caret=0 expReplace=3 expAppend=4 regionMatch=no → appended
+probe(ax·verify) axMatch=yes        ← AX nói replace ĐÃ vào đúng chỗ
+```
+
+Caret **thấp hơn cả anchor** → không thể là kết quả của replace *hay* append. Đây là
+ProseMirror trả về position trong document model của nó (lệch vài đơn vị vì node
+boundary), hoặc caret đọc được là bản cũ chưa cập nhật. Nhưng verdict cũ gom hết vào
+`appended` → 2 strike → **hạ field xuống marked text GIỮA TỪ** (`engine.reset()`), và
+đó chính là cái người dùng thấy: chữ bị "tự bôi đen rồi xoá", ra `cậcâ`.
+
+**Luật hiện tại:** caret nằm sau anchor tối đa `maxCaretLag = 4` đơn vị ⇒
+`.inconclusive` — không strike, không promote, probe lại lần sau (AX async vẫn có thể
+kết luận). Cửa sổ hẹp có chủ ý: caret rác HẰNG SỐ (Lark luôn trả 1) khi gõ giữa ô sẽ
+cách anchor rất xa nên vẫn là `.appended` và vẫn bị hạ sau 2 strike như cũ. Bounded:
+4 lần inconclusive liên tiếp trong một focus thì vẫn hạ xuống marked text — không
+biết gì cũng không được phép kéo dài mãi.
+
 ## The working recipe (do all of these; they are AND, not OR)
 
 1. **Notarize + staple.** macOS 26 silently refuses to register an un-notarized

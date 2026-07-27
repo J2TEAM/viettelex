@@ -107,6 +107,11 @@ final class TelexInputController: IMKInputController {
     private var fieldVerified = false
     private var fieldForcedMarked = false
     private var fieldVerifyStrikes = 0
+    /// Probes whose self-report was IMPOSSIBLE (caret before our anchor) in this focus.
+    /// They teach nothing, but a field that only ever produces them must still land in a
+    /// mode that renders, so they are bounded (see the `.inconclusive` branch).
+    private var fieldInconclusive = 0
+    private static let maxInconclusive = 4
 
     /// Effective marked-text decision for the CURRENT field: a per-focus demotion
     /// (verify probe failed here) wins over the per-app classification.
@@ -614,7 +619,8 @@ final class TelexInputController: IMKInputController {
             // the engine mid-word, turning "lỗi lệch" into "lôxi lêjch"). A first
             // strike keeps fieldVerified=false so the NEXT replace re-probes; an
             // honored read or an AX exoneration clears the strike.
-            if verdict == .appended {
+            switch verdict {
+            case .appended:
                 fieldVerifyStrikes += 1
                 if fieldVerifyStrikes >= 2 {
                     fieldVerified = true
@@ -625,8 +631,27 @@ final class TelexInputController: IMKInputController {
                 } else {
                     DebugLog.log("verify: appended (strike 1/2) — will re-probe next replace")
                 }
-            } else {
+            case .inconclusive:
+                // The caret landed BEFORE our anchor — impossible for either outcome, so
+                // the app is self-reporting garbage (see InPlaceProbe.verdict). No strike,
+                // no promotion: leave the field unverified so the next replace probes
+                // again, and let the async AX read settle it if it can. Bound it though —
+                // a field that never produces real evidence still has to end up somewhere
+                // safe, so after `maxInconclusive` of them fall back to marked text.
+                fieldInconclusive += 1
+                if fieldInconclusive >= Self.maxInconclusive {
+                    fieldVerified = true
+                    fieldForcedMarked = true
+                    DebugLog.log("verify: \(fieldInconclusive)× impossible caret → marked text for this focus")
+                    engine.reset()
+                    tracking = false
+                } else {
+                    DebugLog.log("verify: impossible caret (caret < anchor) — no verdict "
+                        + "(\(fieldInconclusive)/\(Self.maxInconclusive)), will re-probe")
+                }
+            case .honored:
                 fieldVerifyStrikes = 0
+                fieldInconclusive = 0
                 fieldVerified = true
             }
         case .real:
@@ -641,6 +666,12 @@ final class TelexInputController: IMKInputController {
     /// needs two in a row (a single failure may just be the app being busy).
     private func applyPreliminaryVerdict(_ verdict: InPlaceProbe.Verdict, id: String?, expReplace: Int) {
         switch verdict {
+        case .inconclusive:
+            // Impossible self-report (caret before the anchor): classify NOTHING. The app
+            // keeps `needsProbe`, so the next real replace probes again; the async AX read
+            // may also land and decide. Never persist a mode on garbage.
+            DebugLog.log("probe: impossible caret (caret < anchor) → no classification, keep probing")
+            return
         case .honored:
             if let id {
                 var tracker = probeHonors[id] ?? InPlaceProbe.HonorTracker()
@@ -690,6 +721,7 @@ final class TelexInputController: IMKInputController {
             // healthy fields mid-word).
             if match {
                 fieldVerifyStrikes = 0
+                fieldInconclusive = 0
                 fieldVerified = true
                 if fieldForcedMarked, engine.isEmpty, AppState.shared.currentBundleID == id {
                     fieldForcedMarked = false
@@ -873,6 +905,7 @@ final class TelexInputController: IMKInputController {
         fieldVerified = false
         fieldForcedMarked = false
         fieldVerifyStrikes = 0
+        fieldInconclusive = 0
         if let client = sender as? IMKTextInput {
             AppState.shared.currentBundleID = client.bundleIdentifier()
             // What identifier does this client REPORT? (Catalyst/Electron apps may not
@@ -901,6 +934,7 @@ final class TelexInputController: IMKInputController {
                 self?.fieldVerified = false
                 self?.fieldForcedMarked = false
                 self?.fieldVerifyStrikes = 0
+                self?.fieldInconclusive = 0
                 self?.onLen = 0
             }
         }

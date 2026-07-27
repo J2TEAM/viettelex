@@ -27,8 +27,13 @@ public enum InPlaceProbe {
 
     public enum Verdict {
         case honored        // caret CONFIRMS the replace → keep the (underline-free) in-place path
-        case appended       // anything else → fall back to marked text (always renders, shows underline)
+        case appended       // the edit demonstrably did NOT replace → marked text (underline, always renders)
+        case inconclusive   // the app's self-report is IMPOSSIBLE (see `verdict`) → learn nothing, re-probe
     }
+
+    /// How far BEHIND the anchor a caret may land and still be read as a coordinate
+    /// skew / stale report rather than evidence (see `verdict`).
+    static let maxCaretLag = 4
 
     /// Whether this edit is a usable probe. Only a REAL replace (bs > 0) with no
     /// pending selection (clear == 0) discriminates: a pure insert (bs == 0) lands
@@ -71,7 +76,24 @@ public enum InPlaceProbe {
         // (regionMatch=no); trusting the caret there locked it to a broken in-place
         // path. A region read that contradicts the insert is the ground truth.
         if let r = regionReadback, r != inserted { return .appended }
-        if let c = caret { return c == expectedReplace ? .honored : .appended }
+        if let c = caret {
+            if c == expectedReplace { return .honored }
+            // A caret JUST BEHIND our anchor is not evidence of anything: a replace leaves
+            // it at start+insertLength and an append at start+bs+insertLength — both ≥
+            // start. A little below `start` means the app reported a stale caret or its
+            // own coordinate space (Jira/ProseMirror in Chrome: start=1339 caret=1338,
+            // start=2 caret=0 — while the Accessibility tree confirmed the replace HAD
+            // landed; tester log 2026-07-27). Reading that as "appended" demoted a healthy
+            // field to marked text mid-word, which mangled the text ("cậcâ") and flashed a
+            // selection. Learn nothing there and probe again.
+            //
+            // The window is deliberately NARROW. A document-position skew is a few units
+            // (node boundaries); a CONSTANT garbage caret is not — Lark answers 1 forever,
+            // so mid-field (start=29) it stays `.appended` and still demotes on the usual
+            // two strikes. Being unsure must not cost more than a couple of probes.
+            let behind = start - c
+            return behind > 0 && behind <= maxCaretLag ? .inconclusive : .appended
+        }
         // No caret at all: a positive read-back match keeps in-place (mismatch was
         // already handled above); nothing to go on → safe marked-text mode.
         return regionReadback != nil ? .honored : .appended
