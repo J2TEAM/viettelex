@@ -9,6 +9,42 @@ Info.plist again — every item below cost real time to discover.
 > selection lives in `TYPING-STRATEGIES.md` + `typing-modes.yml`; app lists
 > named below may be stale.
 
+## Đừng để hai self-report của app "bỏ phiếu" chống nhau — 2026-07-28 (issue #31)
+
+Google Sheets trong Chrome: "phải double-click vào ô mới nhập được dữ liệu". Log
+(v1.4.17) chỉ ra chuỗi nhân quả đầy đủ:
+
+```
+probe(verify) start=1 bs=1 len=1 caret=2 expReplace=2 expAppend=3 regionMatch=no → appended
+verify: appended (strike 1/2)
+probe(ax·verify) axMatch=no                      ← AX cache của Chromium cũng stale
+probe(verify) start=1 bs=1 len=2 caret=2 expReplace=3 expAppend=4 regionMatch=nil → appended
+verify: appended twice → marked text for this focus
+reprobe t0=appended … axMatch2=yes imkMatch2=yes axLen=2 caret2=2   ← replace ĐÃ vào đúng chỗ
+```
+
+Ô đó **hoàn toàn khoẻ** (AX xác nhận), nhưng bị hạ xuống marked text — và **ô Sheets
+đang được chọn mà chưa ở chế độ nhập thì bỏ qua marked text**, nên gõ gì cũng mất, tới
+khi double-click. Hai phán đoán sai độc lập cộng lại:
+
+1. **`regionMatch=no` được phép lật một caret trung thực.** Luật đó sinh ra vì Lark
+   (caret rác hằng số trùng `expectedReplace`), nhưng `HonorTracker` (đòi 2 lần honored ở
+   2 offset KHÁC nhau) đã lo ca Lark rồi. Còn `attributedSubstring` của Chromium thì
+   **stale ngay sau `insertText`** — mismatch ở đó nghĩa là "read-back trễ", không phải
+   "replace thất bại". Nay: caret == expectedReplace **và** region không khớp ⇒
+   `.inconclusive` (hai self-report đánh nhau thì học được gì?), để AX phân xử.
+2. **Cửa sổ "caret nói dối" đo từ sai mốc.** Trước đo từ `start`; đúng ra phải đo từ
+   `expectedReplace`: replace để caret ở `expectedReplace`, append để ở
+   `start+bs+len` (xa hơn về PHẢI) ⇒ mọi caret **bên trái `expectedReplace`** không thể
+   là append, nó là báo cáo stale. Sheets trả caret=2 cho expReplace=3 (trễ đúng một
+   edit) — trước bị coi là append, nay là inconclusive. Cửa sổ vẫn hẹp (`maxCaretLag=4`)
+   nên caret rác hằng số của Lark (1 so với 30) vẫn là bằng chứng thật và vẫn bị hạ.
+
+Nguyên tắc rút ra: **`.appended` chỉ được kết luận khi có ≥2 tín hiệu ĐỘC LẬP đồng ý**,
+hoặc khi AX (ground truth) nói vậy. Một self-report đơn lẻ trái với self-report khác của
+cùng app là "không biết", không phải "thất bại" — hạ mode oan tốn của người dùng nhiều
+hơn là chờ thêm một probe.
+
 ## Ô mật khẩu: `IsSecureEventInputEnabled()` KHÔNG đủ — 2026-07-27
 
 Field report: "điền password thấy nó inject thêm 1-2 ký tự".

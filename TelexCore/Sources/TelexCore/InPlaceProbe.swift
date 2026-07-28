@@ -31,8 +31,8 @@ public enum InPlaceProbe {
         case inconclusive   // the app's self-report is IMPOSSIBLE (see `verdict`) → learn nothing, re-probe
     }
 
-    /// How far BEHIND the anchor a caret may land and still be read as a coordinate
-    /// skew / stale report rather than evidence (see `verdict`).
+    /// How far BEHIND the expected post-replace caret a report may land and still be read
+    /// as a stale/foreign-coordinate answer rather than evidence (see `verdict`).
     static let maxCaretLag = 4
 
     /// Whether this edit is a usable probe. Only a REAL replace (bs > 0) with no
@@ -70,32 +70,53 @@ public enum InPlaceProbe {
         if let ax = axRegion { return ax == inserted ? .honored : .appended }
 
         let expectedReplace = start + insertLength
-        // POSITIVE FAILURE EVIDENCE WINS. If the target region does NOT hold our text,
-        // the replace didn't land — no matter what the caret claims. Lark reports a
-        // caret at start+len (looks honored) yet the region never received the text
-        // (regionMatch=no); trusting the caret there locked it to a broken in-place
-        // path. A region read that contradicts the insert is the ground truth.
-        if let r = regionReadback, r != inserted { return .appended }
+        let regionDisagrees = regionReadback.map { $0 != inserted } ?? false
         if let c = caret {
-            if c == expectedReplace { return .honored }
-            // A caret JUST BEHIND our anchor is not evidence of anything: a replace leaves
-            // it at start+insertLength and an append at start+bs+insertLength — both ≥
-            // start. A little below `start` means the app reported a stale caret or its
-            // own coordinate space (Jira/ProseMirror in Chrome: start=1339 caret=1338,
-            // start=2 caret=0 — while the Accessibility tree confirmed the replace HAD
-            // landed; tester log 2026-07-27). Reading that as "appended" demoted a healthy
-            // field to marked text mid-word, which mangled the text ("cậcâ") and flashed a
-            // selection. Learn nothing there and probe again.
+            // The caret sits exactly where a compliant replace leaves it — the strongest
+            // self-report there is (an app needs a truthful caret to place its own candidate
+            // window). If the region read-back disagrees at the same time, the app is
+            // contradicting ITSELF: Chromium serves `attributedSubstring` from a cache that
+            // is stale right after `insertText`, so a mismatch there while the caret is
+            // honest means "read-back is lagging", not "the replace failed" — the deferred
+            // Accessibility read confirmed the replace HAD landed in exactly this state
+            // (Google Sheets, issue #31, and Jira before it). Learn nothing and let the AX
+            // ground truth settle it, instead of demoting a healthy field mid-word.
             //
-            // The window is deliberately NARROW. A document-position skew is a few units
-            // (node boundaries); a CONSTANT garbage caret is not — Lark answers 1 forever,
-            // so mid-field (start=29) it stays `.appended` and still demotes on the usual
-            // two strikes. Being unsure must not cost more than a couple of probes.
-            let behind = start - c
+            // Lark, the reason the region read-back was ever allowed to override a caret, is
+            // still covered: it answers a CONSTANT caret (1), which equals `expectedReplace`
+            // at one coincidental offset only, and `HonorTracker` refuses to commit to
+            // in-place until two honored verdicts land at DIFFERENT offsets.
+            if c == expectedReplace { return regionDisagrees ? .inconclusive : .honored }
+            // Region says our text is not there AND the caret does not describe a replace:
+            // two independent signals agree it failed.
+            if regionDisagrees { return .appended }
+            // A caret BEHIND the replace position is not evidence of anything. Follow the
+            // arithmetic: a replace leaves the caret at `expectedReplace`, an append leaves
+            // it FURTHER RIGHT at start+bs+insertLength. So a report to the LEFT of
+            // `expectedReplace` cannot describe either outcome — it is a stale answer (the
+            // app reports the caret from before our edit) or a foreign coordinate space
+            // (ProseMirror counts document positions, not characters).
+            //
+            // Measured from `expectedReplace`, not from `start`: both real-world lies live
+            // in that gap. Tester logs 2026-07-27 — Jira in Chrome reported caret=1338 for
+            // expectedReplace=1340, and Google Sheets reported caret=2 for
+            // expectedReplace=3 (one edit behind) while the Accessibility tree confirmed
+            // BOTH replaces had landed. Reading those as "appended" demoted healthy fields
+            // to marked text: Jira flashed a selection and mangled text, and a Sheets cell
+            // that is selected-but-not-editing ignores marked text entirely, so typing did
+            // nothing until the user double-clicked the cell (issue #31).
+            //
+            // The window stays NARROW so real evidence still wins: a stale report is off by
+            // an edit or a few node boundaries, while a CONSTANT garbage caret is not —
+            // Lark answers 1 forever, so mid-field (expectedReplace=30) it stays
+            // `.appended` and still demotes on the usual two strikes. Being unsure must not
+            // cost more than a couple of probes (the caller bounds them).
+            let behind = expectedReplace - c
             return behind > 0 && behind <= maxCaretLag ? .inconclusive : .appended
         }
-        // No caret at all: a positive read-back match keeps in-place (mismatch was
-        // already handled above); nothing to go on → safe marked-text mode.
+        // No caret at all: a positive read-back match keeps in-place, a mismatch is the
+        // only evidence we have (so trust it), and nothing at all → safe marked-text mode.
+        if regionDisagrees { return .appended }
         return regionReadback != nil ? .honored : .appended
     }
 
