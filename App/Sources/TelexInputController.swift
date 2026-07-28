@@ -1052,7 +1052,10 @@ final class TelexInputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
-        SecureFieldDetector.invalidate()   // new field: re-scan whether it is a password field
+        // New field: both AX verdicts (is it a password field? does it want selection-
+        // replace?) describe the PREVIOUS one until their scans re-run.
+        SecureFieldDetector.invalidate()
+        FocusedFieldDetector.invalidate()
         dropComposition(cause: "activateServer")
         engine.resetContext()   // new field/app: don't inherit the last word's English context
         fieldVerified = false

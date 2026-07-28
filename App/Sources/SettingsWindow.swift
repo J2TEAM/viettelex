@@ -136,7 +136,24 @@ final class SettingsModel: ObservableObject {
     /// com.apple.Spotlight entry).
     static let spotlightRowID = AppState.spotlightBundleID
 
+    /// bundle id → installed? (see `reloadModeTable`). Main-thread only, like the model.
+    private static var installedCache: [String: Bool] = [:]
+    /// Last reload (reference-date seconds) — see the `didBecomeKey` throttle.
+    private var lastModeReloadAt: TimeInterval = 0
+
+    /// Rebuild the table, at most once per second. `didBecomeKeyNotification` fires for
+    /// EVERY window in this process (Settings tabs, alerts) and the user's flow is to
+    /// alt-tab between Settings and the app they are testing — unthrottled that rebuilt the
+    /// whole table on each switch, on the thread that also serves keystrokes.
+    func reloadModeTableThrottled() {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard now - lastModeReloadAt >= 1 else { return }
+        lastModeReloadAt = now
+        reloadModeTable()
+    }
+
     func reloadModeTable() {
+        lastModeReloadAt = Date.timeIntervalSinceReferenceDate
         manualModes = AppState.shared.manualModes
         // User data (manual pins, probe results, hand-added) is always listed —
         // even for apps since uninstalled, so a stale pin stays visible/removable.
@@ -146,8 +163,17 @@ final class SettingsModel: ObservableObject {
         ids.formUnion(addedApps)
         // Every HARDCODED rule set is filtered to apps actually installed — the
         // table shows this system's real defaults, not our whole knowledge base.
-        let installed: (String) -> Bool = {
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+        // MEMOIZED: `urlForApplication` is a LaunchServices round trip, and this filter runs
+        // over ~50 hardcoded ids EVERY reload. Settings lives in the INPUT METHOD's process,
+        // on the same main thread that handles keystrokes, so a burst of those lookups shows
+        // up as typing hitches — tester report 2026-07-28: "mở settings lên lâu là bị đơ đơ,
+        // tắt đi thì trở lại bình thường". Installed apps do not come and go while a window
+        // is open, so one lookup per id per session is plenty.
+        let installed: (String) -> Bool = { id in
+            if let known = Self.installedCache[id] { return known }
+            let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) != nil
+            Self.installedCache[id] = found
+            return found
         }
         ids.formUnion(AppState.builtInFallbackApps.filter(installed))
         ids.formUnion(AppState.builtInInPlaceApps.filter(installed))
@@ -557,7 +583,7 @@ struct ModeTableTab: View {
         // app → come back. Refresh when the Settings window regains key so the
         // just-learned row appears without reopening the tab (event-driven, no timer).
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            model.reloadModeTable()
+            model.reloadModeTableThrottled()
         }
     }
 

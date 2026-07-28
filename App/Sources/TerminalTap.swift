@@ -182,6 +182,10 @@ final class FrontmostApp {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             guard let self else { return }
             self.lock.withLock { self._bundleID = app?.bundleIdentifier }
+            // New app in front → new focused field: both AX verdicts are about the OLD
+            // field until their scans re-run.
+            FocusedFieldDetector.invalidate()
+            SecureFieldDetector.invalidate()
             guard let id = app?.bundleIdentifier, id != Self.selfID else { return }
             self.recent.removeAll { $0.id == id }
             self.recent.insert((id, app?.localizedName ?? id), at: 0)
@@ -358,6 +362,21 @@ enum FocusedFieldDetector {
     private static var refreshing = false
     private static let ttlNs: UInt64 = 200_000_000
     private static let scanQueue = DispatchQueue(label: "com.viettelex.field-scan", qos: .userInitiated)
+
+    /// Forget the cached verdict — the FIELD changed (app switch / new IMKit focus), so the
+    /// previous field's answer is not evidence about this one. Resets to `false` (in-place)
+    /// rather than the `true` default on purpose: carrying a stale "selection-replace" into
+    /// a page field is what made the tap Shift+Left-select the text and overtype it — the
+    /// user sees their input highlighted and can only replace one character, until they
+    /// click away and back (tester report 2026-07-28, v1.4.17: "bấm vào ô input ở trên
+    /// trình duyệt thì nó thành bôi đen, rồi gõ chỉ replace"). In-place for the one
+    /// keystroke before the async scan answers is the mild failure; selection is not.
+    static func invalidate() {
+        lock.withLock {
+            cached = false
+            lastCheckNs = 0
+        }
+    }
 
     /// True → the focused field should use selection-replace; false → in-place.
     static var wantsSelection: Bool {
