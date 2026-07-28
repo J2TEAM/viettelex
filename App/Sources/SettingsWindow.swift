@@ -137,9 +137,9 @@ final class SettingsModel: ObservableObject {
     static let spotlightRowID = AppState.spotlightBundleID
 
     /// bundle id → installed? (see `reloadModeTable`). Main-thread only, like the model.
-    private static var installedCache: [String: Bool] = [:]
+    static var installedCache: [String: Bool] = [:]      // internal: tests assert memoization
     /// Last reload (reference-date seconds) — see the `didBecomeKey` throttle.
-    private var lastModeReloadAt: TimeInterval = 0
+    var lastModeReloadAt: TimeInterval = 0               // internal: tests drive the throttle
 
     /// Rebuild the table, at most once per second. `didBecomeKeyNotification` fires for
     /// EVERY window in this process (Settings tabs, alerts) and the user's flow is to

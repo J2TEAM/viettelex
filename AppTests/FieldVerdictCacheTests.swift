@@ -1,0 +1,96 @@
+import XCTest
+@testable import VietTelex
+
+// The two AX verdicts that decide HOW a keystroke is emitted are cached, and a cache that
+// outlives its field is a typing bug — not a stale statistic. Tester report 2026-07-28
+// (v1.4.17): "đang gõ ở terminal, bấm vào ô input ở trên trình duyệt thì nó thành bôi đen,
+// rồi gõ chỉ replace rồi không gõ thêm được gì, phải click ra ngoài ứng dụng khác ấn lại
+// mới được" — the browser field inherited the previous field's verdict, and the
+// "don't know" default was selection-replace, which in page content means Shift+Left
+// select + overtype. Hence these tests pin the INVALIDATION CONTRACT, which is
+// deliberately different for the two detectors (asymmetric risk).
+final class FieldVerdictCacheTests: XCTestCase {
+
+    override func tearDown() {
+        // Leave both caches in their natural "unknown" state for other tests.
+        FocusedFieldDetector.invalidate()
+        SecureFieldDetector.invalidate()
+        super.tearDown()
+    }
+
+    // MARK: selection-replace verdict
+
+    func testFocusedFieldVerdictIsReadWhileFresh() {
+        FocusedFieldDetector._testSetCached(true)
+        XCTAssertTrue(FocusedFieldDetector.wantsSelection, "a fresh verdict must be served as-is")
+        FocusedFieldDetector._testSetCached(false)
+        XCTAssertFalse(FocusedFieldDetector.wantsSelection)
+    }
+
+    /// THE regression: a "selection-replace" verdict must never survive into the next field.
+    func testInvalidateDropsAStaleSelectionVerdict() {
+        FocusedFieldDetector._testSetCached(true)        // e.g. an address bar
+        FocusedFieldDetector.invalidate()                // user clicks into a page field
+        XCTAssertFalse(FocusedFieldDetector._testCached,
+                       "a stale selection-replace verdict must not be inherited by the new field")
+    }
+
+    /// …and the safe default it falls back to is IN-PLACE, not the module's initial value.
+    /// Carrying selection-replace into page content breaks typing outright (highlighted
+    /// text, only one character replaceable); in-place for the one keystroke before the
+    /// async scan answers is merely suboptimal in an address bar.
+    func testInvalidateFallsBackToInPlaceNotSelection() {
+        FocusedFieldDetector._testSetCached(true)
+        FocusedFieldDetector.invalidate()
+        XCTAssertFalse(FocusedFieldDetector._testCached, "unknown must mean in-place after a focus change")
+    }
+
+    func testInvalidateIsIdempotent() {
+        FocusedFieldDetector._testSetCached(true)
+        FocusedFieldDetector.invalidate()
+        FocusedFieldDetector.invalidate()
+        XCTAssertFalse(FocusedFieldDetector._testCached)
+    }
+
+    // MARK: password-field verdict
+
+    /// The secure verdict is invalidated too (so a password field is re-scanned per focus),
+    /// but on purpose it is NOT forced to a value: forcing "secure" would drop the first
+    /// Vietnamese character on every app switch, and a stale "not secure" costs nothing —
+    /// the engine only starts rewriting text from the second key of a syllable.
+    func testSecureVerdictIsRescannedButNotForced() {
+        SecureFieldDetector._testSetCached(true)
+        XCTAssertTrue(SecureFieldDetector.isSecure)
+        SecureFieldDetector.invalidate()
+        XCTAssertTrue(SecureFieldDetector._testCached, "the value is kept…")
+        XCTAssertFalse(SecureFieldDetector._testIsFresh, "…but marked stale, so the next read re-scans")
+    }
+}
+
+// The U+202F placeholder dance (omnibox / Office strategy) must fire ONLY when there is
+// text to retype. Tester report 2026-07-27: "ấn nút xóa thì bị thêm ký tự rồi xóa" — on a
+// pure deletion the engine returns .replace(bs: 1, insert: ""), so the placeholder had
+// nothing to protect and was simply visible for a moment before being deleted again.
+final class PlaceholderDanceTests: XCTestCase {
+
+    func testDanceOnlyWhenThereIsTextToRetype() {
+        // Tone edit in an omnibox: replace 3 chars with "óa" → dance protects the retype.
+        XCTAssertTrue(SyntheticKeyboard.usesPlaceholderDance(mode: .emptyReset, backspaces: 3,
+                                                             textIsEmpty: false))
+        // THE regression: pure deletion (insert == "") → plain Backspace, no placeholder.
+        XCTAssertFalse(SyntheticKeyboard.usesPlaceholderDance(mode: .emptyReset, backspaces: 1,
+                                                              textIsEmpty: true))
+    }
+
+    func testDanceNeedsARealReplaceAndTheRightMode() {
+        // A pure insert (nothing to delete) never needs it.
+        XCTAssertFalse(SyntheticKeyboard.usesPlaceholderDance(mode: .emptyReset, backspaces: 0,
+                                                              textIsEmpty: false))
+        // Other strategies have their own mechanics.
+        for mode in [TapEmit.backspace, .selection] {
+            XCTAssertFalse(SyntheticKeyboard.usesPlaceholderDance(mode: mode, backspaces: 3,
+                                                                  textIsEmpty: false),
+                           "\(mode) must not use the U+202F placeholder")
+        }
+    }
+}

@@ -315,8 +315,24 @@ enum SecureFieldDetector {
         return value
     }
 
-    /// Forget the cached answer (focus/app switch) so the next read re-scans.
+    /// Forget the cached answer (focus/app switch) so the next read re-scans. Unlike
+    /// FocusedFieldDetector this does NOT force the answer to a safe default, because the
+    /// risk here is asymmetric the other way: a stale `true` costs one raw-ASCII keystroke
+    /// in a normal field, while forcing `true` on every app switch would drop the first
+    /// Vietnamese character every time. A stale `false` for one key is harmless — the
+    /// engine only starts REWRITING text from the second key of a syllable.
     static func invalidate() { lock.withLock { lastCheckNs = 0 } }
+
+    #if DEBUG
+    static func _testSetCached(_ value: Bool) {
+        lock.withLock {
+            cached = value
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+        }
+    }
+    static var _testCached: Bool { lock.withLock { cached } }
+    static var _testIsFresh: Bool { lock.withLock { lastCheckNs != 0 } }
+    #endif
 
     private static func scan() -> Bool {
         guard AXIsProcessTrusted() else { return false }
@@ -377,6 +393,19 @@ enum FocusedFieldDetector {
             lastCheckNs = 0
         }
     }
+
+    #if DEBUG
+    /// Test seam: set the cached verdict AND stamp it fresh, so the invalidation contract
+    /// can be pinned without a live Accessibility tree (the scan itself needs one).
+    static func _testSetCached(_ value: Bool) {
+        lock.withLock {
+            cached = value
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+        }
+    }
+    /// Read the cache WITHOUT kicking a refresh (a plain `wantsSelection` read would).
+    static var _testCached: Bool { lock.withLock { cached } }
+    #endif
 
     /// True → the focused field should use selection-replace; false → in-place.
     static var wantsSelection: Bool {
@@ -915,7 +944,7 @@ enum SyntheticKeyboard {
         // before the delete ("ấn nút xóa thì bị thêm ký tự rồi xóa" — tester report
         // 2026-07-27, shipped with the omnibox .emptyReset switch in 1.4.14). Plain
         // Backspace ×N there: the app cancels its own suggestion on a delete anyway.
-        if mode == .emptyReset, backspaces > 0, !text.isEmpty {
+        if usesPlaceholderDance(mode: mode, backspaces: backspaces, textIsEmpty: text.isEmpty) {
             postUnicode("\u{202F}")                                    // cancel inline autocomplete
             for _ in 0..<(backspaces + 1) { postVirtual(CGKeyCode(kVK_Delete)) }  // +1 deletes the U+202F
             postUnicode(text)
@@ -923,6 +952,16 @@ enum SyntheticKeyboard {
         }
         for _ in 0..<max(0, backspaces) { postVirtual(CGKeyCode(kVK_Delete)) }
         if !text.isEmpty { postUnicode(text) }
+    }
+
+    /// Does this edit need the U+202F placeholder dance? Only `.emptyReset`, only a real
+    /// replace, and only when there IS text to retype: the placeholder exists to stop an
+    /// inline suggestion from swallowing the RETYPE, so on a pure deletion it protects
+    /// nothing and is visible garbage instead — pressing ⌫ in a browser omnibox flashed a
+    /// stray character before the delete (tester report 2026-07-27). Pure function so the
+    /// rule is pinned by tests; the posting code around it cannot be unit-tested.
+    static func usesPlaceholderDance(mode: TapEmit, backspaces: Int, textIsEmpty: Bool) -> Bool {
+        mode == .emptyReset && backspaces > 0 && !textIsEmpty
     }
 
     /// Re-emit a control/whitespace boundary key after a boundary rewrite, so it
