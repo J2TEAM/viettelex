@@ -38,6 +38,14 @@ Trịnh — có từ viết hoa, tên riêng nước ngoài, số, dấu câu; x
 
 Đơn vị: µs/keystroke, release build.
 
+**Nhiễu trên CI (ghi lại 2026-07-27):** runner `macos-26` của GitHub là máy chia sẻ, con
+số tuyệt đối dao động mạnh — cùng một commit đo được `0.2055`, `0.2108` rồi `0.4784`
+µs/phím ở lần thứ ba (diff của lần đó chỉ có Info.plist + stable.json, không có code
+engine). `min-of-5` bên trong test không cứu được vì cửa sổ nhiễu dài hơn cả test. Vì vậy
+CI chạy cổng perf trong **3 process riêng biệt** và chỉ fail khi cả 3 lần đều vượt ngưỡng
+— regression thì tái lập được, nhiễu thì không. Đừng nâng `ceilingMicros` để dập một lần
+đỏ; chỉ nâng khi thấy 3 lần đỏ độc lập (và khi đó nó là regression thật, phải sửa engine).
+
 **Ghi chú tối ưu (2026-07-19):** profiling cho thấy chi phí KHÔNG nằm ở vòng parse
 (đã rẻ) mà ở boundary validation (`isValidSyllable` build String + hash
 `Set<String>` mỗi từ) và các String tạm. Đợt tối ưu "rules→data" compile toàn bộ

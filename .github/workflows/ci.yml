@@ -16,8 +16,28 @@ jobs:
       - uses: actions/checkout@v4
       - name: swift test
         run: cd TelexCore && swift test
-      - name: Benchmarks (release)
-        run: cd TelexCore && swift test -c release --filter 'Benchmark|ZeroAllocation|KeystrokePerf'
+      - name: Benchmarks + zero-alloc (release)
+        run: cd TelexCore && swift test -c release --filter 'Benchmark|ZeroAllocation'
+
+      # The keystroke gate is an ABSOLUTE µs ceiling, and these runners are shared: the
+      # same commit measured 0.2055 / 0.2108 µs on two runs and 0.4784 µs on a third whose
+      # diff touched only Info.plist + stable.json (2026-07-27). min-of-5 inside the test
+      # does not help — a noisy window covers the whole test. So retry the whole PROCESS a
+      # few times and fail only if every attempt is over the ceiling: a real regression is
+      # reproducible, a noisy neighbour is not. Keeps the ceiling tight instead of raising
+      # it to swallow the noise (see KeystrokePerfTests for the ratchet rules).
+      - name: Keystroke perf gate (release, 3 attempts)
+        run: |
+          cd TelexCore
+          for attempt in 1 2 3; do
+            echo "── perf gate attempt $attempt/3"
+            if swift test -c release --filter KeystrokePerf; then
+              exit 0
+            fi
+            echo "── attempt $attempt over the ceiling; re-measuring in a fresh process"
+          done
+          echo "::error::keystroke perf gate failed 3 independent runs — this is a real regression, not runner noise"
+          exit 1
 
   build:
     name: Build app (unsigned)

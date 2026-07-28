@@ -14,6 +14,14 @@ import XCTest
 // table-lookup cost across microarchitectures, so the ratio jumped 87→234 from a
 // fast M-series to the CI M1. Raw µs gated to the CI hardware is the honest gate.)
 //
+// ⚠️ NOISE: these runners are shared, and the absolute number swings with the
+// neighbours. Same commit, three runs 2026-07-27: 0.2055, 0.2108 … 0.4784 µs (the last
+// one's diff was Info.plist + stable.json — no engine code). min-of-5 below does not
+// cover it, because a noisy window lasts longer than the whole test. CI therefore retries
+// the gate in three FRESH processes and only fails when every attempt is over the ceiling
+// (see .github/workflows/ci.yml) — a regression reproduces, noise does not. Do not "fix"
+// a red gate by raising the ceiling until you have seen three independent reds.
+//
 // ⚠️ RATCHET: when the engine gets genuinely faster, LOWER `ceilingMicros` to lock
 // the win in — otherwise the gate silently lets speed drift back up to the old
 // number. Workflow: read the CI log line `KeystrokePerf: … us/keystroke=<X>` from a
