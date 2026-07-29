@@ -155,6 +155,11 @@ public struct TelexEngine {
     private var pSimpleTelex = false
     private var pQuickTelex = false
     private var pVniMode = false
+    // Snapshot of `liveSpellCheck` the freeze state was computed with. Unlike the
+    // other parse settings this one does not change how a single key folds — it
+    // decides WHERE the word freezes (`disabledAtCount`), which is a function of the
+    // whole word, so a mid-word flip has to replay it (see feed()).
+    private var pLiveSpellCheck = false
 
     // Raw index from which keys are emitted literally because live spell-check found
     // the word can no longer be valid Vietnamese. Int.max = not disabled. Unlike
@@ -311,7 +316,16 @@ public struct TelexEngine {
         // Fold the new key into the incremental parse state — or rebuild it when a
         // setting that changes parse behavior flipped mid-word (rare; the controller
         // re-applies settings every key, they just normally don't change mid-word).
-        if pProcessed != rawCount - 1
+        if pLiveSpellCheck != liveSpellCheck {
+            // liveSpellCheck flipped mid-word. The freeze point depends on the WHOLE
+            // word, not on this key, so recompute it with the same replay ⌫ uses:
+            // turning the flag ON must freeze a word that already went invalid
+            // ("googl" + 'e' → "gôgle", frozen from the 4th key, not from the 6th),
+            // turning it OFF must lift a stale freeze instead of leaving the tail
+            // literal until the boundary.
+            recomputeFreeze()
+            rebuildFrozenAware()
+        } else if pProcessed != rawCount - 1
             || pFreeMarking != freeMarking || pSimpleTelex != simpleTelex
             || pQuickTelex != quickTelex || pVniMode != vniMode {
             rebuildFrozenAware()
@@ -356,6 +370,14 @@ public struct TelexEngine {
                 rebuildParseState()
                 pFoldTones = false
                 newCount = render()
+                // The fold rewrote the cancel bookkeeping (a tone key that used to
+                // float is now a literal letter), so the snapshots taken before the
+                // freeze are stale — shouldRestoreRaw() would decide keep-vs-restore
+                // at the boundary on pre-freeze data. Re-take them, exactly like the
+                // upper-tone freeze above and ⌫ already do.
+                markCancelled = pCancelled
+                toneCancelAt = pToneCancelAt
+                toneCancelSpan = pToneCancelSpan
             }
         }
 
@@ -413,20 +435,7 @@ public struct TelexEngine {
         // retroactively: frozen "installer" ⌫ became "intálle" once free marking
         // could reach the 'a'. The replay is bounded (≤32 keys, parseStep is ~ns)
         // and runs only on ⌫.
-        if liveSpellCheck {
-            let full = rawCount
-            disabledAtCount = Int.max
-            var r = 1
-            while r <= full {
-                rawCount = r
-                rebuildParseState()
-                if disabledAtCount == Int.max, pCount > 0, !prefixIsValid(pCount) {
-                    disabledAtCount = r
-                }
-                r += 1
-            }
-            rawCount = full
-        }
+        recomputeFreeze()
         rebuildFrozenAware()
         let newCount = render()
         markCancelled = pCancelled
@@ -867,6 +876,12 @@ public struct TelexEngine {
 
     // MARK: - Test / caller helpers
 
+    /// TRUE while the current word has exceeded the 32-key capacity. Callers need this
+    /// to tell an overflow `.passthrough` (key NOT recorded — the app must render and
+    /// delete natively) from an ordinary literal-letter `.passthrough` (key recorded,
+    /// composition still live). The action alone cannot distinguish the two.
+    public var isOverflowed: Bool { overflowed }
+
     /// Current composed word.
     public var composed: String {
         var s = String.UnicodeScalarView()
@@ -882,6 +897,21 @@ public struct TelexEngine {
         for i in 0..<rawCount { s.append(Unicode.Scalar(raw[i])) }
         return String(s)
     }
+
+    /// Test-only (internal): the cancel snapshots `shouldRestoreRaw` decides on, and the
+    /// live parse state they must mirror. Any freeze/rebuild that changes the parse has
+    /// to re-take the snapshots — a stale pair makes the boundary commit decide on
+    /// pre-freeze data. Compared key-by-key by the regression tests; not part of the
+    /// public API.
+    var debugCancelSnapshot: (cancelled: Bool, at: Int, span: Int) {
+        (markCancelled, toneCancelAt, toneCancelSpan)
+    }
+    var debugParseCancelState: (cancelled: Bool, at: Int, span: Int) {
+        (pCancelled, pToneCancelAt, pToneCancelSpan)
+    }
+    /// Test-only (internal): raw index from which live spell-check froze the word
+    /// (`Int.max` = not frozen).
+    var debugFreezeAt: Int { disabledAtCount }
 
     // MARK: - Rendering
 
@@ -963,6 +993,34 @@ public struct TelexEngine {
         }
     }
 
+    /// Recompute the live-spell-check freeze point (`disabledAtCount`) from scratch by
+    /// replaying the word one key at a time — exactly what forward typing computed
+    /// incrementally. Needed whenever the freeze can no longer be extended from the
+    /// previous state: ⌫ (the word SHRANK — lifting the freeze permanently re-applied
+    /// transforms retroactively, frozen "installer" ⌫ became "intálle") and a mid-word
+    /// `liveSpellCheck` flip (the flag's verdict covers the whole word). The replay is
+    /// bounded (≤32 keys, parseStep is ~ns) and never runs on the hot per-key path.
+    /// Leaves the parse state built for the FULL word but possibly not fold-aware —
+    /// callers must follow with `rebuildFrozenAware()`.
+    private mutating func recomputeFreeze() {
+        // An upper-tone freeze (mixed-case English/code, `disabledAtCount == 0`) is not
+        // a spell-check verdict, so spell-check must not clear it while it still holds.
+        if disabledAtCount == 0, forceRestoreUpperTone, !liveSpellCheck { return }
+        let full = rawCount
+        disabledAtCount = Int.max
+        guard liveSpellCheck else { return }
+        var r = 1
+        while r <= full {
+            rawCount = r
+            rebuildParseState()
+            if disabledAtCount == Int.max, pCount > 0, !prefixIsValid(pCount) {
+                disabledAtCount = r
+            }
+            r += 1
+        }
+        rawCount = full
+    }
+
     private mutating func rebuildParseState() {
         pCount = 0
         pTone = .none
@@ -975,6 +1033,7 @@ public struct TelexEngine {
         pSimpleTelex = simpleTelex
         pQuickTelex = quickTelex
         pVniMode = vniMode
+        pLiveSpellCheck = liveSpellCheck
         for i in 0..<rawCount { rawLetter[i] = -1 }
         for i in 0..<rawCount { parseStep(i) }
         pProcessed = rawCount
@@ -1543,14 +1602,19 @@ public struct TelexEngine {
         return false
     }
 
-    /// Does the syllable end in a stop coda (-p, -t, -c, -ch)? Such codas only
+    /// Does the syllable end in a stop coda (-p, -t, -c, -ch, -k)? Such codas only
     /// allow sắc/nặng. Only meaningful when a vowel precedes (checked by caller).
     /// Reads the render copy (post-propagation state).
+    /// `-k` is in here to stay in lockstep with `SyllableValidator.toneMask`, which
+    /// also treats it as a stop (the ak/ăk/ưk rimes: Đắk, Lắk). Without it "bakf"
+    /// rendered "bàk" and got auto-restored at the boundary instead of silently
+    /// dropping the invalid huyền like "batf"→"bat".
     @inline(__always)
     private func hasStopCoda(_ count: Int) -> Bool {
         guard count > 0 else { return false }
         let last = renderLetters[count - 1].base
-        if last == UInt8(ascii: "p") || last == UInt8(ascii: "t") || last == UInt8(ascii: "c") {
+        if last == UInt8(ascii: "p") || last == UInt8(ascii: "t")
+            || last == UInt8(ascii: "c") || last == UInt8(ascii: "k") {
             return true
         }
         // "ch" coda: trailing h preceded by c.

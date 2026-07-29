@@ -5,8 +5,8 @@ import XCTest
 // FLIPPED MID-WORD. The engine re-applies settings every keystroke and rebuilds the
 // parse when freeMarking/simpleTelex change, so a mid-word flip must land on exactly
 // the same composition as if the final setting had been in force from the first key.
-// (modernTone affects only render, which reruns every key; liveSpellCheck is
-// intentionally forward-only — enabling it mid-word does NOT retroactively freeze.)
+// (modernTone affects only render, which reruns every key. liveSpellCheck rebuilds too:
+// its verdict covers the whole word, so a flip replays the freeze from the first key.)
 final class ModeMatrixTests: XCTestCase {
 
     private func composed(_ keys: String, _ cfg: (inout TelexEngine) -> Void) -> String {
@@ -115,19 +115,61 @@ final class ModeMatrixTests: XCTestCase {
         }
     }
 
-    // liveSpellCheck is forward-only: enabling it AFTER the word already went invalid
-    // does not retroactively unfreeze/refreeze — it only gates keys from that point on.
-    // Documents the design (contrast with freeMarking/simpleTelex which rebuild).
-    func testLiveSpellCheckIsForwardOnly() {
-        // Enable spell-check only for the LAST key: earlier transforms already applied.
+    // Regression: liveSpellCheck flipped MID-WORD must rebuild like every other
+    // parse-affecting setting. It used to be forward-only, so turning it ON never froze
+    // a word that had already gone invalid ("googl" + 'e' froze at the 6th key instead
+    // of the 4th) and turning it OFF left `disabledAtCount` frozen, keeping the tail
+    // literal until the boundary. A flip must land on exactly the always-on /
+    // always-off state — same composition AND same freeze point.
+    private static let spellFlipWords = words + [
+        "google", "gogle", "github", "installer", "windows", "excess", "bakf",
+    ]
+
+    func testLiveSpellCheckFlipMidWordRebuilds() {
+        for keys in Self.spellFlipWords {
+            // Reference states: the flag in force from the very first key, and never.
+            var on = TelexEngine(); on.liveSpellCheck = true
+            var off = TelexEngine()
+            for ch in keys { _ = on.feed(ch); _ = off.feed(ch) }
+
+            for flipAt in 0..<keys.count {
+                // OFF → ON at `flipAt`: must match "on from the start".
+                var e = TelexEngine()
+                for (i, ch) in keys.enumerated() {
+                    if i == flipAt { e.liveSpellCheck = true }
+                    _ = e.feed(ch)
+                }
+                XCTAssertEqual(e.composed, on.composed,
+                               "\(keys): spell-check ON at \(flipAt) ≠ always-on")
+                XCTAssertEqual(e.debugFreezeAt, on.debugFreezeAt,
+                               "\(keys): freeze point after ON at \(flipAt) ≠ always-on")
+
+                // ON → OFF at `flipAt`: must match "never on" (stale freeze lifted).
+                var d = TelexEngine(); d.liveSpellCheck = true
+                for (i, ch) in keys.enumerated() {
+                    if i == flipAt { d.liveSpellCheck = false }
+                    _ = d.feed(ch)
+                }
+                XCTAssertEqual(d.composed, off.composed,
+                               "\(keys): spell-check OFF at \(flipAt) ≠ always-off")
+                XCTAssertEqual(d.debugFreezeAt, off.debugFreezeAt,
+                               "\(keys): freeze point after OFF at \(flipAt) ≠ always-off")
+            }
+        }
+    }
+
+    // The concrete field case behind the fix: "googl" typed with spell-check OFF, the
+    // flag turned ON for the final 'e'. The freeze must be recomputed over the whole
+    // word (invalid from "gôg", i.e. the 4th key), not applied from the flip point.
+    func testLiveSpellCheckEnabledOnLastKeyFreezesFromInvalidPoint() {
         var e = TelexEngine()
         let keys = Array("google")
         for i in 0..<keys.count {
             if i == keys.count - 1 { e.liveSpellCheck = true }
             _ = e.feed(keys[i])
         }
-        // "googl" already composed "gôgl" (spell-check off); enabling it for 'e' only
-        // gates that last key. The already-applied circumflex stays.
         XCTAssertEqual(e.composed, "gôgle")
+        XCTAssertEqual(e.debugFreezeAt, 4)
+        XCTAssertEqual(e.commitText(autoRestore: true), "google")
     }
 }

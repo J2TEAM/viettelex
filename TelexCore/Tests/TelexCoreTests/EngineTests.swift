@@ -702,6 +702,64 @@ final class EngineGoldenTests: XCTestCase {
         XCTAssertEqual(compose("lamf"), "làm")
     }
 
+    // Regression: the render-time tone drop must cover EXACTLY the stop codas the
+    // validator's toneMask calls stop — including -k (ak/ăk/ưk: Đắk, Lắk). "bakf"
+    // used to render "bàk" (an illegal syllable that only the boundary auto-restore
+    // cleaned up) while "batf" silently dropped the huyền. Parity across all five.
+    func testStopCodaToneDropParityAcrossAllCodas() {
+        // Invalid tones (huyền/hỏi/ngã) are dropped, not composed, on every stop coda.
+        for (coda, keys) in [("t", "bat"), ("c", "bac"), ("p", "bap"),
+                             ("ch", "bach"), ("k", "bak")] {
+            for tone in ["f", "r", "x"] {
+                XCTAssertEqual(compose(keys + tone), keys,
+                               "tone \(tone) must be dropped on stop coda -\(coda)")
+            }
+        }
+        // …and the legal sắc/nặng on a -k rime still compose (Đắk Lắk, "ưk").
+        XCTAssertEqual(compose("ddawks"), "đắk")
+        XCTAssertEqual(compose("lawks"), "lắk")
+        XCTAssertEqual(compose("ddawkj"), "đặk")
+        XCTAssertEqual(compose("baks"), "bák")
+        XCTAssertEqual(compose("bakj"), "bạk")
+        // Bare "k" is a stop coda; "kh"/"ng" are not — a following tone key still lands.
+        XCTAssertEqual(compose("khof"), "khò")
+        XCTAssertEqual(compose("bangf"), "bàng")
+        // A -k word that is not Vietnamese still reverts to the raw keys at the
+        // boundary; dropping the tone must not make the word look valid.
+        var e = TelexEngine(); e.liveSpellCheck = true
+        for ch in "bakf" { _ = e.feed(ch) }
+        XCTAssertEqual(e.composed, "bak")
+        XCTAssertEqual(e.commitText(autoRestore: true), "bakf")
+    }
+
+    // Regression: a live-spell-check freeze that folds a PENDING tone back to its
+    // literal letter rebuilds the parse, so the cancel snapshots the boundary decision
+    // reads (`markCancelled` / tone-cancel site+span) must be re-taken. They used to
+    // keep their pre-freeze values, leaving `shouldRestoreRaw` to decide keep-vs-restore
+    // on a parse that is no longer on screen. Invariant: after EVERY key (and every ⌫)
+    // the snapshots mirror the live parse state.
+    func testCancelSnapshotsMirrorParseStateAfterFreeze() {
+        // "osaofio"/"aasoa" are witnesses found by brute force: a cancel is recorded
+        // before the freeze, then the freeze fold un-does it.
+        let words = ["osaofio", "oraofio", "aasoa", "aasooa", "installer", "google",
+                     "gogle", "excess", "lenses", "messs", "hosts", "asks", "bakf"]
+        for w in words {
+            var e = TelexEngine(); e.liveSpellCheck = true; e.freeMarking = true
+            for (i, ch) in w.enumerated() {
+                _ = e.feed(ch)
+                XCTAssertTrue(e.debugCancelSnapshot == e.debugParseCancelState,
+                              "\(w): stale cancel snapshot after key \(i) (\(ch)): "
+                              + "\(e.debugCancelSnapshot) vs parse \(e.debugParseCancelState)")
+            }
+            while !e.composed.isEmpty {
+                _ = e.backspace()
+                XCTAssertTrue(e.debugCancelSnapshot == e.debugParseCancelState,
+                              "\(w): stale cancel snapshot after ⌫: "
+                              + "\(e.debugCancelSnapshot) vs parse \(e.debugParseCancelState)")
+            }
+        }
+    }
+
     // The golden table from DESIGN.md plus a broad set of real Vietnamese words.
     func testGoldenTable() {
         let cases: [(String, String)] = [
