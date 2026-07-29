@@ -361,6 +361,24 @@ final class TelexInputController: IMKInputController {
                 }
             }
             let action = engine.backspace()
+            // OVERFLOW (word longer than the engine's 32-char capacity): backspace()
+            // returns .passthrough and the app must delete natively — the engine's view
+            // is a stale 32-char prefix of what is on screen. Must be decided BEFORE
+            // either the marked or the tracking branch: marked would re-set the same
+            // prefix and swallow the key; the tracking rewrite would wipe every
+            // overflow character on the first ⌫ and then rewrite identical text
+            // forever (⌫ dead for the rest of the word).
+            switch Self.passthroughPlan(overflowPassthrough: Self.isPassthrough(action) && engine.isOverflowed,
+                                        marked: usesMarkedNow(id), isBackspace: true) {
+            case .commitAndPassThrough:
+                endComposition(client)
+                return false
+            case .shrinkWindowAndPassThrough:
+                onLen = max(0, onLen - 1)
+                return false
+            case .honorEngineAction:
+                break
+            }
             if usesMarkedNow(id) { updateMarked(client); return true }
             if tracking {
                 // Rewrite the whole composition via insertText (ordered, non-empty);
@@ -467,6 +485,22 @@ final class TelexInputController: IMKInputController {
         }
 
         let action = engine.feed(ch)
+        // OVERFLOW in a MARKED app: feed() returned .passthrough WITHOUT recording the
+        // key, so re-setting the marked text (unchanged 32-char prefix) while consuming
+        // the event made the 33rd+ characters vanish. Mirror the tap's overflow
+        // handling: finalize what is composed, then deliver the key through the SAME
+        // ordered insertText channel (returning false would race the async marked
+        // commit in terminals — see the Return-key note above). The
+        // engine restarts on the next key, so the tail composes as a fresh syllable —
+        // no diacritic re-placement across the 32-char break, but never lost text.
+        // (In-place mode is unaffected: its .passthrough branch inserts the letter
+        // itself, which is already correct.)
+        if case .commitAndPassThrough = Self.passthroughPlan(overflowPassthrough: Self.isPassthrough(action) && engine.isOverflowed,
+                                                            marked: usesMarkedNow(id), isBackspace: false) {
+            endComposition(client)
+            client.insertText(String(ch), replacementRange: kNoRange)
+            return true
+        }
         if usesMarkedNow(id) { updateMarked(client); return true }
         switch action {
         case .passthrough:
@@ -501,6 +535,45 @@ final class TelexInputController: IMKInputController {
     static func trackedWindowIsFresh(caret: Int?, selectionLength: Int, expected: Int) -> Bool {
         guard let caret else { return false }
         return selectionLength == 0 && caret == expected
+    }
+
+    // MARK: - Engine .passthrough (32-char overflow) contract
+
+    /// What the controller must do when the engine answers `.passthrough`.
+    enum PassthroughPlan: Equatable {
+        /// Not a passthrough (or a case the normal branches already handle correctly):
+        /// carry on with the regular marked / in-place handling.
+        case honorEngineAction
+        /// Marked-text app: finalize the composition, then let the key act on real text.
+        /// Re-setting the marked string here would re-render an unchanged stale prefix
+        /// and swallow the key.
+        case commitAndPassThrough
+        /// Tracked in-place ⌫: the app deletes the character natively, so our tracked
+        /// window shrinks by one and NOTHING may be rewritten.
+        case shrinkWindowAndPassThrough
+    }
+
+    /// Once a word exceeds the engine's 32-key capacity it answers `.passthrough`
+    /// WITHOUT recording the key: its `raw`/`composed` view is a stale prefix of what is
+    /// on screen, so it refuses to diff and the APP must handle the key. The action
+    /// alone is NOT the signal — an ordinary literal letter also answers `.passthrough`
+    /// (recorded, composition live) — so callers must gate on `engine.isOverflowed` too;
+    /// treating every passthrough as overflow committed the marked composition on the
+    /// FIRST letter of every word. Pure function because both violations this pins were
+    /// silent in logs: a tracked ⌫ that rewrote the window wiped every overflow
+    /// character and then went dead for the rest of the word, and a marked-text app
+    /// that re-set its unchanged prefix dropped the 33rd+ letters outright.
+    static func passthroughPlan(overflowPassthrough: Bool, marked: Bool, isBackspace: Bool) -> PassthroughPlan {
+        guard overflowPassthrough else { return .honorEngineAction }
+        if marked { return .commitAndPassThrough }
+        // In-place ⌫: never rewrite. In-place letter: the existing `.passthrough` branch
+        // already inserts the character through our own ordered channel — leave it.
+        return isBackspace ? .shrinkWindowAndPassThrough : .honorEngineAction
+    }
+
+    static func isPassthrough(_ action: TelexAction) -> Bool {
+        if case .passthrough = action { return true }
+        return false
     }
 
     // MARK: - Re-edit the word before the caret (experimental)
@@ -1157,6 +1230,15 @@ final class TelexInputController: IMKInputController {
         status.target = self
         menu.addItem(status)
 
+        // Version + build, disabled: testers report "which build?" straight from the
+        // menu without opening Settings. Not localized — it's an identifier.
+        let bundle = Bundle(for: TelexInputController.self)
+        let ver = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let version = NSMenuItem(title: "VietTelex \(ver) (build \(build))", action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
+
         // Everything else lives in the Settings window (Chung + Gõ tắt tabs). The menu
         // stays minimal: status + Settings.
         let settings = NSMenuItem(title: VTLocalized("Settings…"), action: #selector(openSettings(_:)), keyEquivalent: "")
@@ -1412,19 +1494,22 @@ final class TelexInputController: IMKInputController {
         let bundle = Bundle(for: TelexInputController.self)
         let ver = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        // Log payload — deliberately ENGLISH (and NOT routed through VTLocalized) so a
+        // pasted bug report is greppable regardless of the reporter's UI language.
+        func onOff(_ v: Bool) -> String { v ? "on" : "off" }
         let lines = [
             "VietTelex \(ver) (build \(build))",
-            "Accessibility: \(Accessibility.isTrusted ? "OK" : "thiếu")",
-            "Terminal tap: \(TerminalTapController.shared.isRunning ? "đang chạy" : "tắt")",
-            "Spotlight đang mở: \(SpotlightDetector.isVisible ? "có" : "không")",
-            "App hiện tại: \(id)",
-            "Cách xử lý: \(mode)",
+            "Accessibility: \(Accessibility.isTrusted ? "OK" : "missing")",
+            "Terminal tap: \(TerminalTapController.shared.isRunning ? "running" : "off")",
+            "Spotlight visible: \(SpotlightDetector.isVisible ? "yes" : "no")",
+            "Current app: \(id)",
+            "Strategy: \(mode)",
             "",
-            "Simple Telex: \(s.simpleTelex ? "bật" : "tắt")",
-            "Bỏ dấu tự do: \(s.freeMarking ? "bật" : "tắt")",
-            "Bỏ dấu kiểu mới: \(s.modernOrthography ? "bật" : "tắt")",
-            "Kiểm tra chính tả khi gõ: \(s.liveSpellCheck ? "bật" : "tắt")",
-            "Tự khôi phục: \(s.autoRestore ? "bật" : "tắt")",
+            "Simple Telex: \(onOff(s.simpleTelex))",
+            "Free marking: \(onOff(s.freeMarking))",
+            "Modern tone placement: \(onOff(s.modernOrthography))",
+            "Live spell check: \(onOff(s.liveSpellCheck))",
+            "Auto restore: \(onOff(s.autoRestore))",
         ]
         // No popup — just copy the debug snapshot to the clipboard so the user can
         // paste it straight away (typing is unreliable when something's wrong).

@@ -1,4 +1,5 @@
 import XCTest
+import TelexCore
 @testable import VietTelex
 
 // Support-layer coverage: DebugLog ring semantics, Updater version logic +
@@ -373,6 +374,96 @@ final class TrackedWindowFreshnessTests: XCTestCase {
         XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: nil, selectionLength: 0, expected: 12))
         // Start of a field is a normal, fresh state.
         XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 0, selectionLength: 0, expected: 0))
+    }
+}
+
+// The engine answers `.passthrough` once a word passes its 32-key capacity: from then on
+// its raw/composed view is a stale prefix of what the app has on screen, so the KEY must
+// be handled by the app, never diffed. Two controller branches used to ignore that:
+// a tracked in-place ⌫ rewrote the window (first ⌫ wiped every overflow character, then
+// ⌫ went dead for the rest of the word because each rewrite produced identical text), and
+// a marked-text app re-set its unchanged prefix while consuming the event (33rd+ letters
+// vanished silently). Both are invisible in a log, hence pinned here.
+final class EnginePassthroughContractTests: XCTestCase {
+
+    func testTrackedInPlaceBackspaceMustNotRewriteOnOverflow() {
+        XCTAssertEqual(
+            TelexInputController.passthroughPlan(overflowPassthrough: true, marked: false, isBackspace: true),
+            .shrinkWindowAndPassThrough)
+    }
+
+    func testMarkedAppCommitsAndLetsTheKeyThroughOnOverflow() {
+        // Both directions: the 33rd letter and a ⌫ on an overflowed word.
+        XCTAssertEqual(
+            TelexInputController.passthroughPlan(overflowPassthrough: true, marked: true, isBackspace: false),
+            .commitAndPassThrough)
+        XCTAssertEqual(
+            TelexInputController.passthroughPlan(overflowPassthrough: true, marked: true, isBackspace: true),
+            .commitAndPassThrough)
+    }
+
+    func testInPlaceLetterKeepsItsOwnOrderedInsert() {
+        // In-place mode already inserts the overflow letter through our insertText
+        // channel — it must NOT be diverted (a system passthrough-insert would race
+        // our own edits and corrupt words).
+        XCTAssertEqual(
+            TelexInputController.passthroughPlan(overflowPassthrough: true, marked: false, isBackspace: false),
+            .honorEngineAction)
+    }
+
+    func testNonPassthroughActionsAreLeftAlone() {
+        for marked in [true, false] {
+            for backspace in [true, false] {
+                XCTAssertEqual(
+                    TelexInputController.passthroughPlan(overflowPassthrough: false, marked: marked,
+                                                         isBackspace: backspace),
+                    .honorEngineAction)
+            }
+        }
+    }
+
+    func testPassthroughDetectionMatchesOnlyThePassthroughCase() {
+        XCTAssertTrue(TelexInputController.isPassthrough(.passthrough))
+        XCTAssertFalse(TelexInputController.isPassthrough(.none))
+        XCTAssertFalse(TelexInputController.isPassthrough(.replace(backspaces: 0, insert: "a")))
+        XCTAssertFalse(TelexInputController.isPassthrough(.replace(backspaces: 2, insert: "ế")))
+    }
+
+    /// The real overflow trigger, so the tests above stay tied to the engine contract
+    /// rather than to an assumption about it. NOTE: `.passthrough` alone is NOT the
+    /// overflow signal — ordinary literal letters (the very first "a") also answer
+    /// `.passthrough` while being recorded. Overflow = `.passthrough` AND
+    /// `engine.isOverflowed` (key NOT recorded, composed frozen).
+    func testEngineOverflowContractPastCapacity() {
+        var engine = TelexEngine()
+        for _ in 0..<32 {
+            _ = engine.feed("a")
+            XCTAssertFalse(engine.isOverflowed)            // keys 1–32 are recorded
+        }
+        let frozen = engine.composed
+        let a33 = engine.feed("a")                          // 33rd key: NOT recorded
+        XCTAssertTrue(TelexInputController.isPassthrough(a33))
+        XCTAssertTrue(engine.isOverflowed)
+        XCTAssertEqual(engine.composed, frozen)             // stale prefix stays put
+        XCTAssertTrue(TelexInputController.isPassthrough(engine.backspace())) // and every ⌫ after
+        XCTAssertTrue(engine.isOverflowed)
+        XCTAssertTrue(TelexInputController.isPassthrough(engine.backspace()))
+    }
+
+    /// A plain first letter answers `.passthrough` too (recorded, composition live) —
+    /// it must NOT be treated as overflow, or marked-text composition would be
+    /// committed on the first key of every word.
+    func testOrdinaryLiteralPassthroughIsNotOverflow() {
+        var engine = TelexEngine()
+        let a1 = engine.feed("a")
+        XCTAssertTrue(TelexInputController.isPassthrough(a1))
+        XCTAssertFalse(engine.isOverflowed)
+        XCTAssertEqual(engine.composed, "a")                // the key WAS recorded
+        XCTAssertEqual(
+            TelexInputController.passthroughPlan(
+                overflowPassthrough: TelexInputController.isPassthrough(a1) && engine.isOverflowed,
+                marked: true, isBackspace: false),
+            .honorEngineAction)                              // marked path stays live
     }
 }
 

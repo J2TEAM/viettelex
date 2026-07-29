@@ -41,10 +41,12 @@ enum DebugLog {
     /// `header` (current runtime state) followed by the ring buffer, ready to copy.
     static func snapshot(header: [String]) -> String {
         lock.lock(); let body = lines; lock.unlock()
+        // Log payload strings are ENGLISH on purpose (not VTLocalized): they end up
+        // pasted into bug reports, where greppability beats localization.
         let tail = body.isEmpty
-            ? ["(log empty — bật “Ghi nhật ký gỡ lỗi” rồi tái hiện lỗi)"]
+            ? ["(log empty — enable debug logging, then reproduce the problem)"]
             : body
-        return (header + ["", "— log (\(body.count)/\(capacity) dòng, ms kể từ khi bật app) —"] + tail)
+        return (header + ["", "— log (\(body.count)/\(capacity) lines, ms since app start) —"] + tail)
             .joined(separator: "\n")
     }
 }
