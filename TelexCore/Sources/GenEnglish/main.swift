@@ -171,9 +171,31 @@ if args.count >= 6, let extra = try? String(contentsOfFile: args[4], encoding: .
 // (Đọc thẳng file output cũ — bảng là `internal` trong TelexCore.)
 var inherited = Set<String>()
 let keptSet = Set(kept)
+/// Rút các từ ra khỏi file output cũ. Nhận CẢ HAI định dạng: bảng literal-mỗi-từ
+/// (`"access", "across",` — định dạng cũ, giữ để đọc được file đang ship) và bảng
+/// MỘT literal nhiều dòng (định dạng mới). Với định dạng mới chỉ đọc các dòng NẰM
+/// TRONG khối `= """ … """` nên token trong code (`var`, `set`…) không lọt vào bảng.
+func previousWords(_ text: String) -> [String] {
+    func ok(_ s: Substring) -> Bool {
+        !s.isEmpty && s.allSatisfy { $0.isASCII && $0.isLowercase && $0.isLetter }
+    }
+    var out: [String] = []
+    var inLiteral = false
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        if inLiteral {
+            if t == "\"\"\"" { inLiteral = false; continue }
+            for tok in t.split(whereSeparator: { $0 == " " }) where ok(tok) { out.append(String(tok)) }
+        } else if t.hasSuffix("= \"\"\"") {
+            inLiteral = true
+        } else {
+            for m in line.split(separator: "\"") where ok(m) { out.append(String(m)) }
+        }
+    }
+    return out
+}
 if let prev = try? String(contentsOfFile: args[3], encoding: .utf8) {
-    for m in prev.split(separator: "\"") where m.allSatisfy({ $0.isASCII && $0.isLowercase && $0.isLetter }) {
-        let w = String(m)
+    for w in previousWords(prev) {
         // KHÔNG dùng `seen` ở đây: `consider` đã nạp cả corpus vào `seen` (kể cả
         // các từ nó loại vì engine hôm nay gõ đúng) — đó chính là những từ cần
         // thừa hưởng. Chỉ chặn trùng lặp trong `kept` và protect-list.
@@ -196,14 +218,25 @@ var src = """
 //              Sources/TelexCore/EnglishCollisions.swift
 enum EnglishCollisions {
     /// Sorted ascii, lowercase. ~\(kept.count) từ, tra Set ở boundary (không trên hot path).
-    static let words: Set<String> = [
+    /// Lưu thành MỘT literal (cách nhau bởi space/newline) rồi split lazily ở lần tra
+    /// đầu tiên: 1 string literal thay vì \(kept.count) phần tử literal → nhỏ hơn hàng
+    /// chục KB __TEXT/__DATA. Cùng kiểu với SyllableValidator.rimes.
+    static let words: Set<String> = {
+        var set = Set<String>(minimumCapacity: \(kept.count))
+        for token in list.split(whereSeparator: { $0 == " " || $0 == "\\n" }) {
+            set.insert(String(token))
+        }
+        return set
+    }()
+
+    private static let list = \"\"\"
+
 """
 for chunk in stride(from: 0, to: kept.count, by: 8) {
-    let row = kept[chunk..<min(chunk + 8, kept.count)].map { "\"\($0)\"" }.joined(separator: ", ")
-    src += "        " + row + ",\n"
+    src += "    " + kept[chunk..<min(chunk + 8, kept.count)].joined(separator: " ") + "\n"
 }
 src += """
-    ]
+    \"\"\"
 }
 """
 try! src.write(toFile: args[3], atomically: true, encoding: .utf8)
