@@ -25,22 +25,37 @@ import ApplicationServices
 import TelexCore
 
 enum Accessibility {
-    // AXIsProcessTrusted() is an out-of-process TCC check; in Chromium apps it was
-    // hit up to twice per keystroke (usesSelectionReplace on the hot path). Cache
-    // with a short TTL — a grant/revoke shows up within ttlNs, and requestIfNeeded
-    // invalidates immediately after prompting.
+    // AXIsProcessTrusted() is an out-of-process TCC check (~10-15ms when it misses
+    // the kernel-side fast path); in Chromium apps it was hit up to twice per
+    // keystroke (usesSelectionReplace on the hot path). Cache it — and, since a TTL
+    // expiry otherwise lands ON a keystroke, serve the cached answer ALWAYS and
+    // refresh in the BACKGROUND: exactly the shape SpotlightDetector /
+    // SecureFieldDetector / FocusedFieldDetector below use (stale read + one
+    // deduped async rescan). The only synchronous call left is the FIRST-EVER read
+    // (launch, before any keystroke) — there is no cached value to serve then.
+    //
+    // What carries correctness instead of a fresh read per key:
+    //  • the com.apple.accessibility.api observer (main.swift) invalidates the
+    //    moment the permission changes, which also kicks the refresh immediately;
+    //  • the 3s watchdog calls AXIsProcessTrusted() DIRECTLY (never this cache);
+    //  • the tapDisabledBy* branch in handle() likewise calls it directly.
+    // So a stale answer can only survive for the microseconds until the background
+    // refresh lands, and the paths that must not be wrong don't read this at all.
+    //
     // Locked: read on BOTH the main thread (controller/Settings) and the tap thread.
     private static let lock = NSLock()
     private static var cached = false
+    /// False until the first answer exists — the ONLY state that reads TCC inline.
+    private static var hasValue = false
     private static var lastCheckNs: UInt64 = 0
+    private static var refreshing = false
     // 5s. History: 2s → 500ms during the revoke-wedge hunt (the cache gates
-    // synthetic-event posting), then BACK UP once the real protections landed —
-    // the com.apple.accessibility.api observer invalidates this cache the moment
-    // the permission changes, and the 3s watchdog force-checks fresh. A short TTL
-    // here was pure cost: the expiry lands ON the keystroke path, so typing paid
-    // a ~10-15ms TCC IPC spike every 500ms for correctness the observer already
-    // provides.
-    private static let ttlNs: UInt64 = 5_000_000_000
+    // synthetic-event posting), then BACK UP once the real protections landed (see
+    // above). With the async refresh the TTL no longer costs the keystroke anything;
+    // it only decides how often a background probe runs.
+    static let trustTTLNs: UInt64 = 5_000_000_000
+    private static let refreshQueue =
+        DispatchQueue(label: "com.viettelex.trust-refresh", qos: .userInitiated)
 
     #if DEBUG
     /// Test-only override for the TCC answer — unit tests can't grant real
@@ -50,6 +65,27 @@ enum Accessibility {
     static var testTrustOverride: Bool?
     #endif
 
+    /// What a read at `nowNs` must do. Split out as a pure function so the TTL /
+    /// stale-read contract can be pinned by tests without a live TCC answer.
+    enum TrustRead: Equatable {
+        /// No cached answer yet: pay the sync TCC call once (startup, not a keystroke).
+        case syncFirstRead
+        /// Cached answer is fresh (or a refresh is already in flight) — serve it.
+        case serveCached
+        /// Serve the cached answer NOW, kick one background refresh.
+        case serveCachedAndRefresh
+    }
+
+    static func trustReadPlan(hasValue: Bool, lastCheckNs: UInt64, nowNs: UInt64,
+                              refreshing: Bool, ttlNs: UInt64 = trustTTLNs) -> TrustRead {
+        guard hasValue else { return .syncFirstRead }
+        if refreshing { return .serveCached }
+        // lastCheckNs == 0 means "invalidated" — always stale, so the next read
+        // refreshes promptly (the value is still served immediately).
+        if lastCheckNs == 0 || nowNs &- lastCheckNs >= ttlNs { return .serveCachedAndRefresh }
+        return .serveCached
+    }
+
     /// True when the process may create an event tap / post events. Always false in
     /// the sandboxed build — it can never be granted.
     static var isTrusted: Bool {
@@ -57,21 +93,83 @@ enum Accessibility {
         if let forced = testTrustOverride { return forced }
         #endif
         let now = DispatchTime.now().uptimeNanoseconds
-        let fresh: Bool? = lock.withLock {
-            (lastCheckNs != 0 && now &- lastCheckNs < ttlNs) ? cached : nil
+        let (plan, value): (TrustRead, Bool) = lock.withLock {
+            (trustReadPlan(hasValue: hasValue, lastCheckNs: lastCheckNs,
+                           nowNs: now, refreshing: refreshing), cached)
         }
-        if let fresh { return fresh }
-        // TCC check OUTSIDE the lock (out-of-process call; a concurrent duplicate
-        // check is harmless, a blocked lock on the key path is not).
+        switch plan {
+        case .syncFirstRead: return syncRefresh()
+        case .serveCached: return value
+        case .serveCachedAndRefresh:
+            kickRefresh()
+            return value
+        }
+    }
+
+    /// The one synchronous TCC read (first-ever call). Runs OUTSIDE the lock — a
+    /// concurrent duplicate is harmless, a blocked lock on the key path is not.
+    @discardableResult
+    private static func syncRefresh() -> Bool {
         let trusted = AXIsProcessTrusted()
         lock.withLock {
             cached = trusted
-            lastCheckNs = now
+            hasValue = true
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
         }
         return trusted
     }
 
-    static func invalidateCache() { lock.withLock { lastCheckNs = 0 } }
+    /// One background TCC read, deduped by the `refreshing` gate. Never call while
+    /// holding `lock` (it takes it itself — the "never nest" rule).
+    private static func kickRefresh() {
+        let go: Bool = lock.withLock {
+            if refreshing { return false }
+            refreshing = true
+            return true
+        }
+        guard go else { return }
+        refreshQueue.async {
+            let trusted = AXIsProcessTrusted()
+            lock.withLock {
+                cached = trusted
+                hasValue = true
+                lastCheckNs = DispatchTime.now().uptimeNanoseconds
+                refreshing = false
+            }
+        }
+    }
+
+    /// Mark the cached answer stale AND start the refresh right away, so the value
+    /// converges within a background round trip instead of waiting for a reader.
+    /// The cached value is deliberately KEPT (a reader still gets an answer); the
+    /// paths that must not be wrong about a revoke — watchdog, tapDisabledBy* —
+    /// call AXIsProcessTrusted() directly.
+    static func invalidateCache() {
+        lock.withLock { lastCheckNs = 0 }
+        kickRefresh()
+    }
+
+    #if DEBUG
+    /// Test seams: drive the cache without a live TCC grant.
+    static func _testSetTrustCache(_ value: Bool) {
+        lock.withLock {
+            cached = value
+            hasValue = true
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+            refreshing = false
+        }
+    }
+    static func _testForgetTrustCache() {
+        lock.withLock {
+            cached = false
+            hasValue = false
+            lastCheckNs = 0
+            refreshing = false
+        }
+    }
+    static var _testTrustCached: Bool { lock.withLock { cached } }
+    static var _testTrustIsFresh: Bool { lock.withLock { lastCheckNs != 0 } }
+    #endif
 
     /// GROUND TRUTH for "may I actually post/tap?", unlike `AXIsProcessTrusted()`.
     /// In the stale-grant state AXIsProcessTrusted keeps answering TRUE (Settings shows
@@ -194,6 +292,29 @@ final class FrontmostApp {
     }
 }
 
+/// TTL backoff shared by the three AX/window-list verdict caches below. While the user
+/// types continuously each detector's TTL expires over and over (200-300ms), so a long
+/// typing run pays ~8 cross-process AX round trips per second on background queues for
+/// answers that never change — the focused field is the same field. So: once a detector
+/// has re-confirmed the SAME verdict `threshold` times in a row, double its TTL per extra
+/// confirmation up to `capNs`. Any verdict CHANGE or an `invalidate()` (focus/app switch)
+/// resets the run, so the responsiveness that matters — the first scan after a focus
+/// change — is untouched: it always runs at the base TTL.
+enum DetectorBackoff {
+    /// Never let a verdict go stale for longer than this, however stable it looked.
+    static let capNs: UInt64 = 1_000_000_000
+    /// Consecutive identical verdicts before the TTL starts growing.
+    static let threshold = 3
+
+    static func ttl(base: UInt64, stableRuns: Int) -> UInt64 {
+        guard base > 0, stableRuns >= threshold else { return min(base, capNs) }
+        // Bounded shift (never let `base << n` overflow), then clamp to the cap.
+        let doublings = min(stableRuns - threshold + 1, 16)
+        let grown = base << UInt64(doublings)
+        return grown >= capNs || grown < base ? capNs : grown
+    }
+}
+
 /// Spotlight is a system overlay, not the frontmost APP — its bundle id never shows
 /// up in NSWorkspace.frontmostApplication. Detect it by scanning the
 /// on-screen window list for a window owned by the "Spotlight" process.
@@ -220,13 +341,16 @@ enum SpotlightDetector {
     private static var cached = false
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
+    /// Consecutive identical verdicts — see DetectorBackoff.
+    private static var stableRuns = 0
     private static let ttlNs: UInt64 = 200_000_000
     private static let scanQueue = DispatchQueue(label: "com.viettelex.spotlight-scan", qos: .utility)
 
     static var isVisible: Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         let (stale, value): (Bool, Bool) = lock.withLock {
-            let needsRefresh = now &- lastCheckNs >= ttlNs && !refreshing
+            let ttl = DetectorBackoff.ttl(base: ttlNs, stableRuns: stableRuns)
+            let needsRefresh = now &- lastCheckNs >= ttl && !refreshing
             if needsRefresh { refreshing = true }
             return (needsRefresh, cached)
         }
@@ -234,6 +358,7 @@ enum SpotlightDetector {
             scanQueue.async {
                 let visible = scan()                       // heavy call, off the hot path
                 lock.withLock {
+                    stableRuns = visible == cached ? stableRuns + 1 : 0
                     cached = visible
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
@@ -287,6 +412,8 @@ enum SecureFieldDetector {
     private static var cached = false
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
+    /// Consecutive identical verdicts — see DetectorBackoff.
+    private static var stableRuns = 0
     private static let ttlNs: UInt64 = 300_000_000        // 300ms: focus changes must be seen fast
     private static let scanQueue = DispatchQueue(label: "com.viettelex.secure-scan", qos: .userInitiated)
 
@@ -298,7 +425,8 @@ enum SecureFieldDetector {
     static var isSecure: Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         let (stale, value): (Bool, Bool) = lock.withLock {
-            let needsRefresh = now &- lastCheckNs >= ttlNs && !refreshing
+            let ttl = DetectorBackoff.ttl(base: ttlNs, stableRuns: stableRuns)
+            let needsRefresh = now &- lastCheckNs >= ttl && !refreshing
             if needsRefresh { refreshing = true }
             return (needsRefresh, cached)
         }
@@ -306,6 +434,7 @@ enum SecureFieldDetector {
             scanQueue.async {
                 let secure = scan()
                 lock.withLock {
+                    stableRuns = secure == cached ? stableRuns + 1 : 0
                     cached = secure
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
@@ -321,7 +450,8 @@ enum SecureFieldDetector {
     /// in a normal field, while forcing `true` on every app switch would drop the first
     /// Vietnamese character every time. A stale `false` for one key is harmless — the
     /// engine only starts REWRITING text from the second key of a syllable.
-    static func invalidate() { lock.withLock { lastCheckNs = 0 } }
+    /// Also drops the TTL backoff: the new field must be scanned at the base TTL.
+    static func invalidate() { lock.withLock { lastCheckNs = 0; stableRuns = 0 } }
 
     #if DEBUG
     static func _testSetCached(_ value: Bool) {
@@ -376,6 +506,10 @@ enum FocusedFieldDetector {
     private static var cached = true            // unknown → selection (always works)
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
+    /// Consecutive identical verdicts — see DetectorBackoff. Separate counters for the
+    /// two verdicts this type caches (selection-replace and "is a real text input").
+    private static var stableRuns = 0
+    private static var stableTextRuns = 0
     private static let ttlNs: UInt64 = 200_000_000
     private static let scanQueue = DispatchQueue(label: "com.viettelex.field-scan", qos: .userInitiated)
 
@@ -387,10 +521,16 @@ enum FocusedFieldDetector {
     /// click away and back (tester report 2026-07-28, v1.4.17: "bấm vào ô input ở trên
     /// trình duyệt thì nó thành bôi đen, rồi gõ chỉ replace"). In-place for the one
     /// keystroke before the async scan answers is the mild failure; selection is not.
+    /// Also drops the TTL backoff (both verdicts): the new field must be re-scanned at
+    /// the base TTL, however stable the previous field's answer had become.
     static func invalidate() {
         lock.withLock {
             cached = false
             lastCheckNs = 0
+            stableRuns = 0
+            // Backoff only — the timestamps/values of the isTextInput verdict keep the
+            // shipped semantics untouched.
+            stableTextRuns = 0
         }
     }
 
@@ -411,7 +551,8 @@ enum FocusedFieldDetector {
     static var wantsSelection: Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         let (stale, value): (Bool, Bool) = lock.withLock {
-            let needsRefresh = now &- lastCheckNs >= ttlNs && !refreshing
+            let ttl = DetectorBackoff.ttl(base: ttlNs, stableRuns: stableRuns)
+            let needsRefresh = now &- lastCheckNs >= ttl && !refreshing
             if needsRefresh { refreshing = true }
             return (needsRefresh, cached)
         }
@@ -431,6 +572,7 @@ enum FocusedFieldDetector {
                     DebugLog.log("field-scan \(front): wantsSelection=\(wants) roles=[\(roleChain())]")
                 }
                 lock.withLock {
+                    stableRuns = wants == cached ? stableRuns + 1 : 0
                     cached = wants
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
@@ -480,7 +622,8 @@ enum FocusedFieldDetector {
     static var isTextInput: Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         let (stale, value): (Bool, Bool) = lock.withLock {
-            let needsRefresh = now &- lastTextCheckNs >= ttlNs && !refreshingText
+            let ttl = DetectorBackoff.ttl(base: ttlNs, stableRuns: stableTextRuns)
+            let needsRefresh = now &- lastTextCheckNs >= ttl && !refreshingText
             if needsRefresh { refreshingText = true }
             return (needsRefresh, cachedTextInput)
         }
@@ -488,6 +631,7 @@ enum FocusedFieldDetector {
             scanQueue.async {
                 let isText = scanTextInput()
                 lock.withLock {
+                    stableTextRuns = isText == cachedTextInput ? stableTextRuns + 1 : 0
                     cachedTextInput = isText
                     lastTextCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshingText = false
@@ -730,8 +874,10 @@ enum SyntheticKeyboard {
         event.cgEvent.map(isSynthetic) ?? false
     }
 
-    /// Health-probe key: keycode 127 (unassigned on Apple keyboards). The watchdog
-    /// posts one every tick; the tap callback swallows it and records the arrival.
+    /// Health-probe key: keycode 90 = kVK_F20, which no physical Apple keyboard has.
+    /// (It was keycode 127 originally — the OS FILTERS that one, so the probe never
+    /// re-entered the tap and every tick read as a miss.) The watchdog posts one per
+    /// tick while the user is typing; the callback swallows it and records the arrival.
     /// A probe that never comes back means posts are being DROPPED (Accessibility
     /// grant REMOVED — AXIsProcessTrusted lies true in that state) or the tap is
     /// dead/wedged. No breaker or in-flight bookkeeping: probes are out-of-band.
@@ -1120,6 +1266,24 @@ final class TerminalTapController {
     private var lastDisableNs: UInt64 = 0
     private var disableBurst = 0
 
+    /// Set by start() on MAIN, consumed by the FIRST keyDown after a (re)enable on the
+    /// TAP thread: `engine` is tap-thread confined, so a composition left over from a
+    /// previous tap life must be dropped from INSIDE the callback, never from start().
+    /// (The old code called engine.reset() on main right before tapEnable — no gap in
+    /// practice, since the tap can't deliver before it is enabled, but it was the one
+    /// place main touched tap-thread state.) Guarded by `stateLock`.
+    private var pendingEngineReset = false
+
+    /// Uptime of the last REAL keyDown seen by the callback, 0 = none yet. Written on
+    /// the TAP thread, read by the watchdog on MAIN — guarded by `stateLock` (folded
+    /// into the same lock round trip that consumes `pendingEngineReset`, so the hot
+    /// path pays one uncontended lock, not two).
+    private var lastKeyDownNs: UInt64 = 0
+    /// Idle threshold: with no keystroke for this long there is no typing to protect,
+    /// so the watchdog skips the health probe and its secure-field precheck (both
+    /// cross-process). The trust check always runs.
+    private static let watchdogIdleNs: UInt64 = 180_000_000_000   // 3 minutes
+
     // Functional health probe (stateLock): watchdog bumps probeSentTick and posts;
     // the callback copies it into probeSeenTick on arrival. Sent != seen for two
     // consecutive watchdog ticks ⇒ posts are dropped or the tap is wedged.
@@ -1186,12 +1350,33 @@ final class TerminalTapController {
 
             // FUNCTIONAL probe — the only signal that survives a LYING
             // AXIsProcessTrusted (grant REMOVED via −, field bug 2026-07-22):
-            // post a keycode-127 marker at ourselves; the callback swallows it
+            // post an F20 (keycode 90) marker at ourselves; the callback swallows it
             // and acks. Two consecutive unanswered probes ⇒ posts are being
             // dropped (revoked) or the callback is wedged ⇒ unconditional
             // teardown, keys flow natively again.
-            let (sent, seen): (UInt64, UInt64) = self.stateLock.withLock {
-                (self.probeSentTick, self.probeSeenTick)
+            // IDLE SKIP: the probe exists to prove that posting still works BEFORE the
+            // user's next keystroke needs it. On a machine nobody is typing on there is
+            // nothing to protect, and both the probe and its secure-field precheck are
+            // cross-process calls on a 3s timer forever. No keyDown for minutes → do the
+            // trust check + ensureRunning above and stop there. The probe accounting is
+            // skipped too (not just the send): a single miss recorded before going idle
+            // would otherwise keep incrementing every tick and tear down a healthy tap.
+            let (sent, seen, lastKey): (UInt64, UInt64, UInt64) = self.stateLock.withLock {
+                (self.probeSentTick, self.probeSeenTick, self.lastKeyDownNs)
+            }
+            let nowNs = DispatchTime.now().uptimeNanoseconds
+            let idle = lastKey == 0 || nowNs &- lastKey > Self.watchdogIdleNs
+            if idle {
+                self.probeMisses = 0
+                // The stale-grant HINT still runs while idle: it is a pure local
+                // preflight (no post, no AX scan) and the user must be able to see the
+                // repair line without typing into a broken app first.
+                if self.stateLock.withLock({ self.tap }) == nil,
+                   Accessibility.grantLooksStale, !self.trustLooksStale {
+                    self.trustLooksStale = true
+                    DebugLog.log("watchdog: grant looks stale (trusted but canPost=false) → offer repair")
+                }
+                return
             }
             if sent != seen {
                 self.probeMisses += 1
@@ -1309,7 +1494,14 @@ final class TerminalTapController {
         thread.qualityOfService = .userInteractive
         thread.start()
         _ = ready.wait(timeout: .now() + 2)
-        engine.reset()   // stale composition from a previous tap life; safe pre-enable
+        // Drop any composition left from a previous tap life — but from the TAP thread:
+        // `engine` is tap-thread confined, so arm a flag the first keyDown consumes
+        // instead of touching it here on main. Armed BEFORE tapEnable, so no real key
+        // can slip past unreset.
+        stateLock.withLock {
+            self.pendingEngineReset = true
+            self.lastKeyDownNs = 0          // fresh tap life: idle until someone types
+        }
         CGEvent.tapEnable(tap: tap, enable: true)
         stateLock.withLock {
             self.tap = tap
@@ -1431,7 +1623,7 @@ final class TerminalTapController {
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
 
-        // Watchdog health probe (our own keycode-127 keyDown): swallow it before
+        // Watchdog health probe (our own F20 / keycode-90 keyDown): swallow it before
         // ANY other logic — no app ever sees it, no counter counts it.
         if type == .keyDown,
            event.getIntegerValueField(.keyboardEventKeycode) == SyntheticKeyboard.probeKeycode,
@@ -1460,8 +1652,10 @@ final class TerminalTapController {
         // a ping-pong that wedged ALL input (keyboard + mouse are both in our mask)
         // — the reported full-input hang. Revoked → tear the whole tap down (on
         // main; lifecycle is main-owned) and let every event flow natively.
-        // Direct AXIsProcessTrusted() call, NOT the TTL cache — the cache can say
-        // "trusted" for up to 2s after the toggle, which re-arms the fight.
+        // Direct AXIsProcessTrusted() call, NOT the TTL cache — the cache serves a
+        // STALE answer by design (5s TTL, refreshed in the background off the keystroke
+        // path), so right after the toggle it can still say "trusted" and re-arm the
+        // fight. Same rule as the watchdog: revoke-critical paths never read the cache.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             // GRANT-REMOVAL guard (field bug 2026-07-22): when the user REMOVES the
             // Accessibility entry (−, not a toggle), AXIsProcessTrusted() keeps
@@ -1507,6 +1701,18 @@ final class TerminalTapController {
             SyntheticKeyboard.noteObservedSynthetic()
             return pass
         }
+
+        // ONE stateLock round trip per real key (uncontended NSLock, tens of ns):
+        //  • stamp liveness for the watchdog's idle skip (it must not probe a machine
+        //    nobody types on);
+        //  • consume the pending post-(re)enable engine reset armed by start() — the
+        //    engine is tap-thread confined, so the reset happens HERE, on this thread.
+        let needsEngineReset: Bool = stateLock.withLock {
+            lastKeyDownNs = DispatchTime.now().uptimeNanoseconds
+            defer { pendingEngineReset = false }
+            return pendingEngineReset
+        }
+        if needsEngineReset { engine.reset() }
 
         // Self-heal the latched imeActive against the authoritative selected source.
         // imeActive is a cache flipped by activate / deactivate / the TIS notification,

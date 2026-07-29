@@ -72,6 +72,16 @@ final class AppState: @unchecked Sendable {
     ]
 
     private init() {
+        // Engine toggles: cached in memory (see the property docs) — every one of these
+        // was read from UserDefaults on EVERY keystroke, on both hot paths.
+        _autoRestore = (defaults.object(forKey: Key.autoRestore) as? Bool) ?? true
+        _freeMarking = (defaults.object(forKey: Key.freeMarking) as? Bool) ?? true
+        _modernOrthography = (defaults.object(forKey: Key.modernOrthography) as? Bool) ?? false
+        _liveSpellCheck = (defaults.object(forKey: Key.liveSpellCheck) as? Bool) ?? true
+        _simpleTelex = (defaults.object(forKey: Key.simpleTelex) as? Bool) ?? false
+        _quickTelex = (defaults.object(forKey: Key.quickTelex) as? Bool) ?? false
+        _vniMode = (defaults.object(forKey: Key.vniMode) as? Bool) ?? false
+        _contextualEnglish = (defaults.object(forKey: Key.contextualEnglish) as? Bool) ?? false
         tapNativeFastPath = (defaults.object(forKey: "tapNativeFastPath") as? Bool) ?? true
         _tapModifyEventInPlace = (defaults.object(forKey: "tapModifyEventInPlace") as? Bool) ?? true
         _tapSkipSyntheticKeyUp = (defaults.object(forKey: "tapSkipSyntheticKeyUp") as? Bool) ?? true
@@ -103,14 +113,25 @@ final class AppState: @unchecked Sendable {
     // MARK: - Options
     // No VI/EN enable/disable: Vietnamese is ON whenever VietTelex is the active macOS
     // input source. English = switch input source (macOS remembers it per app).
+    //
+    // ENGINE TOGGLES BELOW ARE CACHED IN MEMORY, deliberately. All seven engine flags
+    // are pushed into the engine on EVERY keystroke (TerminalTap's callback and the
+    // IMKit controller both do it), and autoRestore is read at every word boundary —
+    // that was 7-8 `UserDefaults.object(forKey:)` lookups per key on the hot path.
+    // Same pattern as tapModifyEventInPlace &co: the getter reads the cache under
+    // `lock`, the setter writes the cache AND persists, so live-toggling from Settings
+    // still takes effect on the very next keystroke. Locked because Settings writes on
+    // MAIN while the tap callback reads on the TAP thread.
 
     /// Auto-restore: at a word boundary, if the composed word is not a valid
     /// Vietnamese syllable (rule-based `SyllableValidator`, no dictionary), revert to
     /// the raw keystrokes — so English/typos come out as typed ("retore"→retỏe→
     /// retore). Default ON. Users who explicitly turned it off keep their choice.
+    private var _autoRestore: Bool
     var autoRestore: Bool {
-        get { defaults.object(forKey: Key.autoRestore) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Key.autoRestore) }
+        get { lock.withLock { _autoRestore } }
+        set { lock.withLock { _autoRestore = newValue }
+              defaults.set(newValue, forKey: Key.autoRestore) }
     }
 
     /// "Bỏ dấu tự do" (free mark placement). When ON, modifier keys
@@ -118,49 +139,61 @@ final class AppState: @unchecked Sendable {
     /// vowel: "ama"→âm, "trangw"→trăng. When OFF (default = Minimal Telex / strict),
     /// a modifier only acts on the adjacent vowel, so English/code types cleanly
     /// ("ama"→ama, "trangw"→trangw; type "coot"/"trawng" to get the diacritic).
+    /// Default ON since 1.3.1 (user decision 2026-07-21). Users who explicitly
+    /// turned it off keep their choice (stored value wins).
+    private var _freeMarking: Bool
     var freeMarking: Bool {
-        // Default ON since 1.3.1 (user decision 2026-07-21). Users who explicitly
-        // turned it off keep their choice (stored value wins).
-        get { defaults.object(forKey: Key.freeMarking) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Key.freeMarking) }
+        get { lock.withLock { _freeMarking } }
+        set { lock.withLock { _freeMarking = newValue }
+              defaults.set(newValue, forKey: Key.freeMarking) }
     }
 
     /// Tone-placement style. false (default) = old style (hòa, thủy); true = modern
     /// (hoà, thuý). See `TelexEngine.modernTone`.
+    private var _modernOrthography: Bool
     var modernOrthography: Bool {
-        get { defaults.object(forKey: Key.modernOrthography) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: Key.modernOrthography) }
+        get { lock.withLock { _modernOrthography } }
+        set { lock.withLock { _modernOrthography = newValue }
+              defaults.set(newValue, forKey: Key.modernOrthography) }
     }
 
     /// Live spell-check: stop transforming a word mid-typing once it can't be valid
     /// Vietnamese (foreign words / URLs). Default ON. See `TelexEngine.liveSpellCheck`.
+    private var _liveSpellCheck: Bool
     var liveSpellCheck: Bool {
-        get { defaults.object(forKey: Key.liveSpellCheck) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Key.liveSpellCheck) }
+        get { lock.withLock { _liveSpellCheck } }
+        set { lock.withLock { _liveSpellCheck = newValue }
+              defaults.set(newValue, forKey: Key.liveSpellCheck) }
     }
 
     /// Simple Telex: a standalone `w` stays literal (type `uw` for ư). Default OFF
     /// since 1.3.3 (user decision 2026-07-21 — full Telex incl. word-initial w→ư;
     /// English w-words rely on live spell-check + auto-restore). An explicit user
     /// choice is preserved. See `TelexEngine.simpleTelex`.
+    private var _simpleTelex: Bool
     var simpleTelex: Bool {
-        get { defaults.object(forKey: Key.simpleTelex) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: Key.simpleTelex) }
+        get { lock.withLock { _simpleTelex } }
+        set { lock.withLock { _simpleTelex = newValue }
+              defaults.set(newValue, forKey: Key.simpleTelex) }
     }
 
     /// Quick Telex ("gõ nhanh"): word-initial doubled consonant → onset digraph
     /// (cc→ch, gg→gi, kk→kh, nn→ng, qq→qu, pp→ph, tt→th). Default OFF.
     /// See `TelexEngine.quickTelex`.
+    private var _quickTelex: Bool
     var quickTelex: Bool {
-        get { defaults.object(forKey: Key.quickTelex) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: Key.quickTelex) }
+        get { lock.withLock { _quickTelex } }
+        set { lock.withLock { _quickTelex = newValue }
+              defaults.set(newValue, forKey: Key.quickTelex) }
     }
 
     /// VNI input method (EXPERIMENTAL, default OFF). Digits carry the diacritics
     /// instead of Telex letters. See `TelexEngine.vniMode`.
+    private var _vniMode: Bool
     var vniMode: Bool {
-        get { defaults.object(forKey: Key.vniMode) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: Key.vniMode) }
+        get { lock.withLock { _vniMode } }
+        set { lock.withLock { _vniMode = newValue }
+              defaults.set(newValue, forKey: Key.vniMode) }
     }
 
     /// Re-edit the word BEFORE the caret (EXPERIMENTAL, default OFF): a tone/mark key
@@ -173,9 +206,11 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Context-based decision (EXPERIMENTAL, default OFF). See `TelexEngine.contextualEnglish`.
+    private var _contextualEnglish: Bool
     var contextualEnglish: Bool {
-        get { defaults.object(forKey: Key.contextualEnglish) as? Bool ?? false }
-        set { defaults.set(newValue, forKey: Key.contextualEnglish) }
+        get { lock.withLock { _contextualEnglish } }
+        set { lock.withLock { _contextualEnglish = newValue }
+              defaults.set(newValue, forKey: Key.contextualEnglish) }
     }
 
     /// UI language override for the Settings window + menu, independent of the
@@ -246,10 +281,12 @@ final class AppState: @unchecked Sendable {
 
     /// D1 — AX selection-replace. For Chromium/Spotlight tone edits (`.selection` emit
     /// mode) collapse the Shift+Left ×N select + overtype burst — 2(N+1) posted events,
-    /// ~3ms each — into ONE Accessibility text edit on the focused element. Default OFF:
-    /// it runs a synchronous cross-process AX call INSIDE the tap callback, i.e. new
-    /// hang surface, and it shipped right after a keyboard-hang fix — so it stays opt-in
-    /// (Settings → Advanced) until proven not to stall the callback in the field. When
+    /// ~3ms each — into ONE Accessibility text edit on the focused element. Shipped OFF
+    /// (it runs a synchronous cross-process AX call INSIDE the tap callback, i.e. new
+    /// hang surface, right after a keyboard-hang fix), then flipped to **default ON on
+    /// 2026-07-21** after a day of field use with the queueDrained gate + 50ms AX
+    /// timeout + posted-events fallback and no stalls — the Settings → Thử Nghiệm
+    /// toggle is now a kill switch, not an opt-in. When
     /// on it only fires with the synthetic queue drained (the AX write mutates the field
     /// immediately while native keys already past the tap can't be tracked — the
     /// "nuwax"→"nuẵ" reorder class) and any AX failure falls back to the posted-events
