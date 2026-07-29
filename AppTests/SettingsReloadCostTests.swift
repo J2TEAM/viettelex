@@ -34,6 +34,36 @@ final class SettingsReloadCostTests: XCTestCase {
                        "a second reload must not add lookups — every id was already known")
     }
 
+    /// Same story for the display name: `urlForApplication` + `displayName(atPath:)` per
+    /// ROW (~20-60 of them) on every reload. One resolve per bundle id per session.
+    func testAppNameLookupsAreMemoized() {
+        SettingsModel.nameCache.removeAll()
+        let model = SettingsModel(selected: .modeTable)
+        model.reloadModeTable()
+        let afterFirst = SettingsModel.nameCache.count
+        XCTAssertGreaterThan(afterFirst, 0, "the reload must populate the name cache")
+        XCTAssertEqual(afterFirst, model.modeRows.count,
+                       "one cache entry per row — every row's name came from a lookup")
+
+        model.reloadModeTable()
+        XCTAssertEqual(SettingsModel.nameCache.count, afterFirst,
+                       "a second reload must not add lookups — every name was already known")
+    }
+
+    /// A cached name must be the one actually shown, not just stored — otherwise the
+    /// memoization would be dead weight next to a live lookup.
+    func testAppNameReturnsTheCachedValue() {
+        SettingsModel.nameCache.removeAll()
+        SettingsModel.nameCache["com.example.nonexistent"] = "Sentinel"
+        XCTAssertEqual(SettingsModel.appName(for: "com.example.nonexistent"), "Sentinel")
+        SettingsModel.nameCache.removeAll()
+        // Unknown id (nothing installed under it) falls back to the raw id — and caches it.
+        XCTAssertEqual(SettingsModel.appName(for: "com.example.nonexistent"),
+                       "com.example.nonexistent")
+        XCTAssertEqual(SettingsModel.nameCache["com.example.nonexistent"],
+                       "com.example.nonexistent", "the miss must be cached too")
+    }
+
     /// Throttled reload: at most one rebuild per second, no matter how many windows become
     /// key. Observed through `modeRows`: a skipped reload leaves the emptied rows empty.
     func testThrottledReloadSkipsWithinTheWindow() {

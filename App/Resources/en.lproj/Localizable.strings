@@ -44,3 +44,14 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 "Repair started body" = "VietTelex removed its own stale entry. macOS should now ask for Accessibility permission: approve it, or open Accessibility settings and tick VietTelex. Typing in Terminal/Chrome works again the moment you do — no restart needed.";
 "Repair failed title" = "Couldn’t reset the permission";
 "Repair failed body" = "macOS refused to remove the entry (this happens when it is managed by your organisation). Fix it by hand: open Accessibility settings, select VietTelex, press − to remove it, then + to add it back from ~/Library/Input Methods.";
+
+/* 1.4.22 — UI/UX audit: missing captions, Accessibility banner, update channel, VoiceOver labels */
+"A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore)." = "A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore).";
+"Type “toan”, then “s” → “toán” — no need to retype the whole word." = "Type “toan”, then “s” → “toán” — no need to retype the whole word.";
+"No Accessibility permission — typing in Terminal/Chrome won’t work" = "No Accessibility permission — typing in Terminal/Chrome won’t work";
+"Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed." = "Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed.";
+"Manual check: the newest release on GitHub. Weekly check: the stable channel." = "Manual check: the newest release on GitHub. Weekly check: the stable channel.";
+"No app matches “%@”" = "No app matches “%@”";
+"Clear filter" = "Clear filter";
+"Delete this shortcut" = "Delete this shortcut";
+"Open Settings → About to install it." = "Open Settings → About to install it.";

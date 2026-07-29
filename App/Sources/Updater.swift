@@ -7,8 +7,20 @@
 
 import Foundation
 import AppKit
+import UserNotifications
 
 enum UpdateCheck {
+    /// Set by the weekly auto-check when a newer STABLE version exists, so the About tab
+    /// can show it (see `AboutTab.onAppear`). This is the whole point of the notification
+    /// rewrite: the news must never arrive as a modal in the middle of a sentence, and if
+    /// notifications are denied the About tab is the only place left to say it.
+    /// Persisted so it survives the IME being relaunched between the check and the visit.
+    nonisolated(unsafe) static var pendingUpdateVersion: String? {
+        get { notifyDefaults.string(forKey: "pendingUpdateVersion").flatMap { $0.isEmpty ? nil : $0 } }
+        set { notifyDefaults.set(newValue ?? "", forKey: "pendingUpdateVersion") }
+    }
+    private static let notifyDefaults = UserDefaults(suiteName: "com.viettelex.settings") ?? .standard
+
     /// Weekly auto-check — runs ONLY when the user opted in (Settings toggle,
     /// default OFF, so the no-network stance still holds: the toggle is the ask).
     /// Event-driven (called from activateServer, throttled by timestamp — no
@@ -25,28 +37,14 @@ enum UpdateCheck {
         guard now - AppState.shared.lastAutoUpdateCheckAt > 7 * 24 * 3600 else { return }
         AppState.shared.lastAutoUpdateCheckAt = now
         Task {
-            guard case let .update(latest, url) = await checkStable() else { return }
+            guard case let .update(latest, _) = await checkStable() else { return }
             await MainActor.run {
                 guard AppState.shared.lastNotifiedUpdateVersion != latest else { return }
                 AppState.shared.lastNotifiedUpdateVersion = latest
-                let alert = NSAlert()
-                alert.messageText = String(format: VTLocalized("VietTelex %@ is available"), latest)
-                alert.informativeText = VTLocalized("Update now body")
-                alert.addButton(withTitle: VTLocalized("Update now"))
-                alert.addButton(withTitle: VTLocalized("Later"))
-                alert.addButton(withTitle: VTLocalized("Open releases page"))
-                // Same accessory-app dance as the Accessibility alert: activate and
-                // float, or the panel opens behind the frontmost app.
-                NSApp.activate(ignoringOtherApps: true)
-                alert.window.level = .floating
-                alert.window.orderFrontRegardless()
-                switch alert.runModal() {
-                case .alertFirstButtonReturn:
-                    SelfUpdater.run(version: latest)
-                case .alertThirdButtonReturn:
-                    NSWorkspace.shared.open(url)
-                default: break
-                }
+                // Always record it first: the About tab shows this even if the banner
+                // never appears (permission denied / Do Not Disturb).
+                pendingUpdateVersion = latest
+                UpdateNotifier.post(version: latest)
             }
         }
     }
@@ -132,6 +130,56 @@ enum UpdateCheck {
 }
 
 
+/// Weekly "a new version is out" banner.
+///
+/// This used to be a floating, activated NSAlert fired from `activateServer` — i.e. the
+/// input method stole focus and swallowed keystrokes mid-sentence, once a week, at a
+/// moment the user did not choose. A notification is the right shape for "news that can
+/// wait": no focus change, no modal, dismissible, and it queues while Do Not Disturb is on.
+/// Authorization is requested LAZILY on the first post (only opted-in users ever see the
+/// system prompt); when it is refused we say nothing here and let the About tab carry the
+/// news via `UpdateCheck.pendingUpdateVersion`.
+enum UpdateNotifier {
+    static let categoryID = "viettelex.update"
+    static let requestPrefix = "viettelex.update."
+
+    /// Retained for the lifetime of the process: UNUserNotificationCenter keeps only a
+    /// weak reference to its delegate.
+    nonisolated(unsafe) private static var delegate: Delegate?
+
+    @MainActor static func post(version: String) {
+        let center = UNUserNotificationCenter.current()
+        if delegate == nil {
+            let d = Delegate()
+            delegate = d
+            center.delegate = d
+        }
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }   // About tab is the fallback surface
+            let content = UNMutableNotificationContent()
+            content.title = String(format: VTLocalized("VietTelex %@ is available"), version)
+            content.body = VTLocalized("Open Settings → About to install it.")
+            content.userInfo = ["version": version]
+            let req = UNNotificationRequest(identifier: requestPrefix + version,
+                                            content: content, trigger: nil)
+            center.add(req, withCompletionHandler: nil)
+        }
+    }
+
+    /// Tapping the banner opens Settings → Giới thiệu, where "Update now" is waiting —
+    /// the user stays in control of WHEN the install happens.
+    private final class Delegate: NSObject, UNUserNotificationCenterDelegate {
+        func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                    didReceive response: UNNotificationResponse,
+                                    withCompletionHandler completionHandler: @escaping () -> Void) {
+            DispatchQueue.main.async {
+                SettingsWindowController.shared.show(tab: .about)
+            }
+            completionHandler()
+        }
+    }
+}
+
 /// In-place self-update. The bundle lives in USER-writable
 /// ~/Library/Input Methods, so no admin rights are needed:
 /// download the release app.zip → verify the Developer ID signature →
@@ -187,6 +235,7 @@ enum SelfUpdater {
                 try? FileManager.default.removeItem(at: work)
 
                 await MainActor.run {
+                    UpdateCheck.pendingUpdateVersion = nil   // installed; nothing left to nag about
                     let done = NSAlert()
                     done.messageText = String(format: VTLocalized("Updated to %@"), version)
                     done.informativeText = VTLocalized("Update done body")

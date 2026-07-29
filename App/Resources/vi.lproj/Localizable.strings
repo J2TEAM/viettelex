@@ -191,3 +191,14 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Repair started body" = "VietTelex đã tự xoá mục bị kẹt của chính nó. macOS sẽ hỏi lại quyền Trợ năng: bạn bấm đồng ý, hoặc mở cài đặt Trợ năng rồi tick VietTelex. Gõ trong Terminal/Chrome chạy lại ngay khi tick, không cần khởi động lại.";
 "Repair failed title" = "Không xoá được quyền cũ";
 "Repair failed body" = "macOS từ chối xoá mục này (thường do quyền bị tổ chức của bạn quản lý). Cách sửa tay: mở cài đặt Trợ năng, chọn VietTelex, bấm − để xoá, rồi bấm + thêm lại từ ~/Library/Input Methods.";
+
+/* 1.4.22 — UI/UX audit: captions còn thiếu, banner Trợ năng, kênh cập nhật, nhãn VoiceOver */
+"A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore)." = "Từ không phải tiếng Việt hợp lệ sẽ tự trả về đúng phím đã gõ khi kết thúc từ (retore → retore).";
+"Type “toan”, then “s” → “toán” — no need to retype the whole word." = "Gõ “toan” rồi “s” → “toán”, không cần gõ lại từ.";
+"No Accessibility permission — typing in Terminal/Chrome won’t work" = "Chưa có quyền Trợ năng — gõ trong Terminal/Chrome sẽ không hoạt động";
+"Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed." = "Vào Quyền riêng tư & Bảo mật → Trợ năng rồi tick VietTelex. Gõ chạy lại ngay khi tick, không cần khởi động lại.";
+"Manual check: the newest release on GitHub. Weekly check: the stable channel." = "Kiểm tra thủ công: bản mới nhất trên GitHub; kiểm tra hằng tuần: kênh ổn định.";
+"No app matches “%@”" = "Không có app nào khớp “%@”";
+"Clear filter" = "Xoá bộ lọc";
+"Delete this shortcut" = "Xoá gõ tắt này";
+"Open Settings → About to install it." = "Mở Cài đặt → Giới thiệu để cài bản mới.";

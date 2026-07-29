@@ -46,6 +46,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         window = nil
         model = nil
+        // Per-session memoization only: an app installed WHILE Settings was closed must
+        // show up next time it opens (the caches are "apps don't come and go while a
+        // window is open", not "…for the life of the process").
+        SettingsModel.installedCache.removeAll()
+        SettingsModel.nameCache.removeAll()
         NSApp.setActivationPolicy(.accessory) // back to background agent
     }
 }
@@ -97,6 +102,11 @@ final class SettingsModel: ObservableObject {
     /// Rows the user added by hand this session but hasn't pinned yet (mode still
     /// auto, nothing learned) — kept visible so the dropdown can be used on them.
     private var addedApps: Set<String> = []
+    /// Snapshot of `Accessibility.isTrusted` for the General-tab warning banner. NOT
+    /// polled: refreshed on appear and when the Settings window regains key, the same
+    /// event-driven refresh the mode table uses (AX trust only changes while the user is
+    /// away in System Settings, so coming back is exactly the moment to re-read it).
+    @Published var accessibilityTrusted: Bool = Accessibility.isTrusted
 
     init(selected: SettingsTab) {
         selectedTab = selected
@@ -124,6 +134,20 @@ final class SettingsModel: ObservableObject {
     /// Localized string for the user's chosen UI language (see `VTLocalized`).
     func loc(_ key: String) -> String { VTLocalized(key) }
 
+    /// Re-read the Accessibility trust snapshot (see `accessibilityTrusted`).
+    func refreshAccessibilityStatus() {
+        let now = Accessibility.isTrusted
+        if now != accessibilityTrusted { accessibilityTrusted = now }
+    }
+
+    /// Open System Settings → Privacy & Security → Accessibility. One definition, used
+    /// by the General-tab banner and the mode table's ⚠️ badge.
+    static func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     // MARK: Bảng chế độ gõ
 
     /// Rebuild the mode table: every app VietTelex knows something about — manual
@@ -138,6 +162,12 @@ final class SettingsModel: ObservableObject {
 
     /// bundle id → installed? (see `reloadModeTable`). Main-thread only, like the model.
     static var installedCache: [String: Bool] = [:]      // internal: tests assert memoization
+    /// bundle id → display name (see `appName(for:)`). Same reason as `installedCache`:
+    /// resolving a name is a LaunchServices round trip + a `displayName(atPath:)` disk
+    /// hit, and it ran for EVERY row on EVERY reload (once a second while the window is
+    /// key) on the thread that also serves keystrokes. Both caches are dropped in
+    /// `windowWillClose`. Main-thread only, like the model.
+    static var nameCache: [String: String] = [:]         // internal: tests assert memoization
     /// Last reload (reference-date seconds) — see the `didBecomeKey` throttle.
     var lastModeReloadAt: TimeInterval = 0               // internal: tests drive the throttle
 
@@ -155,11 +185,16 @@ final class SettingsModel: ObservableObject {
     func reloadModeTable() {
         lastModeReloadAt = Date.timeIntervalSinceReferenceDate
         manualModes = AppState.shared.manualModes
+        // Snapshot the learned sets ONCE. Both accessors sort under AppState's lock, and
+        // `makeRow` asks for them per row — ~20-60 sorted() calls (plus lock traffic) per
+        // reload, on the keystroke thread. One snapshot, passed down.
+        let learnedFallback = Set(AppState.shared.learnedFallbackApps)
+        let learnedInPlace = Set(AppState.shared.learnedInPlaceApps)
         // User data (manual pins, probe results, hand-added) is always listed —
         // even for apps since uninstalled, so a stale pin stays visible/removable.
         var ids = Set(manualModes.keys)
-        ids.formUnion(AppState.shared.learnedFallbackApps)
-        ids.formUnion(AppState.shared.learnedInPlaceApps)
+        ids.formUnion(learnedFallback)
+        ids.formUnion(learnedInPlace)
         ids.formUnion(addedApps)
         // Every HARDCODED rule set is filtered to apps actually installed — the
         // table shows this system's real defaults, not our whole knowledge base.
@@ -180,7 +215,10 @@ final class SettingsModel: ObservableObject {
         ids.formUnion(AppState.builtInSpecialApps.filter(installed))
         ids.formUnion(ClientPolicy.forcePassthroughBundleIDs.filter(installed))
         ids.insert(Self.spotlightRowID)   // always listed; dedupes with learned entry
-        modeRows = ids.map { makeRow(id: $0, name: Self.appName(for: $0)) }
+        modeRows = ids.map {
+            makeRow(id: $0, name: Self.appName(for: $0),
+                    learnedFallback: learnedFallback, learnedInPlace: learnedInPlace)
+        }
         // Up to 10 recently-focused apps not yet in the table — quick add candidates.
         recentApps = FrontmostApp.shared.recent
             .filter { !ids.contains($0.id) }
@@ -189,7 +227,15 @@ final class SettingsModel: ObservableObject {
 
     /// Display name for a bundle id (the installed app's name; the raw id when the
     /// app isn't found — e.g. learned on another machine or since uninstalled).
+    /// MEMOIZED in `nameCache` — see that property for why.
     static func appName(for id: String) -> String {
+        if let cached = nameCache[id] { return cached }
+        let name = resolveAppName(for: id)
+        nameCache[id] = name
+        return name
+    }
+
+    private static func resolveAppName(for id: String) -> String {
         if id == spotlightRowID { return "Spotlight" }   // CoreServices — lookup can miss
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
         else { return id }
@@ -265,10 +311,14 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    private func makeRow(id: String, name: String) -> AppModeRow {
+    /// `learnedFallback`/`learnedInPlace` are the per-reload snapshot (see
+    /// `reloadModeTable`) — never re-read AppState here, it's once per row.
+    private func makeRow(id: String, name: String,
+                         learnedFallback: Set<String>,
+                         learnedInPlace: Set<String>) -> AppModeRow {
         let hasUserData = manualModes[id] != nil
-            || AppState.shared.learnedFallbackApps.contains(id)
-            || AppState.shared.learnedInPlaceApps.contains(id)
+            || learnedFallback.contains(id)
+            || learnedInPlace.contains(id)
             || addedApps.contains(id)
         return AppModeRow(id: id, name: name,
                           detected: autoLabel(id), manual: manualLabel(id),
@@ -418,6 +468,22 @@ struct GeneralTab: View {
 
     var body: some View {
         Form {
+            // Recovery path for the single most damaging state the app can be in: no
+            // Accessibility permission means Terminal/Chrome silently don't get tones.
+            // Until now the only hint was a ⚠️ badge buried in the (hidden-by-default)
+            // Typing modes tab.
+            if !model.accessibilityTrusted {
+                Section {
+                    Text("⚠️ " + model.loc("No Accessibility permission — typing in Terminal/Chrome won’t work"))
+                        .foregroundStyle(.red)
+                    Button(model.loc("Open Accessibility Settings")) {
+                        SettingsModel.openAccessibilitySettings()
+                    }
+                    .prominentGlass()
+                    Text(model.loc("Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section(model.loc("Input style")) {
                 Toggle(model.loc("Simple Telex"), isOn: $model.simpleTelex)
                 Text(model.loc("A lone “w” stays “w” (type “uw” for ư). Off = full Telex (cw→cư)."))
@@ -441,11 +507,15 @@ struct GeneralTab: View {
             }
             Section(model.loc("Spelling")) {
                 Toggle(model.loc("Auto-restore invalid words"), isOn: $model.autoRestore)
+                Text(model.loc("A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore)."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Live spell-check"), isOn: $model.liveSpellCheck)
                 Text(model.loc("Stop adding tones as soon as a word can’t be Vietnamese (google, github…) instead of waiting for word end."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Language")) {
+            // No Section header: the Picker's own label already says "Language" —
+            // two identical labels stacked read as a bug.
+            Section {
                 Picker(model.loc("Language"), selection: $model.uiLanguage) {
                     Text(model.loc("System")).tag("system")
                     Text("Tiếng Việt").tag("vi")
@@ -459,6 +529,12 @@ struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { model.refreshAccessibilityStatus() }
+        // Event-driven, like the mode table: the user leaves for System Settings and
+        // comes back, which makes this window key again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            model.refreshAccessibilityStatus()
+        }
     }
 }
 
@@ -482,6 +558,7 @@ struct ModeTableTab: View {
                         model.modeFilter = ""
                     } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel(model.loc("Clear filter"))
                 }
             }
             Table(model.visibleModeRows, sortOrder: $model.modeSortOrder) {
@@ -504,12 +581,11 @@ struct ModeTableTab: View {
                             // Clickable: seeing the warning and FIXING it should be
                             // one gesture, not a settings scavenger hunt.
                             Button {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                    NSWorkspace.shared.open(url)
-                                }
+                                SettingsModel.openAccessibilitySettings()
                             } label: { Text("⚠️") }
                                 .buttonStyle(.borderless)
                                 .help(model.loc("Missing Accessibility permission — click to open System Settings"))
+                                .accessibilityLabel(model.loc("Missing Accessibility permission — click to open System Settings"))
                         }
                     }
                 }.width(min: 120)
@@ -539,10 +615,20 @@ struct ModeTableTab: View {
                         }
                         .buttonStyle(.borderless)
                         .help(model.loc("Forget this app (pin + learned data)"))
+                        .accessibilityLabel(model.loc("Forget this app (pin + learned data)"))
                     }
                 }.width(28)
             }
             .frame(minHeight: 230, maxHeight: .infinity)
+            // A filter that matches nothing used to show an empty table with no
+            // explanation — indistinguishable from "VietTelex knows no apps".
+            .overlay {
+                if model.visibleModeRows.isEmpty, !model.modeFilter.isEmpty {
+                    Text(String(format: model.loc("No app matches “%@”"), model.modeFilter))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .padding()
+                }
+            }
 
             if model.modeRows.isEmpty {
                 Text(model.loc("Empty — type a few Vietnamese words in any app and it will appear here."))
@@ -592,7 +678,9 @@ struct ModeTableTab: View {
     /// replace: imported entries win, everything else is kept.
     private func importModes() {
         let panel = NSOpenPanel()
-        // YAML (typing-modes.yml, our export) — JSON/txt also accepted.
+        // YAML (typing-modes.yml, our export) — JSON/txt also accepted. Same set the
+        // export panel offers, so the picker can't hand us a .png to "parse".
+        panel.allowedContentTypes = [.yaml, .json, .plainText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url),
@@ -638,9 +726,13 @@ struct ExperimentalTab: View {
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Context-based decision (experimental)"), isOn: $model.contextualEnglish)
+                // This caption explains contextualEnglish — it used to sit one toggle
+                // lower, under reEditWord, which read as reEditWord's description.
+                Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
-                Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
+                Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Terminal typing latency")) {
@@ -806,22 +898,42 @@ struct AboutTab: View {
                 }
                 if let status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(2).multilineTextAlignment(.center)
                 }
                 // Opt-in weekly auto-check (default OFF): the toggle IS the user's
                 // consent, so the "no network unless you ask" stance holds.
                 Toggle(model.loc("Check weekly and notify me"), isOn: $model.autoUpdateCheck)
                     .toggleStyle(.checkbox).font(.caption)
+                // The two checks deliberately follow DIFFERENT channels (Updater.swift) —
+                // say so, or "check" finding 1.4.21 right after the weekly notice said
+                // 1.4.20 looks broken.
+                Text(model.loc("Manual check: the newest release on GitHub. Weekly check: the stable channel."))
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
             }
-            .frame(height: 66)
+            // minHeight, not a fixed height: a long localized status line (or a wrapped
+            // error) used to be clipped by the 66pt box.
+            .frame(minHeight: 66)
 
             Text("© Phil Trinh \(String(currentYear))").foregroundStyle(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            // Weekly auto-check result, surfaced HERE rather than as a modal that steals
+            // focus mid-sentence. This is also the fallback when notification permission
+            // was denied — the only place the news can still reach the user.
+            if status == nil, updateVersion == nil,
+               let pending = UpdateCheck.pendingUpdateVersion {
+                updateVersion = pending
+                status = String(format: model.loc("Update available: %@"), pending)
+            }
+        }
     }
 
     private func runCheck() {
         checking = true; status = nil; updateVersion = nil
+        UpdateCheck.pendingUpdateVersion = nil   // the user is looking; this is now live state
         Task {
             let outcome = await UpdateCheck.check()
             await MainActor.run {
@@ -847,10 +959,16 @@ struct ShortcutsTab: View {
     @State private var newKey = ""
     @State private var newValue = ""
     @State private var selection: ShortcutRow.ID?
+    /// The key the fields were LOADED from (row click). Kept separately from `selection`
+    /// so editing the key field is a RENAME of that entry, not a silent Add of a second
+    /// one — the old bug: click "vn", change the key to "vnn", press the button and you
+    /// had both.
+    @State private var editingKey: String?
 
-    /// True when the fields hold an existing shortcut (save = update, not add).
+    /// True when saving updates/renames an existing entry rather than adding a new one.
     private var isEditing: Bool {
-        AppState.shared.shortcuts[newKey.trimmingCharacters(in: .whitespaces)] != nil
+        editingKey != nil
+            || AppState.shared.shortcuts[newKey.trimmingCharacters(in: .whitespaces)] != nil
     }
 
     var body: some View {
@@ -862,15 +980,20 @@ struct ShortcutsTab: View {
                     Button(role: .destructive) { model.removeShortcut(row.key) } label: {
                         Image(systemName: "trash")
                     }.buttonStyle(.borderless)
+                        .accessibilityLabel(model.loc("Delete this shortcut"))
                 }.width(40)
             }
             .frame(minHeight: 220)
             .onChange(of: selection) { selected in
                 // Click a row -> load it into the fields for editing in place.
                 guard let key = selected,
-                      let value = AppState.shared.shortcuts[key] else { return }
+                      let value = AppState.shared.shortcuts[key] else {
+                    editingKey = nil
+                    return
+                }
                 newKey = key
                 newValue = value
+                editingKey = key
             }
 
             HStack {
@@ -895,7 +1018,7 @@ struct ShortcutsTab: View {
         guard !key.isEmpty else { return }
         // Overwriting a DIFFERENT entry than the one being edited needs a confirm —
         // otherwise a typo in the key field silently clobbers an existing shortcut.
-        if AppState.shared.shortcuts[key] != nil, selection != key {
+        if AppState.shared.shortcuts[key] != nil, editingKey != key {
             let alert = NSAlert()
             alert.messageText = String(format: VTLocalized("Shortcut “%@” already exists"), key)
             alert.informativeText = VTLocalized("Overwrite the existing value?")
@@ -903,14 +1026,21 @@ struct ShortcutsTab: View {
             alert.addButton(withTitle: VTLocalized("Cancel"))
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
+        // RENAME: the row was loaded from `editingKey` and the key field was changed, so
+        // the user edited an entry — drop the old key instead of leaving a duplicate.
+        if let old = editingKey, old != key {
+            model.removeShortcut(old)
+        }
         model.addShortcut(key: key, value: newValue)
-        newKey = ""; newValue = ""; selection = nil
+        newKey = ""; newValue = ""; selection = nil; editingKey = nil
     }
 
     private func importPlist() {
         let panel = NSOpenPanel()
         // Any text-ish file: YAML, JSON, or "key:value" txt
-        // (exports from other IMEs) — ShortcutImporter sniffs the format.
+        // (exports from other IMEs) — ShortcutImporter sniffs the format. Same set the
+        // export panel writes, so an image/binary can't be handed to the parser.
+        panel.allowedContentTypes = [.yaml, .json, .plainText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url),
