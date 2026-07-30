@@ -1,7 +1,8 @@
 # typing-modes.yml — bảng cơ chế gõ MẶC ĐỊNH của VietTelex, theo từng app.
 #
 # Đóng góp rule mới: thêm một dòng `bundle-id: mode` rồi mở PR — không cần sửa
-# Swift. File này được bundle vào app lúc build và đính kèm mỗi GitHub release.
+# Swift. LƯU Ý: comment phải nằm RIÊNG một dòng — parser không hỗ trợ comment
+# cùng dòng với rule (`id: tap  # chú thích` sẽ hỏng mode). File này được bundle vào app lúc build và đính kèm mỗi GitHub release.
 # Format trùng với "Nhập…" trong Bảng cơ chế gõ, nên cũng có thể sửa bản copy
 # rồi import làm rule cá nhân.
 #
@@ -29,8 +30,9 @@
 com.apple.Terminal: tap
 com.googlecode.iterm2: tap
 dev.warp.Warp-Stable: tap
-dev.warp.Warp: tap             # Warp kênh dev/beta — cùng app, khác bundle id
-dev.warp.Warp-Preview: tap     # Warp kênh preview
+# Warp kênh dev/beta và preview — cùng app, khác bundle id
+dev.warp.Warp: tap
+dev.warp.Warp-Preview: tap
 
 # Electron/CEF — in-place hỏng ở biên từ
 com.larksuite.larkApp: tap

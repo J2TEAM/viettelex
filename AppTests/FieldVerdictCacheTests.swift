@@ -134,3 +134,44 @@ final class FieldWalkClassifierTests: XCTestCase {
                                     "deep web hierarchies need real headroom past 13")
     }
 }
+
+// Canvas editors (Google Docs) ignore replacementRange: in-place inserts APPEND
+// ("Quoocs" → "Quoôcốc") and the tracked ⌫ rewrite "succeeds" on the hidden input
+// while the canvas shows nothing — and the verify probe never fires because that
+// hidden input self-reports a consistent caret. Field report 2026-07-30. The only
+// reliable signal is the web area's URL → force marked text (composition events,
+// which Docs handles correctly). Scope is pinned here: /document only.
+final class MarkedFieldURLTests: XCTestCase {
+
+    func testGoogleDocsDocumentForcesMarked() {
+        XCTAssertTrue(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://docs.google.com/document/d/abc123/edit")))
+    }
+
+    func testScopeIsDocumentOnly() {
+        // Sheets has its own shipped handling (1.4.20); Slides is unverified.
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://docs.google.com/spreadsheets/d/abc/edit")))
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://docs.google.com/presentation/d/abc/edit")))
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://docs.google.com/")))
+    }
+
+    func testOtherHostsNeverForceMarked() {
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://evil.example.com/document/d/abc")))
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(
+            URL(string: "https://google.com/document")))
+        XCTAssertFalse(FocusedFieldDetector.markedFieldURL(nil))
+    }
+
+    func testInvalidateResetsMarkedVerdict() {
+        // Same asymmetry as wantsSelection: a field switch must never carry a Docs
+        // verdict into the next field — one keystroke of in-place is the mild failure.
+        FocusedFieldDetector._testSetMarked(true)
+        XCTAssertTrue(FocusedFieldDetector.wantsMarkedField)
+        FocusedFieldDetector.invalidate()
+        XCTAssertFalse(FocusedFieldDetector.wantsMarkedField)
+    }
+}

@@ -118,9 +118,14 @@ final class TelexInputController: IMKInputController {
     private static let maxInconclusive = 4
 
     /// Effective marked-text decision for the CURRENT field: a per-focus demotion
-    /// (verify probe failed here) wins over the per-app classification.
+    /// (verify probe failed here) wins over the per-app classification, and so does
+    /// a canvas-editor field verdict (Google Docs — its hidden input self-reports a
+    /// consistent caret, so the verify probe never fires there while the canvas
+    /// renders appended garbage; field report 2026-07-30 "Quoocs" → "Quoôcốc").
+    /// Gated on usesAxDetect so a browser field verdict can never leak into other apps.
     private func usesMarkedNow(_ id: String?) -> Bool {
         fieldForcedMarked || AppState.shared.usesMarkedText(id)
+            || (AppState.shared.usesAxDetect(id) && FocusedFieldDetector.wantsMarkedField)
     }
 
     // MARK: - Event handling (hot path)

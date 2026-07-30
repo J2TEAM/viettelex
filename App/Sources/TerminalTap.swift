@@ -504,6 +504,11 @@ enum SecureFieldDetector {
 enum FocusedFieldDetector {
     private static let lock = NSLock()
     private static var cached = true            // unknown → selection (always works)
+    /// Canvas-editor field (Google Docs): must be typed with marked text — in-place
+    /// appends garbage and the tracked ⌫ dies (see scan()). Rides the same scan/TTL/
+    /// invalidation as `cached`; served by `wantsMarkedField` without kicking its own
+    /// refresh (every browser keystroke already reads `wantsSelection` first).
+    private static var cachedMarked = false
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
     /// Consecutive identical verdicts — see DetectorBackoff. Separate counters for the
@@ -526,6 +531,9 @@ enum FocusedFieldDetector {
     static func invalidate() {
         lock.withLock {
             cached = false
+            // Same asymmetry as `cached`: one keystroke of in-place in a Docs canvas
+            // is the mild failure; forcing marked into an unknown field is not.
+            cachedMarked = false
             lastCheckNs = 0
             stableRuns = 0
             // Backoff only — the timestamps/values of the isTextInput verdict keep the
@@ -545,7 +553,19 @@ enum FocusedFieldDetector {
     }
     /// Read the cache WITHOUT kicking a refresh (a plain `wantsSelection` read would).
     static var _testCached: Bool { lock.withLock { cached } }
+    /// Same seam for the canvas-editor (marked) verdict.
+    static func _testSetMarked(_ value: Bool) {
+        lock.withLock {
+            cachedMarked = value
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+        }
+    }
     #endif
+
+    /// True → the focused field is a canvas editor (Google Docs) that must be typed
+    /// with marked text. Cache-only read: refreshes piggyback on `wantsSelection`,
+    /// which every browser keystroke reads first (tap routing then IMKit routing).
+    static var wantsMarkedField: Bool { lock.withLock { cachedMarked } }
 
     /// True → the focused field should use selection-replace; false → in-place.
     static var wantsSelection: Bool {
@@ -559,7 +579,7 @@ enum FocusedFieldDetector {
         if stale {
             scanQueue.async {
                 pokeChromiumAX()
-                let wants = scan()
+                let (wants, marked) = scan()
                 // Diagnostic (debug logging only, and off the keystroke path): WHY this
                 // verdict. A browser whose AX tree we cannot read falls back to
                 // selection-replace for EVERY field — including page content, where each
@@ -569,11 +589,12 @@ enum FocusedFieldDetector {
                 // nothing, guessed". Role names only — never text or values.
                 if AppState.shared.debugLogging {
                     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
-                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) roles=[\(roleChain())]")
+                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) marked=\(marked) roles=[\(roleChain())]")
                 }
                 lock.withLock {
-                    stableRuns = wants == cached ? stableRuns + 1 : 0
+                    stableRuns = (wants == cached && marked == cachedMarked) ? stableRuns + 1 : 0
                     cached = wants
+                    cachedMarked = marked
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
                 }
@@ -650,16 +671,27 @@ enum FocusedFieldDetector {
         return textInputRoles.contains(role)
     }
 
-    /// System-wide focused element with the 50ms timeout, or nil (untrusted / no
-    /// focus). Shared by both scans.
+    /// Focused element with the 50ms timeout, or nil (untrusted / no focus). Shared
+    /// by both scans. Tries system-wide first, then the frontmost APP element: on
+    /// some machines the system-wide read fails against Chrome (kAXErrorCannotComplete,
+    /// verified live 2026-07-30) while the app-scoped read answers fine — without the
+    /// fallback every Chrome field on such a machine reads "no-focused-element" and
+    /// lands in the selection fallback, which page editors swallow (Google Docs
+    /// "Quoocs" → "Quoôcốc" class).
     private static func focusedElementForScan() -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         let systemWide = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(systemWide, 0.05)
         var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
-              let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID()
-        else { return nil }
+        if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) != .success {
+            focusedRef = nil
+            guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
+            let appEl = AXUIElementCreateApplication(front.processIdentifier)
+            AXUIElementSetMessagingTimeout(appEl, 0.05)
+            guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success
+            else { return nil }
+        }
+        guard let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, 0.05)
         return element
@@ -689,8 +721,8 @@ enum FocusedFieldDetector {
         return roles.joined(separator: "→")
     }
 
-    private static func scan() -> Bool {
-        guard let focused = focusedElementForScan() else { return true }
+    private static func scan() -> (selection: Bool, marked: Bool) {
+        guard let focused = focusedElementForScan() else { return (selection: true, marked: false) }
         // NO role short-circuit on the focused element: an AXComboBox/AXSearchField
         // rule used to run BEFORE the ancestor walk ("a search box inside a web area
         // is autocomplete-prone"), but field evidence killed it — youtube.com's search
@@ -703,20 +735,53 @@ enum FocusedFieldDetector {
         // redundant anyway: the walk's fallback is selection-replace.
         var roleRef: CFTypeRef?
         var element = focused
+        // Selection verdict: the FIRST decisive ancestor wins (toolbar → omnibox,
+        // web area → page content). Marked verdict: canvas editors (Google Docs)
+        // render from their OWN event stream and ignore replacementRange — in-place
+        // inserts append and the tracked ⌫ rewrite "succeeds" invisibly on the hidden
+        // input (field report 2026-07-30: "Quoocs" → "Quoôcốc", Delete dead). They
+        // speak composition events fine, so a Docs field forces marked. The hidden
+        // input sits in a NESTED iframe whose own web area may report about:blank —
+        // so after the first web area locks in-place, the walk CONTINUES upward and
+        // any enclosing web area's URL may still prove Docs.
+        var sawWebArea = false
+        var marked = false
         for _ in 0..<Self.maxAncestorHops {
             AXUIElementSetMessagingTimeout(element, 0.05)
             roleRef = nil
             if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
                let role = roleRef as? String, let verdict = Self.roleDecision(role) {
-                return verdict
+                if verdict {
+                    // Toolbar: decisive only BEFORE any web area (an omnibox is never
+                    // inside page content — above one, it's just browser chrome).
+                    if !sawWebArea { return (selection: true, marked: false) }
+                } else {
+                    sawWebArea = true
+                    if !marked {
+                        var urlRef: CFTypeRef?
+                        if AXUIElementCopyAttributeValue(element, "AXURL" as CFString, &urlRef) == .success {
+                            marked = Self.markedFieldURL(urlRef as? URL)
+                        }
+                    }
+                    if marked { break }   // both verdicts settled
+                }
             }
             var parentRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
                   let parent = parentRef, CFGetTypeID(parent) == AXUIElementGetTypeID()
-            else { return true }
+            else { break }
             element = parent as! AXUIElement
         }
-        return true
+        return sawWebArea ? (selection: false, marked: marked)
+                          : (selection: true, marked: false)
+    }
+
+    /// Pure: does this web-area URL host a canvas editor that must be typed with
+    /// marked text? Scoped to Google Docs documents only — Sheets has its own shipped
+    /// handling (1.4.20) and Slides is unverified; widen only with field evidence.
+    static func markedFieldURL(_ url: URL?) -> Bool {
+        guard let url, let host = url.host else { return false }
+        return host == "docs.google.com" && url.path.hasPrefix("/document")
     }
 
     /// Ancestor-walk hop budget. Was 12 — field report 2026-07-30 (J2TeamNNL, 1.4.22):
