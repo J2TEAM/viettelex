@@ -168,3 +168,36 @@ final class HotPathCacheTests: XCTestCase {
         XCTAssertEqual(s.vniMode, saved)
     }
 }
+
+// The health probe is created from our PRIVATE event source, so it carries EMPTY
+// modifier flags. Posting it into the session while the user holds ⌘ made the ⌘-Tab
+// switcher read "⌘ released" and COMMIT the pointed-at app within one watchdog tick
+// (field report 2026-07-30: holding ⌘ and tabbing "chỉ được 1 lúc là tự mở app").
+// The gate is shared by postProbe() and the watchdog's miss-accounting; this pins
+// both its polarity and the pairing rule (skipped ⇒ never counted as a miss).
+final class ProbeChordGateTests: XCTestCase {
+
+    func testChordHeldBlocksTheProbe() {
+        XCTAssertFalse(SyntheticKeyboard.probeMayPost(secureInput: false, secureField: false, chordHeld: true))
+    }
+
+    func testSecureInputStillBlocksTheProbe() {
+        XCTAssertFalse(SyntheticKeyboard.probeMayPost(secureInput: true, secureField: false, chordHeld: false))
+        XCTAssertFalse(SyntheticKeyboard.probeMayPost(secureInput: false, secureField: true, chordHeld: false))
+    }
+
+    func testQuietHandsAllowTheProbe() {
+        XCTAssertTrue(SyntheticKeyboard.probeMayPost(secureInput: false, secureField: false, chordHeld: false))
+    }
+
+    /// ⇧ must NOT starve the probe: it is held for whole words in normal typing, and a
+    /// probe blackout under it would blind the watchdog during the exact activity it
+    /// exists to protect. Only ⌘/⌃/⌥ count as a chord.
+    func testShiftAloneDoesNotCountAsChord() {
+        // chordModifierHeld reads live session state, which a unit test cannot press
+        // keys into — pin the FLAG SET instead, so a future edit adding .maskShift
+        // (or dropping .maskCommand) fails here.
+        XCTAssertEqual(SyntheticKeyboard.chordFlags,
+                       CGEventFlags.maskCommand.union(.maskControl).union(.maskAlternate))
+    }
+}

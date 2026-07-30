@@ -882,13 +882,37 @@ enum SyntheticKeyboard {
     /// grant REMOVED — AXIsProcessTrusted lies true in that state) or the tap is
     /// dead/wedged. No breaker or in-flight bookkeeping: probes are out-of-band.
     static let probeKeycode: Int64 = 90   // kVK_F20 — not on any physical Apple keyboard; keycode 127 gets FILTERED by the OS (never re-enters the tap)
+
+    /// TRUE while the user physically holds ⌘/⌃/⌥ (combined session state). The probe
+    /// must never post during a chord: it is created from our PRIVATE source, so it
+    /// carries EMPTY flags — a keyDown without ⌘ landing in the session while the
+    /// ⌘-Tab switcher is up reads as "⌘ released" to the Dock, which COMMITS the
+    /// switcher on whatever app the cursor points at (field report 2026-07-30: holding
+    /// ⌘ and tabbing "chỉ được 1 lúc là tự mở app"). ⇧ is deliberately not included —
+    /// it is held for whole words during normal typing and starving the probe under it
+    /// would blind the watchdog exactly when it matters.
+    static let chordFlags: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]
+    static var chordModifierHeld: Bool {
+        !CGEventSource.flagsState(.combinedSessionState).intersection(chordFlags).isEmpty
+    }
+
+    /// Pure gate for the health probe, shared by postProbe() and the watchdog's
+    /// miss-accounting so the two can never disagree (a probe "sent" by the watchdog
+    /// but silently skipped here would read as a miss and tear down a healthy tap).
+    static func probeMayPost(secureInput: Bool, secureField: Bool, chordHeld: Bool) -> Bool {
+        !(secureInput || secureField || chordHeld)
+    }
+
     static func postProbe() {
         guard let src = source else { return }
-        // NEVER post the probe while a password field has focus. Under secure input our
+        // NEVER post the probe while a password field has focus (under secure input our
         // tap does not receive events, so the marker is not swallowed by us — it lands in
-        // the focused app instead (field report 2026-07-27: stray characters while typing
-        // a password). Health monitoring is not worth touching a password field.
-        if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure { return }
+        // the focused app instead; field report 2026-07-27: stray characters while typing
+        // a password) NOR while a ⌘/⌃/⌥ chord is held (see chordModifierHeld — it
+        // commits the ⌘-Tab switcher). Health monitoring is not worth touching either.
+        if !probeMayPost(secureInput: IsSecureEventInputEnabled(),
+                         secureField: SecureFieldDetector.isSecure,
+                         chordHeld: chordModifierHeld) { return }
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(probeKeycode), keyDown: true),
               let up = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(probeKeycode), keyDown: false)
         else { return }
@@ -1392,10 +1416,13 @@ final class TerminalTapController {
             } else {
                 self.probeMisses = 0
             }
-            if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure {
-                // Password field in focus: we do not post the probe there (see postProbe),
-                // so there is nothing to ack — counting that as a miss would raise a false
-                // "stale grant" and tear down a perfectly healthy tap.
+            if !SyntheticKeyboard.probeMayPost(secureInput: IsSecureEventInputEnabled(),
+                                               secureField: SecureFieldDetector.isSecure,
+                                               chordHeld: SyntheticKeyboard.chordModifierHeld) {
+                // Password field in focus, or a ⌘/⌃/⌥ chord held: we do not post the
+                // probe there (see postProbe), so there is nothing to ack — counting
+                // that as a miss would raise a false "stale grant" and tear down a
+                // perfectly healthy tap.
                 self.probeMisses = 0
             } else if let tap = self.stateLock.withLock({ self.tap }), CGEvent.tapIsEnabled(tap: tap) {
                 self.stateLock.withLock { self.probeSentTick &+= 1 }
