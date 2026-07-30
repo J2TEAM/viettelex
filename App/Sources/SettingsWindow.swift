@@ -39,8 +39,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.model = model
         }
         model?.selectedTab = tab
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // NOT in this runloop turn: the .accessory→.regular policy flip above needs a
+        // window-server round trip before an activation can stick. Activating in the
+        // same turn intermittently loses the race — the window is created but never
+        // ordered front, and only a SECOND click on "Cài đặt…" (policy already
+        // .regular by then) shows it (field report 2026-07-30: "vào Cài Đặt 2 lần
+        // mới thấy hiện ra"). One async hop makes the first click reliable.
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
