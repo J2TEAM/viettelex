@@ -13,7 +13,12 @@
 import Foundation
 
 enum DebugLog {
-    private static let capacity = 400
+    // 2000, not 400: with debugLogging on, dedupe is off and every keystroke burns
+    // ~2 lines — a 400-line ring held only ~35s of typing, so testers copying the log
+    // minutes after an incident sent us a window that no longer contained it
+    // (field report 2026-07-30). 2000 lines ≈ 3 min of continuous typing, ~160KB
+    // worst case, only while debug logging is enabled.
+    private static let capacity = 2000
     private static var lines: [String] = []
     private static let lock = NSLock()          // tap callback is main; Spotlight scan is off-main
     private static let startNs = DispatchTime.now().uptimeNanoseconds

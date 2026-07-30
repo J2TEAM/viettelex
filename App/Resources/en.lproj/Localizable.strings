@@ -4,6 +4,7 @@
    Vietnamese-language system (VTLocalized loads this bundle by name). */
 
 "Status: Permission stale — click to fix" = "⚠️ Accessibility permission stuck — click to fix";
+"Status: Tap paused — click to retry" = "⚠️ Typing engine paused (self-protect) — click to retry";
 
 "Stale permission title" = "Accessibility permission is stuck after an update";
 

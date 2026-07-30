@@ -307,11 +307,18 @@ final class TelexInputController: IMKInputController {
             // autocomplete corrupts the text, so raw passthrough is the lesser evil.
             // Do not "fix" this by gating on Accessibility.isTrusted.
             spMode = "tap-defer"
+            // tapAlive/quar/tripped: a tap-defer while the tap is dead is the "raw
+            // ASCII, status OK" failure — without these three fields the log cannot
+            // distinguish "tap composed this key" from "nobody did" (2026-07-30).
+            // Only evaluated when debugLogging is on (autoclosure).
             logDecision("handle \(id ?? "?")/front=\(frontID ?? "?"): tap-defer "
                 + "(tap=\(AppState.shared.usesTapMode(frontID) || AppState.shared.usesTapMode(id)) "
                 + "sel=\(AppState.shared.usesSelectionReplace(frontID) || AppState.shared.usesSelectionReplace(id)) "
                 + "empty=\(AppState.shared.usesEmptyReset(frontID) || AppState.shared.usesEmptyReset(id)) "
-                + "spotlight=\(SpotlightDetector.isVisible))")
+                + "spotlight=\(SpotlightDetector.isVisible) "
+                + "tapAlive=\(TerminalTapController.shared.isRunning) "
+                + "quar=\(TerminalTapController.shared.isQuarantined) "
+                + "tripped=\(SyntheticKeyboard.tripped))")
             return false
         }
         logDecision("handle \(id ?? "?")/front=\(frontID ?? "?"): "
@@ -1222,6 +1229,13 @@ final class TelexInputController: IMKInputController {
             statusTitle = VTLocalized("Status: Permission needed")
         } else if TerminalTapController.shared.trustLooksStale {
             statusTitle = VTLocalized("Status: Permission stale — click to fix")
+        } else if TerminalTapController.shared.isQuarantined || SyntheticKeyboard.tripped {
+            // The tap paused itself (probe-miss quarantine / cascade breaker). Without
+            // this state the menu said "OK" while terminals typed raw ASCII and even an
+            // input-source switch couldn't revive it (quarantine blocks ensureRunning) —
+            // field report 2026-07-30. Click = retryNow(), the documented explicit
+            // user action that outranks the backoff.
+            statusTitle = VTLocalized("Status: Tap paused — click to retry")
         } else {
             statusTitle = VTLocalized("Status: OK")
         }
@@ -1383,6 +1397,10 @@ final class TelexInputController: IMKInputController {
             guard let self else { return }
             if !Accessibility.isTrusted { self.grantAccessibility() }
             else if TerminalTapController.shared.trustLooksStale { self.showStaleTrustRepair() }
+            else if TerminalTapController.shared.isQuarantined || SyntheticKeyboard.tripped {
+                DebugLog.log("menu: user retry from tap-paused state")
+                TerminalTapController.shared.retryNow()
+            }
             else { self.showDebugLog() }
         }
     }
@@ -1500,7 +1518,9 @@ final class TelexInputController: IMKInputController {
         let lines = [
             "VietTelex \(ver) (build \(build))",
             "Accessibility: \(Accessibility.isTrusted ? "OK" : "missing")",
-            "Terminal tap: \(TerminalTapController.shared.isRunning ? "running" : "off")",
+            "Terminal tap: \(TerminalTapController.shared.isRunning ? "running" : "off")"
+                + (TerminalTapController.shared.isQuarantined ? " (quarantined)" : "")
+                + (SyntheticKeyboard.tripped ? " (breaker tripped)" : ""),
             "Spotlight visible: \(SpotlightDetector.isVisible ? "yes" : "no")",
             "Current app: \(id)",
             "Strategy: \(mode)",

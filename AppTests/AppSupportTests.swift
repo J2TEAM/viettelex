@@ -28,11 +28,14 @@ final class AppSupportTests: XCTestCase {
         let snap = DebugLog.snapshot(header: ["HEADER"])
         XCTAssertTrue(snap.contains("HEADER"))
         XCTAssertTrue(snap.contains("recorded line"))
-        // Ring caps at 400: the oldest line is evicted, never a crash.
-        for i in 0..<450 { DebugLog.log("filler \(i)") }
+        // Ring caps at 2000 (400 held only ~35s of debug-logged typing — testers'
+        // incident had always scrolled out, 2026-07-30): oldest line evicted, never a crash.
+        for i in 0..<2050 { DebugLog.log("filler \(i)") }
         let full = DebugLog.snapshot(header: [])
         XCTAssertFalse(full.contains("recorded line"))
-        XCTAssertTrue(full.contains("filler 449"))
+        XCTAssertFalse(full.contains("filler 49\n"))  // \n-anchored: "filler 490" must not match
+        XCTAssertTrue(full.contains("filler 50\n"))   // 2050 logged − 2000 cap = first kept
+        XCTAssertTrue(full.contains("filler 2049"))
         DebugLog.clear()
         XCTAssertTrue(DebugLog.snapshot(header: []).contains("log empty"))
     }

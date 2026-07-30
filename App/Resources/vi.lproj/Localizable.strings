@@ -151,6 +151,7 @@
 "Forget this app (pin + learned data)" = "Quên app này (xoá ép tay + dữ liệu đã học)";
 
 "Status: Permission stale — click to fix" = "⚠️ Quyền trợ năng bị kẹt — bấm để sửa";
+"Status: Tap paused — click to retry" = "⚠️ Bộ gõ tự tạm dừng — bấm để chạy lại";
 
 "Stale permission title" = "Quyền Trợ năng bị kẹt sau khi cập nhật";
 
