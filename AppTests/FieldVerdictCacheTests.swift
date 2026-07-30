@@ -94,3 +94,43 @@ final class PlaceholderDanceTests: XCTestCase {
         }
     }
 }
+
+// The ancestor walk that classifies a browser field (page content → in-place,
+// toolbar/omnibox → selection-replace) is hop-bounded. Field report 2026-07-30
+// (v1.4.22): a React composer's AXTextArea sat under ≥11 AXGroups, the old 12-hop
+// budget ran out BEFORE reaching AXWebArea, and the "unknown → selection" fallback
+// routed page content through the synthetic overtype that web editors swallow —
+// tone keys consumed, edit never landed ("không gõ được dấu"). These tests pin the
+// role polarity, the fallback, and a hop budget that actually covers that hierarchy.
+final class FieldWalkClassifierTests: XCTestCase {
+
+    func testRolePolarity() {
+        XCTAssertEqual(FocusedFieldDetector.roleDecision("AXWebArea"), false)  // page → in-place
+        XCTAssertEqual(FocusedFieldDetector.roleDecision("AXToolbar"), true)   // omnibox → selection
+        XCTAssertNil(FocusedFieldDetector.roleDecision("AXGroup"))
+        XCTAssertNil(FocusedFieldDetector.roleDecision("AXTextArea"))
+    }
+
+    func testUnknownChainFallsBackToSelection() {
+        XCTAssertTrue(FocusedFieldDetector.chainDecision(["AXTextField", "AXGroup", "AXWindow"]))
+        XCTAssertTrue(FocusedFieldDetector.chainDecision([String]()))
+    }
+
+    func testFirstDecisiveAncestorWins() {
+        XCTAssertFalse(FocusedFieldDetector.chainDecision(["AXTextArea", "AXWebArea", "AXToolbar"]))
+        XCTAssertTrue(FocusedFieldDetector.chainDecision(["AXTextField", "AXToolbar", "AXWebArea"]))
+    }
+
+    /// The exact 2026-07-30 hierarchy: AXTextArea under 11 AXGroups, AXWebArea at
+    /// depth 13. The old 12-hop budget classified it as omnibox; the current budget
+    /// must reach the web area — and the regression is pinned from both sides.
+    func testDeepReactComposerReachesWebAreaWithinHopBudget() {
+        let chain = ["AXTextArea"] + Array(repeating: "AXGroup", count: 11) + ["AXWebArea"]
+        XCTAssertTrue(FocusedFieldDetector.chainDecision(chain.prefix(12)),
+                      "12 hops must reproduce the old misclassification (guards test realism)")
+        XCTAssertFalse(FocusedFieldDetector.chainDecision(chain.prefix(FocusedFieldDetector.maxAncestorHops)),
+                       "the current hop budget must reach AXWebArea → in-place")
+        XCTAssertGreaterThanOrEqual(FocusedFieldDetector.maxAncestorHops, 20,
+                                    "deep web hierarchies need real headroom past 13")
+    }
+}

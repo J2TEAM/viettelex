@@ -29,6 +29,8 @@
 com.apple.Terminal: tap
 com.googlecode.iterm2: tap
 dev.warp.Warp-Stable: tap
+dev.warp.Warp: tap             # Warp kênh dev/beta — cùng app, khác bundle id
+dev.warp.Warp-Preview: tap     # Warp kênh preview
 
 # Electron/CEF — in-place hỏng ở biên từ
 com.larksuite.larkApp: tap

@@ -669,7 +669,7 @@ enum FocusedFieldDetector {
     private static func roleChain() -> String {
         guard var el = focusedElementForScan() else { return "no-focused-element" }
         var roles: [String] = []
-        for _ in 0..<12 {
+        for _ in 0..<FocusedFieldDetector.maxAncestorHops {
             AXUIElementSetMessagingTimeout(el, 0.05)
             var r: CFTypeRef?
             if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &r) == .success,
@@ -703,21 +703,46 @@ enum FocusedFieldDetector {
         // redundant anyway: the walk's fallback is selection-replace.
         var roleRef: CFTypeRef?
         var element = focused
-        // Walk up a bounded ancestor chain. 12 hops covers real browser hierarchies
-        // (web content sits many groups deep) while still bounding the AX round trips.
-        for _ in 0..<12 {
+        for _ in 0..<Self.maxAncestorHops {
             AXUIElementSetMessagingTimeout(element, 0.05)
             roleRef = nil
             if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
-               let role = roleRef as? String {
-                if role == "AXWebArea" { return false }   // page content → in-place
-                if role == "AXToolbar" { return true }    // address/search bar → selection
+               let role = roleRef as? String, let verdict = Self.roleDecision(role) {
+                return verdict
             }
             var parentRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
                   let parent = parentRef, CFGetTypeID(parent) == AXUIElementGetTypeID()
             else { return true }
             element = parent as! AXUIElement
+        }
+        return true
+    }
+
+    /// Ancestor-walk hop budget. Was 12 — field report 2026-07-30 (J2TeamNNL, 1.4.22):
+    /// a React composer's AXTextArea sat under ≥11 AXGroups, the walk ran out of hops
+    /// BEFORE reaching AXWebArea and fell back to selection-replace, whose synthetic
+    /// overtype the web editor swallows — tone keys consumed, edit never lands
+    /// ("không gõ được dấu"). 24 hops still bounds the AX round trips (each carries a
+    /// 50ms timeout, and refreshes ride the backoff-limited scan queue, never the
+    /// keystroke path) while covering deep modern web hierarchies.
+    static let maxAncestorHops = 24
+
+    /// One ancestor's vote: page content composes in-place, the browser chrome
+    /// (address/search bar) needs selection-replace, anything else keeps walking.
+    /// Pure so the polarity is pinned by tests.
+    static func roleDecision(_ role: String) -> Bool? {
+        if role == "AXWebArea" { return false }   // page content → in-place
+        if role == "AXToolbar" { return true }    // address/search bar → selection
+        return nil
+    }
+
+    /// Pure mirror of scan()'s walk over an already-collected role chain — first
+    /// decisive ancestor wins, unknown chain falls back to selection (the safer
+    /// default for the omnibox, where a missed detection breaks every word).
+    static func chainDecision<S: Sequence>(_ roles: S) -> Bool where S.Element == String {
+        for role in roles {
+            if let verdict = roleDecision(role) { return verdict }
         }
         return true
     }
@@ -918,6 +943,11 @@ enum SyntheticKeyboard {
         else { return }
         // keyUp as well: a lone keyDown leaves the key logically held in apps that track
         // key state, and an unbalanced function key was observed as a stuck modifier.
+        // Stamped like every other post site: back-to-back events can get equal
+        // mach-time stamps and the window server reorders same-stamp events — an
+        // up-before-down probe pair would read as a stuck key.
+        stamp(down)
+        stamp(up)
         down.post(tap: .cgSessionEventTap)
         up.post(tap: .cgSessionEventTap)
     }
@@ -1080,6 +1110,11 @@ enum SyntheticKeyboard {
         // privacy: .public — counts only (burst size), no user text; without it the
         // xctrace export shows "<private>" and the bs-bucket analysis can't populate.
         defer { Signposts.poster.endInterval("tap.emit", spState, "bs=\(backspaces, privacy: .public) ins=\(text.count, privacy: .public)") }
+        // DebugLog mirror (counts only, never text): the emit burst was previously
+        // invisible in tester logs — its keystrokes re-enter IMKit as anonymous
+        // 2-4ms "handle ENTER" bursts, indistinguishable from a swallowed edit
+        // (web editors that eat synthetic keys, 2026-07-30). One line per burst.
+        DebugLog.log("tap-emit mode=\(mode) bs=\(backspaces) ins=\(text.count)")
         if mode == .selection, backspaces > 0, !text.isEmpty {
             // D1 fast path: one AX text edit instead of the Shift+Left ×N select +
             // overtype burst. Only when the synthetic queue is drained — the AX write
@@ -1314,6 +1349,9 @@ final class TerminalTapController {
     private var probeSentTick: UInt64 = 0
     private var probeSeenTick: UInt64 = 0
     private var probeMisses = 0
+    /// Last idle verdict, for transition-only logging (main-thread confined — only
+    /// the watchdog timer touches it).
+    private var wasIdle = true
 
     // Backoff after a FAILED trust cycle (probe missed / tap refused): without
     // it, the stale-TRUE AXIsProcessTrusted drives an infinite create→probe-fail
@@ -1328,6 +1366,10 @@ final class TerminalTapController {
     private var quarantined: Bool {
         DispatchTime.now().uptimeNanoseconds < quarantineUntilNs
     }
+    /// Menu/diagnostics only: the tap is deliberately paused by the failed-cycle
+    /// backoff. Without surfacing this, a quarantined tap looks like "Status: OK"
+    /// while every tap-mode app types raw ASCII (field report 2026-07-30).
+    var isQuarantined: Bool { quarantined }
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     /// The dedicated thread's run loop, captured at thread start; nil while stopped.
@@ -1390,6 +1432,14 @@ final class TerminalTapController {
             }
             let nowNs = DispatchTime.now().uptimeNanoseconds
             let idle = lastKey == 0 || nowNs &- lastKey > Self.watchdogIdleNs
+            if idle != self.wasIdle {
+                // Transition only, never per-tick: with the probe silent while idle, a
+                // tap that died DURING idle is invisible until ~2 ticks after typing
+                // resumes — the timestamps of these two lines bound that blind window
+                // in a tester log (2026-07-30).
+                DebugLog.log("watchdog: \(idle ? "idle — probe paused" : "typing resumed — probe active")")
+                self.wasIdle = idle
+            }
             if idle {
                 self.probeMisses = 0
                 // The stale-grant HINT still runs while idle: it is a pure local
