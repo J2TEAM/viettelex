@@ -1920,6 +1920,9 @@ final class TerminalTapController {
         // isVisible kicks a CGWindowList background scan every 200ms while typing,
         // which nobody should pay for unless Spotlight was actually pinned.
         let spotlightManual = AppState.shared.manualMode(AppState.spotlightBundleID)
+        // One-lock snapshot for the whole selection/emptyReset/tap chain below —
+        // was 3 separate AppState round trips, two of them re-reading isTrusted.
+        let tapKeyRouting = AppState.shared.tapRouting(id)
         if (spotlightManual == .selection || spotlightManual == .tap
                 || spotlightManual == .emptyReset),
            SpotlightDetector.isVisible {
@@ -1929,7 +1932,7 @@ final class TerminalTapController {
             case .emptyReset: emitMode = .emptyReset
             default: engine.reset(); return pass
             }
-        } else if AppState.shared.usesSelectionReplace(id) {
+        } else if tapKeyRouting.selection {
             // Chromium omnibox: inline autocomplete keeps the suggestion SELECTED to the
             // right of the caret, so a Shift+Left select-overtype (.selection) is offset
             // just like a plain Backspace — the first Shift+Left shrinks the suggestion
@@ -1941,9 +1944,9 @@ final class TerminalTapController {
             // and manual .selection pins (no such inline-autocomplete selection) stay on
             // .selection. Field-verified in a live omnibox 2026-07-24.
             emitMode = AppState.shared.selectionEmitMode(id)
-        } else if AppState.shared.usesEmptyReset(id) {
+        } else if tapKeyRouting.emptyReset {
             emitMode = .emptyReset
-        } else if AppState.shared.usesTapMode(id) {
+        } else if tapKeyRouting.tap {
             emitMode = .backspace
         } else {
             engine.reset(); return pass

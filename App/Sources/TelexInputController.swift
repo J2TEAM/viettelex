@@ -301,10 +301,11 @@ final class TelexInputController: IMKInputController {
         let spotlightDefersToTap = (spotlightManual == .selection
                 || spotlightManual == .tap || spotlightManual == .emptyReset)
             && SpotlightDetector.isVisible
-        if AppState.shared.usesTapMode(frontID) || AppState.shared.usesTapMode(id)
-            || AppState.shared.usesSelectionReplace(frontID) || AppState.shared.usesSelectionReplace(id)
-            || AppState.shared.usesEmptyReset(frontID) || AppState.shared.usesEmptyReset(id)
-            || spotlightDefersToTap {
+        // ONE lock + one trusted read + (at most) one detector read for the whole
+        // decision — this used to be 6 separate calls, each re-locking AppState and
+        // several re-reading Accessibility.isTrusted.
+        let routing = AppState.shared.tapRouting(id, front: frontID)
+        if routing.tapDefer || spotlightDefersToTap {
             // NOTE: SpotlightDetector.isVisible defers UNCONDITIONALLY, even when the
             // tap is dormant (Accessibility not trusted / sandboxed build). That means
             // Spotlight typing gets raw passthrough with NO composition at all. This is
@@ -317,9 +318,7 @@ final class TelexInputController: IMKInputController {
             // distinguish "tap composed this key" from "nobody did" (2026-07-30).
             // Only evaluated when debugLogging is on (autoclosure).
             logDecision("handle \(id ?? "?")/front=\(frontID ?? "?"): tap-defer "
-                + "(tap=\(AppState.shared.usesTapMode(frontID) || AppState.shared.usesTapMode(id)) "
-                + "sel=\(AppState.shared.usesSelectionReplace(frontID) || AppState.shared.usesSelectionReplace(id)) "
-                + "empty=\(AppState.shared.usesEmptyReset(frontID) || AppState.shared.usesEmptyReset(id)) "
+                + "(tap=\(routing.tap) sel=\(routing.selection) empty=\(routing.emptyReset) "
                 + "spotlight=\(SpotlightDetector.isVisible) "
                 + "tapAlive=\(TerminalTapController.shared.isRunning) "
                 + "quar=\(TerminalTapController.shared.isQuarantined) "

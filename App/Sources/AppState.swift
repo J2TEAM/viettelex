@@ -16,7 +16,18 @@ extension Notification.Name {
 final class AppState: @unchecked Sendable {
     static let shared = AppState()
 
-    private let defaults = UserDefaults(suiteName: "com.viettelex.settings") ?? .standard
+    /// Real settings suite — EXCEPT under XCTest, where a separate suite isolates the
+    /// test host: the host runs the real AppState, and tests that flip toggles
+    /// (debugLogging, engine settings) were writing straight into the dev machine's
+    /// live settings — every `xcodebuild test` silently reconfigured the installed
+    /// IME (bitten 2026-07-30: debugLogging kept turning itself off mid-debugging).
+    /// Same detection as main.swift's IMK/TCC guard.
+    static let settingsSuiteName: String =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            ? "com.viettelex.settings.tests"
+            : "com.viettelex.settings"
+
+    private let defaults = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
 
     /// Guards every mutable cache + flag below. Needed since the event tap moved to
     /// its own thread: Settings/controller write on MAIN while the tap callback reads
@@ -440,13 +451,86 @@ final class AppState: @unchecked Sendable {
         guard let id = bundleID else { return false }
         // Membership under our lock; Accessibility.isTrusted OUTSIDE it (it has its
         // own lock — never nest them).
-        enum Wants { case tap, no, fallback }
-        let w: Wants = lock.withLock {
-            if let m = _manualMode(id) { return m == .tap ? .tap : .no }  // user override wins
-            return (fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id))
-                && !Self.markedTextApps.contains(id) ? .fallback : .no
+        let wants = lock.withLock { _rawWants(id).tap }
+        return wants && Accessibility.isTrusted
+    }
+
+    // MARK: - One-lock routing snapshot (hot path)
+
+    /// What a bundle id wants from the tap family, BEFORE the Accessibility/detector
+    /// gates. Single source of truth shared by the legacy per-mode getters and the
+    /// one-lock `tapRouting` snapshot — so the two can never drift. Caller must hold
+    /// `lock`.
+    struct TapWants: Equatable {
+        var tap = false
+        var sel = SelWant.no
+        var empty = false
+        var any: Bool { tap || empty || sel != .no }
+    }
+    enum SelWant: Equatable { case no, yes, perField }
+
+    private func _rawWants(_ id: String) -> TapWants {
+        if let m = _manualMode(id) {                                // user override wins
+            return TapWants(tap: m == .tap,
+                            sel: m == .selection ? .yes : (m == .axDetect ? .perField : .no),
+                            empty: m == .emptyReset)
         }
-        return w != .no && Accessibility.isTrusted
+        return TapWants(
+            tap: (fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id))
+                && !Self.markedTextApps.contains(id),
+            sel: Self.isPerFieldByDefault(id) ? .perField : .no,
+            empty: Self.emptyResetApps.contains(id))
+    }
+
+    /// The resolved routing for the CURRENT key: every gate applied.
+    struct TapRouting: Equatable {
+        var tap = false
+        var selection = false
+        var emptyReset = false
+        /// True → IMKit must not compose; the tap owns (or deliberately passes) the key.
+        var tapDefer: Bool { tap || selection || emptyReset }
+    }
+
+    /// OR-merge of two apps' wants (IMKit consults both the client id and the
+    /// frontmost app — see the tap-defer comment in TelexInputController.handle).
+    /// Pure so the merge is pinned by tests. `.yes` outranks `.perField`: a manual
+    /// `.selection` pin means selection unconditionally, whatever the field verdict.
+    static func mergedWants(_ a: TapWants, _ b: TapWants) -> TapWants {
+        TapWants(tap: a.tap || b.tap,
+                 sel: (a.sel == .yes || b.sel == .yes) ? .yes
+                    : (a.sel == .perField || b.sel == .perField) ? .perField : .no,
+                 empty: a.empty || b.empty)
+    }
+
+    /// Applies the Accessibility + per-field gates to a wants snapshot. Pure, and
+    /// LAZY on both externals — `trusted` costs a foreign lock (and a TCC refresh
+    /// kick), `wantsSelection` costs a detector read that can kick an AX scan; a key
+    /// in a plain in-place app must keep paying for NEITHER (exactly the laziness the
+    /// legacy per-mode getters had).
+    static func gateRouting(_ wants: TapWants,
+                            trusted: () -> Bool,
+                            wantsSelection: () -> Bool) -> TapRouting {
+        guard wants.any, trusted() else { return TapRouting() }
+        return TapRouting(
+            tap: wants.tap,
+            selection: wants.sel == .yes || (wants.sel == .perField && wantsSelection()),
+            emptyReset: wants.empty)
+    }
+
+    /// ONE lock acquisition + at most one trusted read + at most one detector read
+    /// for the whole per-key routing decision. Replaces the 6-8 separate
+    /// usesTapMode/usesSelectionReplace/usesEmptyReset round trips both hot paths
+    /// used to make per keystroke (each its own lock trip, several re-reading
+    /// Accessibility.isTrusted — doubling the TCC-refresh pressure).
+    func tapRouting(_ bundleID: String?, front: String? = nil) -> TapRouting {
+        let wants: TapWants = lock.withLock {
+            var w = bundleID.map { _rawWants($0) } ?? TapWants()
+            if let f = front, f != bundleID { w = Self.mergedWants(w, _rawWants(f)) }
+            return w
+        }
+        return Self.gateRouting(wants,
+                                trusted: { Accessibility.isTrusted },
+                                wantsSelection: { FocusedFieldDetector.wantsSelection })
     }
 
     // MARK: - Built-in typing-mode rules (typing-modes.yml)
@@ -502,15 +586,7 @@ final class AppState: @unchecked Sendable {
     /// page content no) — resolved OUTSIDE our lock (the detector has its own).
     func usesSelectionReplace(_ bundleID: String?) -> Bool {
         guard let id = bundleID else { return false }
-        enum Want { case yes, no, perField }
-        let w: Want = lock.withLock {
-            if let m = _manualMode(id) {                            // user override wins
-                if m == .selection { return .yes }
-                if m == .axDetect { return .perField }
-                return .no
-            }
-            return Self.isPerFieldByDefault(id) ? .perField : .no
-        }
+        let w = lock.withLock { _rawWants(id).sel }
         switch w {
         case .no: return false
         case .yes: return Accessibility.isTrusted
@@ -555,10 +631,7 @@ final class AppState: @unchecked Sendable {
     /// Office-style empty-character reset before a Backspace-retype (Developer ID only).
     func usesEmptyReset(_ bundleID: String?) -> Bool {
         guard let id = bundleID else { return false }
-        let wants: Bool = lock.withLock {
-            if let m = _manualMode(id) { return m == .emptyReset }  // user override wins
-            return Self.emptyResetApps.contains(id)
-        }
+        let wants = lock.withLock { _rawWants(id).empty }
         return wants && Accessibility.isTrusted
     }
 

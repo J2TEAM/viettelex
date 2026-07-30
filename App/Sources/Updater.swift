@@ -19,7 +19,8 @@ enum UpdateCheck {
         get { notifyDefaults.string(forKey: "pendingUpdateVersion").flatMap { $0.isEmpty ? nil : $0 } }
         set { notifyDefaults.set(newValue ?? "", forKey: "pendingUpdateVersion") }
     }
-    private static let notifyDefaults = UserDefaults(suiteName: "com.viettelex.settings") ?? .standard
+    // Same suite AppState uses — including the XCTest isolation (see settingsSuiteName).
+    private static let notifyDefaults = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
 
     /// Weekly auto-check — runs ONLY when the user opted in (Settings toggle,
     /// default OFF, so the no-network stance still holds: the toggle is the ask).

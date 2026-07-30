@@ -130,7 +130,11 @@ final class HotPathCacheTests: XCTestCase {
     /// "work" all session and silently lose the setting on the next launch.
     func testEngineToggleSettersWriteBothTheCacheAndUserDefaults() {
         let s = AppState.shared
-        let store = UserDefaults(suiteName: "com.viettelex.settings") ?? .standard
+        // AppState.settingsSuiteName, NOT the literal: under XCTest AppState writes to
+        // the isolated .tests suite (so test runs stop reconfiguring the dev machine's
+        // real IME settings) — this test asserts round-trip into whatever suite
+        // AppState actually uses.
+        let store = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
         let toggles: [(name: String, key: String, get: () -> Bool, set: (Bool) -> Void)] = [
             ("autoRestore", "autoRestore", { s.autoRestore }, { s.autoRestore = $0 }),
             ("freeMarking", "freeMarking", { s.freeMarking }, { s.freeMarking = $0 }),
@@ -199,5 +203,17 @@ final class ProbeChordGateTests: XCTestCase {
         // (or dropping .maskCommand) fails here.
         XCTAssertEqual(SyntheticKeyboard.chordFlags,
                        CGEventFlags.maskCommand.union(.maskControl).union(.maskAlternate))
+    }
+}
+
+// The test host runs the REAL AppState. Without suite isolation, every test that
+// flips a toggle wrote into the dev machine's live com.viettelex.settings —
+// `xcodebuild test` silently reconfigured the installed IME (2026-07-30:
+// debugLogging kept turning itself off mid-debugging session).
+final class SettingsSuiteIsolationTests: XCTestCase {
+    func testXCTestHostUsesTheIsolatedSuite() {
+        XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"],
+                        "this suite only proves isolation when actually run under XCTest")
+        XCTAssertEqual(AppState.settingsSuiteName, "com.viettelex.settings.tests")
     }
 }
