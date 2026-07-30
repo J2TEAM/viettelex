@@ -1055,6 +1055,14 @@ enum SyntheticKeyboard {
         event.timestamp = CGEventTimestamp(stampValue)
     }
 
+    #if DEBUG
+    /// Test seam: stamp through the real path (`stamp` is private). Lets the
+    /// strictly-increasing contract be pinned without posting anything — the probe
+    /// pair (postProbe) relies on it so the window server cannot deliver up before
+    /// down (field report 2026-07-30).
+    static func _testStamp(_ event: CGEvent) { stamp(event) }
+    #endif
+
     // MARK: In-flight tracking (native fast-path ordering guard)
     //
     // Synthetic keyDowns that were posted but have not yet re-entered the tap.

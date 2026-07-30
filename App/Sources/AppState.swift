@@ -478,7 +478,8 @@ final class AppState: @unchecked Sendable {
         return TapWants(
             tap: (fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id))
                 && !Self.markedTextApps.contains(id),
-            sel: Self.isPerFieldByDefault(id) ? .perField : .no,
+            sel: Self.selectionAlwaysApps.contains(id) ? .yes
+                : Self.isPerFieldByDefault(id) ? .perField : .no,
             empty: Self.emptyResetApps.contains(id))
     }
 
@@ -569,6 +570,11 @@ final class AppState: @unchecked Sendable {
     static let builtInInPlaceApps = builtInIDs(.inPlace)
     static let markedTextApps = builtInIDs(.marked)
     private static let selectionApps = builtInIDs(.axDetect)   // per-field browsers
+    /// Unconditional Shift+Left selection-replace (JetBrains-style IDEs: autocomplete
+    /// is a POPUP, not an inline selection, so plain selection-overtype is correct).
+    /// Was dead data until 2026-07-31 — the yml shipped 12 `selection` rules but
+    /// nothing ever read builtInIDs(.selection).
+    private static let selectionAlwaysApps = builtInIDs(.selection)
     private static let emptyResetApps = builtInIDs(.emptyReset)
     /// Extends ClientPolicy's compiled-in remote-desktop floor (kept as the safety
     /// net) with plist-declared passthrough apps.
@@ -623,8 +629,8 @@ final class AppState: @unchecked Sendable {
     /// Excel), for the Settings mode table — it lists the installed ones so their
     /// default is visible.
     static var builtInSpecialApps: Set<String> {
-        selectionApps.union(emptyResetApps).union(markedTextApps)
-            .union(builtInPassthroughApps)
+        selectionApps.union(selectionAlwaysApps).union(emptyResetApps)
+            .union(markedTextApps).union(builtInPassthroughApps)
     }
 
 
@@ -660,6 +666,7 @@ final class AppState: @unchecked Sendable {
         if ClientPolicy.isRemoteDesktop(id) || Self.builtInPassthroughApps.contains(id) { return .passthrough }
         return lock.withLock {
             if Self.isPerFieldByDefault(id) { return .axDetect }
+            if Self.selectionAlwaysApps.contains(id) { return .selection }
             if Self.emptyResetApps.contains(id) { return .emptyReset }
             if Self.markedTextApps.contains(id) { return .marked }
             if fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id) {
@@ -836,7 +843,16 @@ enum ShortcutImporter {
                (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
                 value = String(value.dropFirst().dropLast())
             }
-            guard !key.isEmpty, !value.isEmpty, key.count <= 32 else { continue }
+            // Key filter serves three masters: SHORTCUT keys (typed abbreviations —
+            // never contain whitespace), typing-modes BUNDLE IDS (no whitespace,
+            // but legitimately >32 chars: the old 32 cap silently killed the shipped
+            // rules for com.apple.SafariTechnologyPreview/org.mozilla.
+            // firefoxdeveloperedition/com.citrix.receiver.icaviewer.mac — found
+            // 2026-07-31), and REJECTING junk formats (a plist's DOCTYPE line splits
+            // on ":" into a key WITH spaces — the whitespace test is what keeps
+            // parse() answering nil for plist XML now that the cap is 64).
+            guard !key.isEmpty, !value.isEmpty, key.count <= 64,
+                  !key.contains(where: { $0.isWhitespace }) else { continue }
             out[key] = value
         }
         return out.isEmpty ? nil : out

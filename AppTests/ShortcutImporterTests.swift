@@ -70,4 +70,26 @@ final class ShortcutImporterTests: XCTestCase {
         XCTAssertNil(parse(""))
         XCTAssertNil(parse("just some prose without any pairs"))
     }
+
+    // Comment cùng dòng KHÔNG bị cắt — đây là chủ đích, không phải bug: giá trị gõ
+    // tắt có thể chứa "#" (hashtag, mã màu), nên parser chỉ bỏ dòng BẮT ĐẦU bằng
+    // "#"/";"/"//"..  Hệ quả là `id: tap  # chú thích` trong typing-modes.yml cho ra
+    // mode "tap  # chú thích" → AppMode(rawValue:) nil → rule bị bỏ im lặng; đúng
+    // cách 2 rule Warp mới chết ngày 30/07/2026 (xem header typing-modes.yml, và
+    // BundledTypingModesTests khoá phía dữ liệu).
+    func testInlineCommentIsNotStripped() {
+        let d = parse("""
+        # comment riêng dòng: bỏ cả dòng
+        vn: Việt Nam  # hashtag phía sau ĐƯỢC giữ
+        tag: #hashtag
+        """)
+        XCTAssertEqual(d?["vn"], "Việt Nam  # hashtag phía sau ĐƯỢC giữ")
+        // Giá trị mở đầu bằng "#" vẫn sống (dòng có key nên không bị coi là comment).
+        XCTAssertEqual(d?["tag"], "#hashtag")
+        XCTAssertEqual(d?.count, 2)
+        // Cùng lý do: một rule typing-mode có comment cùng dòng KHÔNG parse ra mode.
+        let raw = parse("dev.warp.Warp: tap  # kênh dev")?["dev.warp.Warp"]
+        XCTAssertEqual(raw, "tap  # kênh dev")
+        XCTAssertNil(AppState.AppMode(rawValue: raw ?? ""))
+    }
 }
