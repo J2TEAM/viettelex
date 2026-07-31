@@ -30,12 +30,23 @@ final class EnglishCollisionTests: XCTestCase {
         XCTAssertEqual(commit("this"), "thí")
     }
 
-    func testCancelRestoresEnglishDoubles() {
-        // double-letter cancel used to eat one letter (off→of, class→clas)
-        for w in ["off", "office", "class", "pass", "press", "less", "boss",
-                  "address", "message", "access", "process", "business"] {
-            XCTAssertEqual(commit(w), w, "'\(w)' must keep its double letter")
+    func testDoubleLetterEnglishFollowsCancelPosition() {
+        // Screen-truth v2 (2026-07-31): TRAILING double = deliberate escape → the
+        // screen wins, even for real English words (the old dict-first order made
+        // literal "pas"/"of" untypeable). MID-WORD double = nobody escapes there →
+        // the dict still restores the eaten letter.
+        for (w, kept) in [("off", "of"), ("class", "clas"), ("pass", "pas"),
+                          ("press", "pres"), ("less", "les"), ("boss", "bos"),
+                          ("access", "acces"), ("process", "proces")] {
+            XCTAssertEqual(commit(w), kept, "'\(w)': trailing cancel keeps the screen")
         }
+        for w in ["office", "message", "business"] {
+            XCTAssertEqual(commit(w), w, "'\(w)': mid-word double must dict-restore")
+        }
+        // "address" stays a restore: dd→đ leaves a mark the trailing cancel never
+        // cleaned up ("ađres" on screen is mangled, not an escape) — the
+        // composedHasDiacritic guard restores raw, as designed.
+        XCTAssertEqual(commit("address"), "address")
         // a cancel outside the dict keeps the composed text
         XCTAssertEqual(commit("hoass"), "hoas")
     }
@@ -121,8 +132,9 @@ final class EnglishCollisionTests: XCTestCase {
         // his/this belong to Vietnamese since 2026-07-23 — case carries over
         XCTAssertEqual(commit("His"), "Hí")
         XCTAssertEqual(commit("THIS"), "THÍ")
-        XCTAssertEqual(commit("Off"), "Off")
-        XCTAssertEqual(commit("OFF"), "OFF")        // dict beats the all-caps cancel escape
+        // Screen-truth v2 2026-07-31: trailing cancel wins — case still carries over.
+        XCTAssertEqual(commit("Off"), "Of")
+        XCTAssertEqual(commit("OFF"), "OF")
     }
 
     func testCollisionTableCanBeDisabled() {
@@ -176,13 +188,13 @@ final class EnglishCollisionTests: XCTestCase {
         XCTAssertEqual(commit("DDDR"), "DDR")           // acronym via cancel
         XCTAssertEqual(commit("iss"), "is")             // not English → composed
         XCTAssertEqual(commit("banhss"), "banhs")
-        // real English doubles restore via the dict
-        XCTAssertEqual(commit("boss"), "boss")
-        XCTAssertEqual(commit("mess"), "mess")
-        // the "off" feedback loop (field report): screen shows "of" mid-word, so
-        // some users add a third f — BOTH inputs must end as "off" at the boundary
-        XCTAssertEqual(commit("off"), "off")     // raw ∈ dict → restore
-        XCTAssertEqual(commit("offf"), "off")    // cancel keeps composed
+        // Screen-truth v2 2026-07-31: trailing double commits the screen; the way
+        // to type the English word is the third letter (the screen already SHOWS
+        // "off" after offf — no surprise restore at the boundary anymore).
+        XCTAssertEqual(commit("boss"), "bos")
+        XCTAssertEqual(commit("mess"), "mes")
+        XCTAssertEqual(commit("off"), "of")      // trailing escape keeps the screen
+        XCTAssertEqual(commit("offf"), "off")    // cancel + literal f → "off" as shown
         // same double-route for google (user requirement 2026-07-22):
         // typed straight → restore; typed with a fixing 3rd o → cancel keeps composed
         XCTAssertEqual(commit("google"), "google")    // "gôgle" restored (dict + validator)

@@ -31,7 +31,11 @@ final class BoundaryTests: XCTestCase {
         // Cancel contract preserved (plain ascii after the cancel → keep composed).
         XCTAssertEqual(commitFM("iss"), "is")
         XCTAssertEqual(commitFM("messs"), "mess")
-        XCTAssertEqual(commitFM("off"), "off")     // English-collision
+        // Screen-truth 2026-07-31: trailing cancel outranks the English table.
+        XCTAssertEqual(commitFM("off"), "of")
+        // "class" is NOT the cancel class here: live-spell freezes it at the invalid
+        // onset, the screen shows literal "class" all along, and the boundary restore
+        // commits exactly that — screen-truth by a different route.
         XCTAssertEqual(commitFM("class"), "class")
     }
 
@@ -115,27 +119,24 @@ final class BoundaryTests: XCTestCase {
         }
     }
 
-    // Cancel contract (final, 2026-07-22): the English table wins over everything
-    // ("off"/"ass"/"class" restore their real double letters); any other cancel
-    // keeps the COMPOSED text — the extra key was an undo gesture and typing may
-    // continue after it ("Deffault" keys → Default).
-    func testCancelledWordsFollowDictThenComposed() {
-        // real English words → raw restore in BOTH paths
-        for keys in ["ass", "off", "class"] {
-            var b = feed(keys)
-            let composed = Array(b.composed)
-            if case .replace(let bs, let insert) = b.commitBoundary(autoRestore: true) {
-                // Minimal edit (prefix-stripped): applying it must reconstruct raw.
-                var screen = composed; screen.removeLast(bs); screen.append(contentsOf: insert)
-                XCTAssertEqual(String(screen), keys, "\(keys) should restore to raw")
-            } else { XCTFail("\(keys) should restore") }
-            XCTAssertEqual(commitText(keys, restore: true), keys)
-        }
-        // non-English cancels → composed survives in BOTH paths
-        for (keys, kept) in [("iss", "is"), ("messs", "mess"), ("asz", "a")] {
+    // Cancel contract v2 (2026-07-31, maintainer): SCREEN-TRUTH wins for a TRAILING
+    // cancel — the escape is the word's final, deliberate act, so "ass"/"off"/"class"
+    // commit exactly what the screen showed ("as"/"of"/"clas"); the old order made
+    // literal "pas"-class strings untypeable. The English table still wins MID-WORD
+    // ("office"→office — nobody escapes mid-word to type "ofice") and for words with
+    // no cancel at all ("his").
+    func testCancelledWordsFollowScreenTruthAtTrailingCancel() {
+        // Trailing cancel on real English words → composed survives in BOTH paths
+        for (keys, kept) in [("ass", "as"), ("off", "of"), ("class", "clas"),
+                             ("iss", "is"), ("messs", "mess"), ("asz", "a")] {
             var b = feed(keys)
             XCTAssertEqual(b.commitBoundary(autoRestore: true), .none, "\(keys) keeps composed")
             XCTAssertEqual(commitText(keys, restore: true), kept)
+        }
+        // Mid-word double on a real English word → dictionary still restores raw.
+        for keys in ["office", "message"] {
+            XCTAssertEqual(commitText(keys, restore: true), keys,
+                           "\(keys): mid-word double must stay dictionary-protected")
         }
     }
 

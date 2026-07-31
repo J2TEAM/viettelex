@@ -32,7 +32,8 @@ final class SuiteRegressionTests: XCTestCase {
         // Columns 0..8: suite,input,freq,naive,expected,behavior,category,severity,notes.
         // input/expected/behavior are comma-free; a quoted notes field with commas only
         // adds trailing fields, so fixed indices stay correct.
-        let known: Set<String> = ["transform", "restore_raw", "keep_as_typed", "ambiguous_needs_context"]
+        let known: Set<String> = ["transform", "restore_raw", "keep_as_typed",
+                                  "ambiguous_needs_context", "cancel_keep_composed"]
         return lines.compactMap { line in
             let f = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
             // Skip junk rows (a notes field with an embedded newline spills a partial line).
@@ -98,13 +99,19 @@ final class SuiteRegressionTests: XCTestCase {
                        "an unchanged English word must never be mangled")
         // EN→EN: restore of transformed English words — floor (raise when improved).
         // 2026-07-26: 6790 → 7201 (reach-back tone-cancel rule + dict grown from the
-        // suite's own English column, ≥5 chữ). An ADJACENT double is deliberately NOT
-        // restored by rule — "tessted"→tested is the same keystroke shape as
-        // "office"→ofice (field report), so only the dict may restore those. The rest
-        // are protected VN collisions (won=ươn, worst=ướt), acronyms (ieee, nginx) and
+        // suite's own English column, ≥5 chữ). 2026-07-31: 66 trailing-double rows
+        // (pass/off/boss…) moved OUT of this bucket into cancel_keep_composed —
+        // screen-truth now outranks the dict for the trailing escape (maintainer
+        // decision; literal "pas" was untypeable under dict-first). Mid-word doubles
+        // ("office"→ofice shape) stay dict-restored here. Remaining misses are
+        // protected VN collisions (won=ươn, worst=ướt), acronyms (ieee, nginx) and
         // 2-3 letter tokens inside symbol strings (/usr/…, os.path).
-        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7201,
+        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7135,
                                     "English-restore coverage regressed")
+        // Trailing-cancel screen-truth (2026-07-31): the escape gesture commits the
+        // rendered text even when raw is a real English word — EXACT, no floor.
+        XCTAssertEqual(pass["cancel_keep_composed"], total["cancel_keep_composed"],
+                       "a trailing cancel stopped committing the screen text")
         // VN→VN: EVERY Vietnamese word must render correctly (style variants hoà/hòa
         // accepted via `matches`). 18 non-defect rows were removed from the suite —
         // suite-wrong (giaj→giạ, uow→uơ), undefined_behavior (expected "?"), spec/mixed-
@@ -131,3 +138,4 @@ final class SuiteRegressionTests: XCTestCase {
         }
     }
 }
+

@@ -501,32 +501,47 @@ public struct TelexEngine {
     /// Only then do the standard validity/exception rules decide.
     /// NON-mutating (scratch-free) so `peekCommitText` can share it verbatim.
     private func shouldRestoreRaw() -> Bool {
-        if rawIsEnglishCollision() { return true }
+        // ORDER IS THE POLICY. The cancel branch comes FIRST: a TRAILING escape
+        // gesture (adjacent double modifier as the word's final keystroke — the user
+        // is LOOKING at the screen and said "no diacritic, keep the letter") outranks
+        // the English dictionary, so "pass"→pas, "off"→of commit exactly what the
+        // screen showed. Decided 2026-07-31 (maintainer): screen-truth wins over
+        // English-protection — this REVERSES the PR #3-era verdicts that restored
+        // trailing-double English words ("pass"/"miss"/"boss") for blind English
+        // typists; the cost (a blind-typed "pass" loses its last letter) is accepted
+        // because the escape hatch must be reliable: under the old order, literal
+        // "pas" was UNTYPEABLE. Scope is TRAILING only — a mid-word double
+        // ("office"/"message"/"sorry") still consults the dictionary: nobody escapes
+        // mid-word to type "ofice"/"sory", those commits would be pure misspellings.
+        // English protection is also untouched where no cancel happened at all
+        // ("his"→hís restores "his") and for accidental reach-back cancels
+        // ("hosts", span > 1).
         if markCancelled {
             if composedIsValidSyllable() { return false }
             // A TONE-key cancel that REACHED BACK over letters (span > 1): the tone key
             // it killed was typed keys ago, so that key is itself a letter the word lost
-            // — "hosts"→hots, "asks"→aks, "discs"→dics, "buses"→bues. Restore the raw
-            // keys unless the result is a real English word whose raw keys are not
-            // (keeps "hiss" as "hiss", not "his").
-            //
-            // An ADJACENT double is NOT decided here — it is the escape gesture and the
-            // composed text always wins, wherever it sits in the word. Mid-word is just
-            // as deliberate as trailing ("tessted"→tested, "Deffault"→Default: field
-            // reports 2026-07-26 / 07-22). The keystrokes of an escape and of an English
-            // double consonant are IDENTICAL ("tessted"→tested vs "office"→ofice), so
-            // only the dictionary can tell them apart — that is `rawIsEnglishCollision`
-            // above, and the screen-truth rule (what you see is what you commit) decides
-            // everything it doesn't know.
+            // — "hosts"→hots, "asks"→aks, "discs"→dics, "buses"→bues. NOT the deliberate
+            // escape (that is the adjacent double, span == 1) — treat as accident:
+            // restore the raw keys unless the result is a real English word whose raw
+            // keys are not.
             if toneCancelSpan > 1 {
                 return !composedIsRecognizedEnglish() || rawIsEnglishContextWord()
             }
-            // Trailing tone cancel, or a MARK doubler anywhere (aaa/ooo/ddd/ww): a
-            // deliberate literal-letter escape — keep it ("gooogle", "DDDR", "uw").
-            // Unless free-marking left a diacritic stuck before the cancel, i.e. the
-            // cancel did NOT clean the word up ("excess"→"êcs", "lenses"→"lêns").
+            // MID-WORD adjacent double whose raw keys spell a real English word:
+            // dictionary wins ("office"→ofice would be a misspelling nobody asked
+            // for). Trailing cancels (toneCancelAt == last raw key) skip this — the
+            // escape is the final, deliberate act. Mark doublers (toneCancelAt == -1)
+            // stay screen-truth as before ("gooogle", "DDDR", "uw").
+            if toneCancelAt >= 0, toneCancelAt < rawCount - 1, rawIsEnglishCollision() {
+                return true
+            }
+            // The deliberate literal-letter escape — keep the screen ("pas", "tessted"→
+            // tested, "Deffault"→Default: field reports 2026-07-26 / 07-22). Unless
+            // free-marking left a diacritic stuck before the cancel, i.e. the cancel
+            // did NOT clean the word up ("excess"→"êcs", "lenses"→"lêns").
             return composedHasDiacritic()
         }
+        if rawIsEnglishCollision() { return true }
         if forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable() { return true }
         // Context-based (experimental): after an English word, an ambiguous word whose raw
         // keys spell an English word is restored to English ("he is" → "is", not "í").

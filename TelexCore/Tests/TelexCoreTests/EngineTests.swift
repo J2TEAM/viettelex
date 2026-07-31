@@ -441,10 +441,11 @@ final class EngineGoldenTests: XCTestCase {
     // Trade-off (accepted): English double-letter words like miss/class also keep the
     // composed (shorter) form rather than restoring the raw keystrokes.
     func testCancelledMarkFollowsValidityRule() {
-        // Cancel keeps the composed text (the extra key was an undo gesture) —
-        // UNLESS the raw keys are a real English word (dict wins: ass, off…).
+        // Cancel keeps the composed text (the extra key was an undo gesture).
+        // Screen-truth v2 2026-07-31: TRAILING cancel wins even over the English
+        // table ("ass"→as) — dict restore only applies mid-word / no-cancel.
         XCTAssertEqual(commit("iss"), "is")
-        XCTAssertEqual(commit("ass"), "ass")    // English → dict restore
+        XCTAssertEqual(commit("ass"), "as")
         XCTAssertEqual(commit("aff"), "af")
         XCTAssertEqual(commit("asz"), "a")      // z-cancel leaves valid "a" -> keep composed
         XCTAssertEqual(commit("aaa"), "aa")
