@@ -346,6 +346,32 @@ enum SpotlightDetector {
     private static let ttlNs: UInt64 = 200_000_000
     private static let scanQueue = DispatchQueue(label: "com.viettelex.spotlight-scan", qos: .utility)
 
+    /// IMKit just activated the Spotlight client — authoritative proof the overlay
+    /// is up. Stamp the cache TRUE immediately instead of waiting for a keystroke
+    /// to kick a CGWindowList scan: a fast first burst arrives before any scan
+    /// lands (field repro 2026-07-31: "pas" — the tone key emitted into the overlay
+    /// while the cache still said false), and the overlay-raw gate in the tap
+    /// callback depends on this value. Backoff resets so the close is re-scanned
+    /// at the base TTL.
+    static func noteFocused() {
+        lock.withLock {
+            cached = true
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+            stableRuns = 0
+        }
+    }
+
+    #if DEBUG
+    static func _testSetVisible(_ value: Bool) {
+        lock.withLock {
+            cached = value
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+        }
+    }
+    /// Read the cache WITHOUT kicking a refresh (a plain `isVisible` read would).
+    static var _testVisible: Bool { lock.withLock { cached } }
+    #endif
+
     static var isVisible: Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         let (stale, value): (Bool, Bool) = lock.withLock {
@@ -1569,6 +1595,16 @@ final class TerminalTapController {
     /// handle() before any edit is emitted. TAP-thread confined.
     private var emitMode: TapEmit = .backspace
 
+    /// TRUE → the Spotlight overlay owns the keys and no one may compose: the
+    /// routing verdict (from the app BEHIND the overlay) says tap-family, but a
+    /// synthetic emit into Spotlight's inline autocomplete garbles the word. Only an
+    /// explicit tap-family pin on Spotlight itself opts into composing (that case is
+    /// handled by the manual-pin branch BEFORE this gate fires). Pure so the
+    /// polarity is pinned by tests.
+    static func spotlightOverlayForcesRaw(visible: Bool, manualPin: AppState.AppMode?) -> Bool {
+        visible && !(manualPin == .selection || manualPin == .tap || manualPin == .emptyReset)
+    }
+
     // Throttle for the imeActive self-heal reconcile (see handle()). TAP-thread
     // confined (only touched inside the callback).
     private var lastReconcileNs: UInt64 = 0
@@ -1957,6 +1993,21 @@ final class TerminalTapController {
         } else if tapKeyRouting.tap {
             emitMode = .backspace
         } else {
+            engine.reset(); return pass
+        }
+        // Spotlight overlay WITHOUT an explicit tap-family pin: the routing verdict
+        // above belongs to the app BEHIND the overlay (FrontmostApp stays iTerm/
+        // Chrome while Spotlight is up), but the keys land in Spotlight's field,
+        // whose inline autocomplete breaks every synthetic emit — a backspace eats
+        // the SELECTED SUGGESTION instead of the last letter, reordering the word
+        // (field report 2026-07-31: "pas" in Spotlight over iTerm → garbled; log
+        // showed tap-emit mode=backspace into client=com.apple.Spotlight). The
+        // shipped contract (see the tap-defer NOTE in TelexInputController.handle)
+        // is RAW PASSTHROUGH here: no composition from either side. isVisible is a
+        // cached bool (stale-read + async refresh), read only for keys already
+        // routed to a tap-family app — plain in-place apps still never pay for it.
+        if Self.spotlightOverlayForcesRaw(visible: SpotlightDetector.isVisible,
+                                          manualPin: spotlightManual) {
             engine.reset(); return pass
         }
         // Secure input (native password prompts) OR an AX-reported password field (web

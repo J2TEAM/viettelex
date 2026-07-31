@@ -86,3 +86,41 @@ final class RoutingDecisionTests: XCTestCase {
         }
     }
 }
+
+// Spotlight overlay vs tap-family routing: FrontmostApp stays the app BEHIND the
+// overlay (iTerm/Chrome), so the tap's routing verdict says "compose" while the keys
+// actually land in Spotlight's field — whose inline autocomplete eats a synthetic
+// Backspace as "delete the selected suggestion", reordering the word (field report
+// 2026-07-31: "pas" over iTerm → garbled; log: tap-emit mode=backspace while
+// client=com.apple.Spotlight). Contract: raw passthrough unless Spotlight itself is
+// explicitly pinned to a tap-family mode.
+final class SpotlightOverlayGateTests: XCTestCase {
+    func testOverlayForcesRawForUnpinnedSpotlight() {
+        for pin: AppState.AppMode? in [nil, .auto, .inPlace, .marked, .axDetect, .passthrough] {
+            XCTAssertTrue(TerminalTapController.spotlightOverlayForcesRaw(visible: true, manualPin: pin),
+                          "pin=\(String(describing: pin))")
+        }
+    }
+    func testExplicitTapFamilyPinKeepsComposing() {
+        for pin: AppState.AppMode in [.tap, .selection, .emptyReset] {
+            XCTAssertFalse(TerminalTapController.spotlightOverlayForcesRaw(visible: true, manualPin: pin))
+        }
+    }
+    func testNoOverlayNeverForcesRaw() {
+        XCTAssertFalse(TerminalTapController.spotlightOverlayForcesRaw(visible: false, manualPin: nil))
+        XCTAssertFalse(TerminalTapController.spotlightOverlayForcesRaw(visible: false, manualPin: .tap))
+    }
+}
+
+// noteFocused: activateServer(com.apple.Spotlight) là bằng chứng chắc chắn overlay
+// đang mở — cache phải TRUE ngay lập tức, không đợi CGWindowList scan (burst "pas"
+// 2026-07-31: phím dấu emit vào overlay khi cache còn false).
+final class SpotlightNoteFocusedTests: XCTestCase {
+    func testNoteFocusedStampsVisibleImmediately() {
+        SpotlightDetector._testSetVisible(false)
+        XCTAssertFalse(SpotlightDetector._testVisible)
+        SpotlightDetector.noteFocused()
+        XCTAssertTrue(SpotlightDetector._testVisible)
+        SpotlightDetector._testSetVisible(false)   // trả trạng thái cho test khác
+    }
+}

@@ -1148,6 +1148,12 @@ final class TelexInputController: IMKInputController {
         fieldInconclusive = 0
         if let client = sender as? IMKTextInput {
             AppState.shared.currentBundleID = client.bundleIdentifier()
+            // Spotlight took focus: stamp the visibility cache NOW — the overlay-raw
+            // gate in the tap must not wait for a CGWindowList scan that only lands
+            // after the first keys have already been mis-composed (2026-07-31).
+            if AppState.shared.currentBundleID == AppState.spotlightBundleID {
+                SpotlightDetector.noteFocused()
+            }
             // What identifier does this client REPORT? (Catalyst/Electron apps may not
             // report what NSWorkspace says — a mismatch mis-routes every mode lookup.)
             DebugLog.log("activateServer client=\(AppState.shared.currentBundleID ?? "nil") front=\(FrontmostApp.shared.bundleID ?? "?")")
