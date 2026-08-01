@@ -505,4 +505,19 @@ final class UnicodeInsertChunkingTests: XCTestCase {
         let decomposed = "e\u{0302}\u{0323}t"
         XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks(decomposed).count, 2)
     }
+
+    /// End-to-end invariant, not just the pure chunker: every chunk that reaches the
+    /// POST SITE is exactly one Character. Pins postUnicode's routing through the
+    /// chunker — a future "optimization" that batches the string into one event again
+    /// would reintroduce the renderer reorder ("t.est") and turn this red. (The test
+    /// host has no event source, so nothing is actually posted — the seam records
+    /// sizes before the source guard.)
+    func testPostSiteNeverSeesAMultiCharacterChunk() {
+        SyntheticKeyboard._testPostUnicode("est")
+        XCTAssertEqual(SyntheticKeyboard._testChunkSizes, [1, 1, 1])
+        SyntheticKeyboard._testPostUnicode("ệt")
+        XCTAssertEqual(SyntheticKeyboard._testChunkSizes, [1, 1])
+        SyntheticKeyboard._testPostUnicode("")
+        XCTAssertEqual(SyntheticKeyboard._testChunkSizes, [])
+    }
 }

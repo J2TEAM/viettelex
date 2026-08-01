@@ -1336,7 +1336,22 @@ enum SyntheticKeyboard {
         for chunk in unicodeInsertChunks(text) { postUnicodeChunk(chunk) }
     }
 
+    #if DEBUG
+    /// Test seam: records the size (in Characters) of every chunk that reaches the
+    /// post site, BEFORE the source guard — so a test host (no event source, nothing
+    /// actually posted) can still pin the "one character per event" invariant
+    /// end-to-end through postUnicode, not just the pure chunker.
+    static var _testChunkSizes: [Int] = []
+    static func _testPostUnicode(_ text: String) {
+        _testChunkSizes = []
+        postUnicode(text)
+    }
+    #endif
+
     private static func postUnicodeChunk(_ text: String) {
+        #if DEBUG
+        _testChunkSizes.append(text.count)
+        #endif
         guard source != nil else { return }            // Layer 2: never post unstamped (see postSelectLeft)
         let utf16 = Array(text.utf16)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
