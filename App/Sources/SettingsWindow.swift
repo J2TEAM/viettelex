@@ -46,8 +46,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // .regular by then) shows it (field report 2026-07-30: "vào Cài Đặt 2 lần
         // mới thấy hiện ra"). One async hop makes the first click reliable.
         DispatchQueue.main.async { [weak self] in
-            self?.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            self?.window?.makeKeyAndOrderFront(nil)
+            // macOS 26 cooperative activation can still swallow the first activate
+            // while the policy flip settles (field report 2026-08-01: one async hop
+            // was not enough — "vào Cài đặt 2 lần mới hiện"). Verify and self-retry
+            // once, so the "second click" happens automatically.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                guard let self, let win = self.window, !win.isKeyWindow else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                win.makeKeyAndOrderFront(nil)
+            }
         }
     }
 

@@ -1321,7 +1321,22 @@ enum SyntheticKeyboard {
         stamp(up);   up.post(tap: .cgSessionEventTap)
     }
 
+    /// One posted key event per CHARACTER, never a multi-char unicode string:
+    /// Chromium delivers a multi-char CGEvent string through a slower composition-ish
+    /// path than a plain 1-char keydown, so a following single-char event can
+    /// OVERTAKE it inside the renderer — web terminal field report 2026-08-01
+    /// ("vim test." → "vim t.est": the boundary "." passed the 3-char "est" insert).
+    /// Native terminals are byte pipes and don't care. Pure so the split is pinned
+    /// by tests (grapheme-safe: combining pairs stay together).
+    static func unicodeInsertChunks(_ text: String) -> [String] {
+        text.map(String.init)
+    }
+
     private static func postUnicode(_ text: String) {
+        for chunk in unicodeInsertChunks(text) { postUnicodeChunk(chunk) }
+    }
+
+    private static func postUnicodeChunk(_ text: String) {
         guard source != nil else { return }            // Layer 2: never post unstamped (see postSelectLeft)
         let utf16 = Array(text.utf16)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)

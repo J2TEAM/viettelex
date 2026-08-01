@@ -487,3 +487,22 @@ final class SecureFieldDetectionTests: XCTestCase {
         XCTAssertFalse(SecureFieldDetector.isSecureSubrole(nil), "no subrole → compose as usual")
     }
 }
+
+// Multi-char unicode inserts must be posted one CHARACTER per event: Chromium routes
+// a multi-char CGEvent string through a slower path than a plain 1-char keydown, so a
+// following event can overtake it in the renderer — web terminal, 2026-08-01:
+// "vim test." became "vim t.est" (the boundary "." passed the "est" restore burst).
+final class UnicodeInsertChunkingTests: XCTestCase {
+    func testSplitsPerCharacter() {
+        XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks("est"), ["e", "s", "t"])
+        XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks("."), ["."])
+        XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks(""), [])
+    }
+    func testKeepsPrecomposedAndCombiningPairsWhole() {
+        XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks("ệt"), ["ệ", "t"])
+        // A decomposed pair (e + combining circumflex + dot below) must stay one chunk —
+        // splitting scalars would post an orphan combining mark.
+        let decomposed = "e\u{0302}\u{0323}t"
+        XCTAssertEqual(SyntheticKeyboard.unicodeInsertChunks(decomposed).count, 2)
+    }
+}
