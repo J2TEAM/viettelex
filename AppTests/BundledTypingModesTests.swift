@@ -85,17 +85,17 @@ final class BundledTypingModesTests: XCTestCase {
         }
     }
 
-    func testSelectionRulesAreLiveAndEmitPlainSelection() throws {
-        // Đối xứng của bug "dead data" 31/07/2026: IDE khai `selection` phải được
-        // routing công nhận là .selection unconditional (autocomplete của JetBrains
-        // là POPUP, không phải inline selection) và emit Shift+Left thuần —
-        // KHÔNG rơi vào dance U+202F của browser per-field.
-        let selectionIDs = try bundledRules().filter { $0.value == "selection" }.keys.sorted()
-        XCTAssertFalse(selectionIDs.isEmpty, "file không còn rule selection — cập nhật test")
-        for id in selectionIDs {
-            XCTAssertEqual(AppState.shared.autoResolvedMode(id), .selection, id)
-            XCTAssertEqual(AppState.shared.selectionEmitMode(id), .selection, id)
-        }
+    func testNoBuiltInSelectionRules() throws {
+        // ĐẢO CHIỀU 03/08/2026: 12 rule `selection` (JetBrains/Android Studio) bị GỠ
+        // khỏi bảng built-in. Chúng là dead data cho tới 1.4.24; khi wiring sống lại,
+        // Shift+← overtype phá integrated TERMINAL bên trong IDE (WebStorm terminal
+        // "tự nhảy thêm chữ, dồn cục" — field report). Mode theo APP không tách được
+        // editor vs terminal cùng cửa sổ, nên selection built-in là sai về nguyên lý —
+        // chỉ được phép là pin thủ công. Cơ chế selectionAlwaysApps giữ nguyên (rỗng);
+        // ai thêm rule selection vào yml là test này đỏ và chỉ về comment trong file.
+        let selectionIDs = try bundledRules().filter { $0.value == "selection" }.keys
+        XCTAssertTrue(selectionIDs.isEmpty,
+                      "rule selection built-in bị cấm sau field report 03/08 — dùng pin thủ công: \(selectionIDs)")
     }
 
     // MARK: Đặc tả hiện trạng — cap 32 ký tự của ShortcutImporter

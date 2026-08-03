@@ -93,18 +93,13 @@ com.duckduckgo.macos.browser: axDetect
 com.kagi.kagimacOS: axDetect
 ru.yandex.desktop.yandex-browser: axDetect
 com.sigmaos.sigmaos.macos: axDetect
-com.jetbrains.intellij: selection
-com.jetbrains.intellij.ce: selection
-com.jetbrains.WebStorm: selection
-com.jetbrains.PyCharm: selection
-com.jetbrains.pycharm.ce: selection
-com.jetbrains.PhpStorm: selection
-com.jetbrains.CLion: selection
-com.jetbrains.goland: selection
-com.jetbrains.rider: selection
-com.jetbrains.rubymine: selection
-com.jetbrains.datagrip: selection
-com.google.android.studio: selection
+
+# JetBrains/Android Studio: KHÔNG có rule built-in — để auto (probe → learn).
+# 12 rule `selection` từng nằm ở đây nhưng là dead data cho tới 1.4.24; khi
+# chúng "sống lại" (1.4.24) thì Shift+← overtype phá integrated TERMINAL bên
+# trong IDE (field report 03/08/2026: WebStorm terminal "tự nhảy thêm chữ,
+# dồn cục"). Selection chỉ đúng cho EDITOR, sai cho terminal cùng app — mode
+# per-app không tách được 2 vùng này, nên selection chỉ nên là pin thủ công.
 # Grid app: cell autocomplete đua backspace, Shift+← chọn ô kề
 com.microsoft.Excel: emptyReset
 # Remote desktop / VM / screen sharing — scancode thô sang máy khách
