@@ -92,9 +92,10 @@ final class AppState: @unchecked Sendable {
         _simpleTelex = (defaults.object(forKey: Key.simpleTelex) as? Bool) ?? false
         _quickTelex = (defaults.object(forKey: Key.quickTelex) as? Bool) ?? false
         _vniMode = (defaults.object(forKey: Key.vniMode) as? Bool) ?? false
-        // Default ON từ 03/08/2026 (maintainer: "ổn định, bật hết") — cùng đợt toggle
-        // rời tab Thử Nghiệm sang Tùy chỉnh. User đã tự tắt thì giá trị lưu thắng.
-        _contextualEnglish = (defaults.object(forKey: Key.contextualEnglish) as? Bool) ?? true
+        // Default OFF (maintainer 03/08/2026, sau khi cân nhắc lại trong cùng ngày):
+        // toggle đã tốt nghiệp sang tab Tùy chỉnh nhưng hành vi đổi cách gõ diện rộng
+        // ("he is" vs "he í") — user chủ động bật, không ép qua default.
+        _contextualEnglish = (defaults.object(forKey: Key.contextualEnglish) as? Bool) ?? false
         tapNativeFastPath = (defaults.object(forKey: "tapNativeFastPath") as? Bool) ?? true
         _tapModifyEventInPlace = (defaults.object(forKey: "tapModifyEventInPlace") as? Bool) ?? true
         _tapSkipSyntheticKeyUp = (defaults.object(forKey: "tapSkipSyntheticKeyUp") as? Bool) ?? true
