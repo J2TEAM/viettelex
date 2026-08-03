@@ -207,12 +207,14 @@ final class AppState: @unchecked Sendable {
               defaults.set(newValue, forKey: Key.vniMode) }
     }
 
-    /// Re-edit the word BEFORE the caret (EXPERIMENTAL, default OFF): a tone/mark key
-    /// typed on an empty engine seeds it from the text already on screen, so "toan" + `s`
-    /// becomes "toán" without retyping the word. Only in apps already proven to honor
-    /// in-place replacement, never in an omnibox-style field — see `tryReEditWord`.
+    /// Re-edit the word BEFORE the caret: a tone/mark key typed on an empty engine
+    /// seeds it from the text already on screen, so "toan" + `s` becomes "toán"
+    /// without retyping the word. Only in apps already proven to honor in-place
+    /// replacement, never in an omnibox-style field — see `tryReEditWord`.
+    /// Default ON since 2026-08-03 (maintainer: "tính năng ổn định rồi") — shipped
+    /// experimental/OFF 2026-07-30.
     var reEditWord: Bool {
-        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? false }
+        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
