@@ -529,6 +529,11 @@ struct GeneralTab: View {
                 Toggle(model.loc("Live spell-check"), isOn: $model.liveSpellCheck)
                 Text(model.loc("Stop adding tones as soon as a word can’t be Vietnamese (google, github…) instead of waiting for word end."))
                     .font(.caption).foregroundStyle(.secondary)
+                // Graduated from the Experimental tab (2026-08-03) — shipped ON by
+                // default since 1.4.22 with no field complaints.
+                Toggle(model.loc("Context-based decision"), isOn: $model.contextualEnglish)
+                Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             // No Section header: the Picker's own label already says "Language" —
             // two identical labels stacked read as a bug.
@@ -741,11 +746,6 @@ struct ExperimentalTab: View {
             Section(model.loc("Input method")) {
                 Toggle(model.loc("VNI typing (experimental)"), isOn: $model.vniMode)
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Context-based decision (experimental)"), isOn: $model.contextualEnglish)
-                // This caption explains contextualEnglish — it used to sit one toggle
-                // lower, under reEditWord, which read as reEditWord's description.
-                Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
