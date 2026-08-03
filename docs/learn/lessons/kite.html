@@ -45,6 +45,12 @@ a{color:#2c7a4b}a:hover{color:#1d5c37}
 .word .nx{display:inline-block;box-shadow:0 5px 0 #111;animation:blinkCursor 1s steps(1) infinite}
 .word .nx.pad{width:.55em}
 .word .todo{color:#a5b6c8}
+/* Hard mode: ẩn MẶT CHỮ nhưng mỗi ký tự còn lại là MỘT ô gạch riêng (có gap) —
+   bé đếm được từ có bao nhiêu ký tự. Gạch liền của cả từ tắt đi (.word.hard),
+   thay bằng gạch từng ô; ô của mây active mới ăn màu cam. */
+.word.hard{border-bottom-color:transparent!important}
+.word .todo.hid{color:transparent;border-bottom:4px solid #d7e3ee;border-radius:3px;margin:0 2.5px}
+.cloud.active .word .todo.hid{border-bottom-color:#ff8a4c}
 .hudpill{font-size:16px;font-weight:800;padding:5px 14px;border-radius:12px;white-space:nowrap}
 button{font-family:inherit}
 #stage.paused .cloud,#stage.paused #flocks>div,#stage.paused .bgcloud{animation-play-state:paused!important}
@@ -451,25 +457,21 @@ function renderWord(c) {
   var target = Array.from(c.w.d);
   var doneDone = comp.join('') === c.w.d;
   var html = '';
-  if (hardOn) {
-    // Hard mode: KHÔNG hiện từ đích — chỉ emoji + giọng đọc. Vẫn hiện những gì
-    // bé đã gõ (xanh khi khớp đích) và con trỏ, để có phản hồi.
-    for (var hi = 0; hi < comp.length; hi++) {
-      var hcls = (hi < target.length && comp[hi] === target[hi]) ? 'done' : 'mid';
-      html += '<span class="' + hcls + '">' + esc(comp[hi]) + '</span>';
-    }
-    if (!doneDone) html += '<span class="nx pad">&nbsp;</span>';
-    c.el.querySelector('.word').innerHTML = html;
-    return;
-  }
+  // Hard mode (v2, request 2026-08-03): ẩn MẶT CHỮ nhưng giữ CHỖ — mỗi ký tự
+  // còn lại là một ô gạch riêng có gap (đếm được từ dài bao nhiêu), ô của mây
+  // active màu cam; chỉ emoji + giọng đọc gợi ý nội dung. Ký tự đích render
+  // transparent (class hid) để mỗi ô đúng metrics chữ thật. Những gì bé đã gõ
+  // và con trỏ vẫn hiện như thường, để có phản hồi.
+  var todoCls = hardOn ? 'todo hid' : 'todo';
+  c.el.querySelector('.word').className = 'word' + (hardOn ? ' hard' : '');
   for (var i = 0; i < Math.max(comp.length, target.length); i++) {
     if (i < comp.length) {
       var cls = (i < target.length && comp[i] === target[i]) ? 'done' : 'mid';
       html += '<span class="' + cls + '">' + esc(comp[i]) + '</span>';
     } else if (i === comp.length && !doneDone) {
-      html += '<span class="todo nx">' + esc(target[i]) + '</span>';
+      html += '<span class="' + todoCls + ' nx">' + esc(target[i]) + '</span>';
     } else {
-      html += '<span class="todo">' + esc(target[i]) + '</span>';
+      html += '<span class="' + todoCls + '">' + esc(target[i]) + '</span>';
     }
   }
   if (!doneDone && comp.length >= target.length) html += '<span class="nx pad">&nbsp;</span>';
