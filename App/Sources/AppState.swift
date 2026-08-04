@@ -217,7 +217,12 @@ final class AppState: @unchecked Sendable {
     /// Default ON since 2026-08-03 (maintainer: "tính năng ổn định rồi") — shipped
     /// experimental/OFF 2026-07-30.
     var reEditWord: Bool {
-        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? true }
+        // Default OFF — REVERTED 04/08/2026, cùng ngày bật (423b7d2). Field report
+        // (J2TeamNNL, 1.4.28): reEdit ON lần đầu trên máy tester → phím w/s/a trên
+        // engine rỗng seed lại từ trên màn hình và transform bậy ("ưeqweqwe…"),
+        // các replace sai offset tạo verify-probe verdict rác → field bị ép marked
+        // → "Enter 2 lần mới gửi được". Feature vẫn dùng được khi tự bật.
+        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 

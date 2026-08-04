@@ -521,3 +521,20 @@ final class UnicodeInsertChunkingTests: XCTestCase {
         XCTAssertEqual(SyntheticKeyboard._testChunkSizes, [])
     }
 }
+
+// A verify probe whose replace was applied by a BOUNDARY key (Return/Enter/Tab/Esc)
+// reads a field the app may have already consumed — Enter SENDS the message and the
+// composer clears, so the async caret describes the reset field, not our edit.
+// Tester log 2026-08-04: every "appended twice → marked" demotion took its deciding
+// strike ~1ms after Enter → mọi app phải Enter 2 lần. Boundary probes are log-only.
+final class BoundaryProbeDowngradeTests: XCTestCase {
+    func testVerifyAtBoundaryBecomesShadow() {
+        XCTAssertEqual(TelexInputController.effectiveProbeKind(.verify, boundaryCommit: true), .shadow)
+    }
+    func testEverythingElseUnchanged() {
+        XCTAssertEqual(TelexInputController.effectiveProbeKind(.verify, boundaryCommit: false), .verify)
+        XCTAssertEqual(TelexInputController.effectiveProbeKind(.real, boundaryCommit: true), .real)
+        XCTAssertEqual(TelexInputController.effectiveProbeKind(.real, boundaryCommit: false), .real)
+        XCTAssertEqual(TelexInputController.effectiveProbeKind(.shadow, boundaryCommit: true), .shadow)
+    }
+}

@@ -428,7 +428,9 @@ final class TelexInputController: IMKInputController {
             // sanitizing; branch fired in logs, nothing reached the pty). This
             // two-press behavior is also standard CJK composition UX. Single-press
             // Enter in terminals is what the TAP path provides — grant Accessibility.
+            boundaryCommitInFlight = true
             let rewrote = boundary(client)
+            boundaryCommitInFlight = false
             // When the commit REWROTE the word (gõ tắt "ko"→"không", auto-restore
             // "thooiiii"), web-view editors (WhatsApp) apply that insertText
             // asynchronously — an immediately-delivered Return fires "send" on the
@@ -797,10 +799,27 @@ final class TelexInputController: IMKInputController {
 
     /// How a probe's verdict is applied: `.real` classifies the app (persisted),
     /// `.shadow` only logs (debugLogging experiment).
-    private enum ProbeKind { case real, verify, shadow }
+    enum ProbeKind { case real, verify, shadow }
+
+    /// TRUE while handle() is committing because of a BOUNDARY key (Return/Enter/
+    /// Tab/Escape). Main-thread confined (only handle() touches it).
+    private var boundaryCommitInFlight = false
+
+    /// A verify probe fired by a boundary commit is evidence-free: Enter typically
+    /// SENDS the message and the app clears the field, so the async caret/region
+    /// read describes the reset field, not our edit — the tester log 2026-08-04
+    /// shows every "appended twice → marked" demotion taking its deciding strike
+    /// from a probe ~1ms after Enter ("Enter 2 lần mới gửi được" class). Downgrade
+    /// those to shadow (log-only, no strikes, no classification). Pure so the rule
+    /// is pinned by tests.
+    static func effectiveProbeKind(_ kind: ProbeKind, boundaryCommit: Bool) -> ProbeKind {
+        (kind == .verify && boundaryCommit) ? .shadow : kind
+    }
 
     private func probeInPlace(inserted: String, start: Int, bs: Int, _ client: IMKTextInput,
-                              kind: ProbeKind) {
+                              kind rawKind: ProbeKind) {
+        let kind = Self.effectiveProbeKind(rawKind, boundaryCommit: boundaryCommitInFlight)
+        if kind != rawKind { logDecision("probe: boundary commit → verify downgraded to shadow") }
         let len = (inserted as NSString).length
         // Primary signal: the post-edit caret (hard for an app to fake — it needs it
         // to place its candidate window). Fallback: the target-region read-back, used
