@@ -107,14 +107,14 @@ final class SuiteRegressionTests: XCTestCase {
         // protected VN collisions (won=ươn, worst=ướt), acronyms (ieee, nginx) and
         // 2-3 letter tokens inside symbol strings (/usr/…, os.path).
         // 2026-08-04 (teencode, maintainer-approved): the OPEN rime "ie" became a valid
-        // syllable so chat spellings commit as typed ("bies"→bíe, "miej"→mịe). Cost: 12
-        // English rows whose Telex form now IS a valid syllable and which the generated
-        // collision table doesn't list yet — chief, dies, hire, lies, life, mixer, rise,
-        // tier, ties, tire, tires, tries (7135 → 7123). They are recoverable by
-        // regenerating the table (`swift run gen-english`), which is a maintainer call —
-        // the words were deliberately NOT hand-added to the dict. TeencodeTests pins the
-        // current verdicts so the flip is visible if someone regenerates.
-        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7123,
+        // syllable so chat spellings commit as typed ("bies"→bíe, "miej"→mịe). The 12
+        // English words that newly collided (chief, dies, hire, lies, life, mixer,
+        // rise, tier, ties, tire, tires, tries) were added to the collision table via
+        // gen-english's extra-corpus hook (757 → 769) — dict restore runs before the
+        // valid-syllable keep, so the floor holds. (A FULL-corpus regeneration was
+        // tried and REVERTED: it swept in unvetted VN-colliding words — mays≡máy,
+        // vans≡ván. Only monotone base + explicit extras.)
+        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7135,
                                     "English-restore coverage regressed")
         // Trailing-cancel screen-truth (2026-07-31): the escape gesture commits the
         // rendered text even when raw is a real English word — EXACT, no floor.

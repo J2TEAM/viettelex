@@ -171,17 +171,21 @@ final class TeencodeTests: XCTestCase {
     /// they commit as Vietnamese. Pinned deliberately — if the table is ever regenerated
     /// (`swift run gen-english`) these flip back to raw and this test is the reminder to
     /// update the suite floor with them.
-    func testKnownCostOfIeRime() {
-        XCTAssertEqual(commit("dies"), "díe")
-        XCTAssertEqual(commit("ties"), "tíe")
-        XCTAssertEqual(commit("lies"), "líe")
-        XCTAssertEqual(commit("tries"), "tríe")
-        XCTAssertEqual(commit("life"), "lìe")
-        XCTAssertEqual(commit("chief"), "chìe")
-        XCTAssertEqual(commit("rise"), "ríe")
-        XCTAssertEqual(commit("tire"), "tỉe")
-        XCTAssertEqual(commit("hire"), "hỉe")
-        XCTAssertEqual(commit("mixer"), "mỉe")
+    /// The 12 English words whose Telex form became a VALID "ie" syllable were added
+    /// to the collision table (gen-english extra-corpus, 2026-08-04, 757 → 769) so
+    /// blind English typing stays protected — the dict check runs BEFORE the
+    /// valid-syllable keep, so "dies" restores while teencode "bies" (not English)
+    /// commits "bíe". NOTE: a FULL-corpus regeneration was tried and reverted — it
+    /// swept in unvetted words that collide with real Vietnamese ("mays"≡máy,
+    /// "vans"≡ván); only the curated monotone base + explicit extras is safe.
+    func testIeRimeEnglishWordsAreDictProtected() {
+        for w in ["dies", "ties", "lies", "tries", "life", "chief",
+                  "rise", "tire", "tires", "tier", "hire", "mixer"] {
+            XCTAssertEqual(commit(w), w, "'\(w)' must dict-restore")
+        }
+        // Teencode remains reachable: non-English "ie" syllables commit as seen.
+        XCTAssertEqual(commit("bies"), "bíe")
+        XCTAssertEqual(commit("miej"), "mịe")
     }
 
     /// Real Vietnamese must be unaffected by the tone-scope cap and the freeze escape.
