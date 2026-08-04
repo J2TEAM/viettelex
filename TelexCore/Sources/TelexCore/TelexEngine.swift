@@ -360,7 +360,12 @@ public struct TelexEngine {
         // no meaning and would otherwise land on whatever vowel follows in the
         // frozen tail — "installer" rendered "intáller" (the s applied as sắc onto
         // the post-freeze a; user report via its ⌫ variant "intálle").
-        if liveSpellCheck, disabledAtCount == Int.max, !prefixIsValid(newCount) {
+        // TEENCODE elongation escape: a word that is "valid syllable + a run of one
+        // repeated letter" ("hôngggg", "cóaaaa", "đẹpppp") is not a foreign word — it is
+        // a chat spelling of a real syllable, so the freeze must NOT fire (it would fold
+        // the tone back to a literal key and show raw "cosaaaa"/"ddepjpppp").
+        if liveSpellCheck, disabledAtCount == Int.max, !prefixIsValid(newCount),
+           elongationHeadCount(newCount, tone: pTone) <= 0 {
             disabledAtCount = rawCount
             if pTone != .none {
                 // Rebuild with pFoldTones: parseStep folds every TONE key back
@@ -379,6 +384,22 @@ public struct TelexEngine {
                 toneCancelAt = pToneCancelAt
                 toneCancelSpan = pToneCancelSpan
             }
+        }
+
+        // Elongation UNFREEZE: the FIRST extra character can't be told apart from a
+        // typo, so the word legitimately freezes there ("quafa" after "quàa" — one
+        // stray 'a' is not yet an elongation). The moment the repeat arrives the shape
+        // is unambiguous, so re-evaluate the freeze from scratch and lift it, which
+        // re-renders the tone in ONE keystroke ("quàaa"). Gated on "frozen AND this key
+        // repeats the previous one", so it never runs on ordinary typing.
+        if liveSpellCheck, disabledAtCount != Int.max, !forceRestoreUpperTone,
+           rawCount >= 2, raw[rawCount - 1] == raw[rawCount - 2] {
+            recomputeFreeze()
+            rebuildFrozenAware()
+            newCount = render()
+            markCancelled = pCancelled
+            toneCancelAt = pToneCancelAt
+            toneCancelSpan = pToneCancelSpan
         }
 
         // No-transform fast path: render is exactly the previous output plus this
@@ -535,6 +556,11 @@ public struct TelexEngine {
             if toneCancelAt >= 0, toneCancelAt < rawCount - 1, rawIsEnglishCollision() {
                 return true
             }
+            // Chat elongation whose tail came from a mark doubler that cancelled
+            // ("cosaaaaaaa" → "cóaaaaaa", "ajaaaaaaa" → "ạaaaaaa"): the composition is
+            // a valid syllable plus the repeated tail, i.e. exactly what the user meant
+            // — keep it even though a diacritic survived the cancel.
+            if isTeencodeKeep() { return false }
             // The deliberate literal-letter escape — keep the screen ("pas", "tessted"→
             // tested, "Deffault"→Default: field reports 2026-07-26 / 07-22). Unless
             // free-marking left a diacritic stuck before the cancel, i.e. the cancel
@@ -542,7 +568,11 @@ public struct TelexEngine {
             return composedHasDiacritic()
         }
         if rawIsEnglishCollision() { return true }
-        if forceRestoreUpperTone || rawIsEnglishException() || !composedIsValidSyllable() { return true }
+        // `isTeencodeKeep()` runs AFTER the English table above on purpose: the dictionary
+        // still wins ("google" restores), and only a word that no dictionary claims gets
+        // kept as "valid syllable + repeated tail" ("hôngggg", "vângggg", "đẹpppp").
+        if forceRestoreUpperTone || rawIsEnglishException()
+            || (!composedIsValidSyllable() && !isTeencodeKeep()) { return true }
         // Context-based (experimental): after an English word, an ambiguous word whose raw
         // keys spell an English word is restored to English ("he is" → "is", not "í").
         // Gated so vniMode/default typing pays nothing (the String build only runs when the
@@ -807,6 +837,88 @@ public struct TelexEngine {
         }
     }
 
+    // MARK: - Teencode elongation ("hôngggg", "cóaaaa", "ạaaaa", "đẹpppp")
+
+    /// Chat elongation: the letters split as a VALID syllable HEAD followed by a TAIL
+    /// that is a run of ONE repeated letter ("hôn"+"gggg", "có"+"aaaa", "ạ"+"aaaa",
+    /// "đẹp"+"pppp"). Returns the head letter count, or -1 when the word has no such
+    /// shape.
+    ///
+    /// The run must be at least THREE letters. Two was the first design (2026-08-04) and
+    /// it cost 24 English words in the regression suite: English doubles letters all the
+    /// time, so "wall"→ưall, "balls"→báll, "eggs"→égg, "apps"→ápp, "ascii"→ácii,
+    /// "wifi"→ừii all became "valid syllable + run of 2" and stopped restoring. NO
+    /// English or Vietnamese word TRIPLES a letter, so ≥3 is the shape that means "the
+    /// user is leaning on a key" and nothing else. Cost: "hoongg" (2 g's) still restores
+    /// to raw — one repeat short of an elongation.
+    ///
+    /// The SHORTEST valid head wins. That is what keeps the tone where the user saw it
+    /// before the elongation started: "cosaaaaaaa" has both splits "co"+"aaaaaa" and
+    /// "coa"+"aaaaa" (both heads are real rimes), and only the shortest one puts the
+    /// sắc back on the o — "cóaaaaaa", not "coáaaaa". The longest tail also matches the
+    /// intent: everything after the syllable is the user leaning on one key.
+    ///
+    /// NON-mutating; reads `renderLetters` (post ươ-propagation), so callers must have
+    /// rendered first. Allocation-free (the head check uses a stack buffer).
+    private func elongationHeadCount(_ count: Int, tone: Tone) -> Int {
+        let minRun = 3
+        guard count >= minRun + 1 else { return -1 }
+        // Cheap gate first: the word must END in `minRun` copies of one letter.
+        // Everything else (validator work) sits behind this, so ordinary typing pays a
+        // couple of byte compares per keystroke.
+        let last = renderLetters[count - 1]
+        for j in (count - minRun)..<(count - 1) {
+            guard renderLetters[j].base == last.base,
+                  renderLetters[j].mark == last.mark else { return -1 }
+        }
+        var runStart = count - minRun
+        while runStart > 0,
+              renderLetters[runStart - 1].base == last.base,
+              renderLetters[runStart - 1].mark == last.mark { runStart -= 1 }
+        if runStart < 1 { runStart = 1 }          // the head needs at least one letter
+        var k = runStart
+        while k <= count - minRun {               // tail length ≥ minRun
+            if isValidHead(k, tone: tone) { return k }
+            k += 1
+        }
+        return -1
+    }
+
+    /// Valid-syllable check over `renderLetters[0..<k]` with an explicit tone — the head
+    /// half of the elongation split. Teencode onsets (w→qu, z→d, dz→d) fold exactly like
+    /// `composedIsValidSyllable`, and the stop-coda tone rule is applied to the HEAD's
+    /// coda. NON-mutating, stack buffer, no heap.
+    private func isValidHead(_ k: Int, tone: Tone) -> Bool {
+        guard k >= 1, k <= Self.capacity else { return false }
+        var t = tone
+        if t == .grave || t == .hook || t == .tilde, hasStopCoda(k) { t = .none }
+        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: Self.capacity + 1) { buf in
+            if let (canon, skip) = teencodeOnset(), skip < k {
+                var n = 0
+                for c in canon { buf[n] = Tables.letterClass(base: c, mark: .none); n += 1 }
+                for j in skip..<k {
+                    buf[n] = Tables.letterClass(base: renderLetters[j].base,
+                                                mark: renderLetters[j].mark)
+                    n += 1
+                }
+                if SyllableValidator.isValidSyllable(classes: buf, count: n, tone: t) { return true }
+            }
+            for j in 0..<k {
+                buf[j] = Tables.letterClass(base: renderLetters[j].base,
+                                            mark: renderLetters[j].mark)
+            }
+            return SyllableValidator.isValidSyllable(classes: buf, count: k, tone: t)
+        }
+    }
+
+    /// Boundary keep rule for chat elongation: the composition is not a valid syllable
+    /// on its own, but it IS one plus a repeated tail the user typed on purpose
+    /// ("hôngggg", "cóaaaa", "ạaaaa", "đẹpppp") — commit what is on screen instead of
+    /// snapping back to the raw keystrokes. Boundary-only (one word), NON-mutating.
+    private func isTeencodeKeep() -> Bool {
+        elongationHeadCount(pCount, tone: lastEffTone) > 0
+    }
+
     /// True when the composed scalars differ from the raw keystrokes (i.e. some
     /// transform actually happened) — compared numerically, no Strings.
     private func compositionDiffersFromRaw() -> Bool {
@@ -968,11 +1080,21 @@ public struct TelexEngine {
         // Tone placement; map deferred tone/z keys onto the toned vowel (or the
         // last letter when there is no tone, so they group with it for backspace).
         var effTone = pTone
-        var toneIdx = pTone == .none ? -1 : toneVowelIndex(count)
+        // TEENCODE elongation: a repeated tail ("cosaaaaaaa", "ajaaaa") is NOT part of
+        // the syllable, so it must not attract the tone — place the mark inside the
+        // valid head only ("cóaaaaaa", "ạaaaaaa"; without the cap free-marking drifts
+        // the tone onto the first tail vowel: "coáaaaa", "aạaaaa"). Gated on "a tone is
+        // pending AND the word ends in a doubled letter", so normal words pay nothing.
+        var toneScope = count
+        if pTone != .none {
+            let head = elongationHeadCount(count, tone: pTone)
+            if head > 0 { toneScope = head }
+        }
+        var toneIdx = pTone == .none ? -1 : toneVowelIndex(toneScope)
         // Stop codas (-c, -ch, -p, -t) only allow sắc (´) and nặng (.). Drop an
         // invalid huyền/hỏi/ngã (e.g. "batf" stays "bat", not "bàt").
         if toneIdx >= 0, effTone == .grave || effTone == .hook || effTone == .tilde,
-           hasStopCoda(count) {
+           hasStopCoda(toneScope) {
             effTone = .none
             toneIdx = -1
         }
@@ -1029,11 +1151,27 @@ public struct TelexEngine {
             rawCount = r
             rebuildParseState()
             if disabledAtCount == Int.max, pCount > 0, !prefixIsValid(pCount) {
-                disabledAtCount = r
+                // Same teencode-elongation escape forward typing applies. render()
+                // fills `renderLetters` for the split check; every buffer it touches is
+                // rebuilt by the caller's `rebuildFrozenAware()` + `render()` after.
+                _ = render()
+                if elongationHeadCount(pCount, tone: pTone) <= 0 { disabledAtCount = r }
             }
             r += 1
         }
         rawCount = full
+        // A freeze the extra characters have since EXPLAINED must be lifted: "quafa"
+        // freezes on the first stray 'a' and the second one turns the tail into an
+        // elongation ("quàaa"). The walk above can't see that (it stops looking once
+        // frozen), so re-test the whole word unfrozen — this is the ⌫/replay twin of
+        // feed()'s unfreeze step, so both paths agree on the final freeze state.
+        if disabledAtCount != Int.max {
+            let frozenAt = disabledAtCount
+            disabledAtCount = Int.max
+            rebuildParseState()
+            _ = render()
+            if elongationHeadCount(pCount, tone: pTone) <= 0 { disabledAtCount = frozenAt }
+        }
     }
 
     private mutating func rebuildParseState() {

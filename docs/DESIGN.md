@@ -10,6 +10,14 @@ Bộ gõ tiếng Việt cho macOS. Ưu tiên tuyệt đối: **performance** (la
   (dấu/mũ gõ muộn tự tìm về nguyên âm — `dauas`→dấu). Hỗ trợ teencode qua onset
   mapping (wá→quá, zô→dô, dzị→dị) và whitelist `đc`; từ tiếng Anh va chạm
   (was/wow/yes) force-restore. Không VNI, không hỗn hợp.
+- **Teencode (2026-08-04)**: (1) *kéo dài* — âm tiết hợp lệ + đuôi lặp CÙNG một chữ
+  ≥ 3 lần được giữ nguyên như trên màn hình (`hoonggggg`→hônggggg, `cosaaaaaaa`→
+  cóaaaaaa, `ddepjpppp`→đẹppppp): live spell-check không đóng băng, dấu đặt trong
+  phần âm tiết (không trôi ra đuôi), boundary không auto-restore. Đuôi lặp 2 lần
+  vẫn restore (tiếng Anh nhân đôi chữ suốt: wall/eggs/apps). (2) vần mở **"ie"**
+  là vần hợp lệ (`bies`→bíe, `miej`→mịe); đổi lại 12 từ Anh dạng `-ie(s)`
+  (dies/ties/lies/life/chief…) commit thành tiếng Việt cho tới khi bảng
+  EnglishCollisions được sinh lại.
 - Bảng mã: **Unicode dựng sẵn (NFC precomposed)** duy nhất.
 - Tùy chọn: Simple Telex, bỏ dấu tự do, kiểu bỏ dấu cũ/mới (hòa/hoà), kiểm tra chính tả
   khi gõ, tự khôi phục từ không hợp lệ, bảng gõ tắt.

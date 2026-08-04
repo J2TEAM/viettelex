@@ -63,7 +63,11 @@ final class ZeroAllocationTests: XCTestCase {
         e.liveSpellCheck = true
         warmUp(&e)
 
-        let words = ["truowngf", "nguwowif", "ddaay", "tieengs", "vieejt", "hoas"]
+        // Teencode elongation words are in the list on purpose: the split check (freeze
+        // escape + head validation + tone scope) must stay heap-free like the rest of the
+        // engine — it works on the fixed buffers plus a stack temporary.
+        let words = ["truowngf", "nguwowif", "ddaay", "tieengs", "vieejt", "hoas",
+                     "hoonggggg", "cosaaaaaaa", "ddepjpppp", "bies"]
         let before = chunksUsed()
         var keys = 0
         for _ in 0..<2_000 {

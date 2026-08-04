@@ -29,6 +29,14 @@ public enum SyllableValidator {
     ]
 
     // Valid rimes = nucleus (+ coda), toneless, with marks. ~180 entries.
+    // TEENCODE (maintainer decision 2026-08-04): the OPEN rime "ie" is accepted as a
+    // rime of its own — chat spelling writes "bé"→"bíe", "mẹ"→"mịe", "thế"→"thíe", i.e.
+    // the bare "ie" the Telex intermediate already renders. It carries all six tones
+    // (no coda ⇒ no stop-coda restriction) and the tone sits on the i, exactly where
+    // the engine's placement puts it, so "bies"→bíe / "miej"→mịe simply become VALID
+    // syllables and the boundary keeps them with no special-case restore logic.
+    // Scope is deliberately the OPEN rime only: closed "iec"/"ien"/… stay out (their
+    // real forms are iêc/iên), so English "diet"/"field" are untouched.
     static let rimes: Set<String> = {
         let list = """
         a ac ach ai am an ang anh ao ap at au ay ak
@@ -38,6 +46,7 @@ public enum SyllableValidator {
         ê êch êm ên êng ênh êp êt êu
         i ich im in inh ip it iu ia
         iê iêc iêm iên iêng iêp iêt iêu
+        ie
         o oc oi om on ong op ot
         oa oac oach oai oam oan oang oanh oao oap oat oay
         oă oăc oăm oăn oăng oăt
