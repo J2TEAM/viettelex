@@ -33,7 +33,10 @@ public enum InPlaceProbe {
 
     /// How far BEHIND the expected post-replace caret a report may land and still be read
     /// as a stale/foreign-coordinate answer rather than evidence (see `verdict`).
-    static let maxCaretLag = 4
+    /// Public: the controller's tracked-window freshness check tolerates the same
+    /// window (2026-08-05) — one constant, one notion of "how stale can an honest
+    /// Chromium caret answer be".
+    public static let maxCaretLag = 4
 
     /// Whether this edit is a usable probe. Only a REAL replace (bs > 0) with no
     /// pending selection (clear == 0) discriminates: a pure insert (bs == 0) lands

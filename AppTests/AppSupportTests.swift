@@ -366,12 +366,20 @@ final class ReEditWordTests: XCTestCase {
 // a React-controlled input had moved/re-rendered under the tracked range.
 final class TrackedWindowFreshnessTests: XCTestCase {
 
-    func testFreshOnlyWhenCaretSitsExactlyAtTheEndWithNoSelection() {
+    func testFreshWithinTheStaleCaretLagWindowNoSelection() {
         XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 12, selectionLength: 0, expected: 12))
         // A selection (inline autocomplete suffix) would be swallowed by the rewrite.
         XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 12, selectionLength: 3, expected: 12))
-        // Caret moved / field re-rendered — in either direction.
-        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 11, selectionLength: 0, expected: 12))
+        // NỚI 05/08/2026: caret TRỄ trong lag window (Chromium trả selectedRange từ
+        // cache một-edit-behind, cùng staleness InPlaceProbe.verdict đã khoan dung) —
+        // Discord-web: caret=18 expected=19 ở ⌫ làm guard này drop composition và thả
+        // ⌫ native, editor Lexical xóa nguyên text node → "đây" ⌫ 1 phát còn "đ".
+        // Caret chỉ là nhân chứng độ tươi; range rewrite lấy từ bookkeeping của mình.
+        XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 11, selectionLength: 0, expected: 12))
+        XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 8, selectionLength: 0, expected: 12))   // lag 4 = biên
+        XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 7, selectionLength: 0, expected: 12))  // quá lag window
+        // Caret Ở TRƯỚC (ahead) vẫn là re-render/moved → drop như cũ (lớp Chrome Web
+        // Store 2026-07-27: ⌫ đầu ăn 2 ký tự).
         XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: 13, selectionLength: 0, expected: 12))
         // No caret at all → never rewrite blind.
         XCTAssertFalse(TelexInputController.trackedWindowIsFresh(caret: nil, selectionLength: 0, expected: 12))

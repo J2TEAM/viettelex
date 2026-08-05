@@ -547,7 +547,19 @@ final class TelexInputController: IMKInputController {
     /// every later insert landing nowhere) is invisible in a log until it's too late.
     static func trackedWindowIsFresh(caret: Int?, selectionLength: Int, expected: Int) -> Bool {
         guard let caret else { return false }
-        return selectionLength == 0 && caret == expected
+        guard selectionLength == 0 else { return false }
+        // Exact match OR within the Chromium stale-caret lag window: right after our
+        // insertText, Chromium answers selectedRange from a cache that is one edit
+        // behind (the SAME staleness InPlaceProbe.verdict tolerates — Discord-web
+        // 2026-08-05: caret=18 expected=19 on ⌫ made this check drop the composition
+        // and pass the delete natively → "xóa linh tinh, mất chữ đ"). The caret here
+        // is only a FRESHNESS WITNESS — the rewrite range comes from our own
+        // anchor/onLen bookkeeping, which the deferred AX reads confirmed correct in
+        // every measured stale-answer case. A caret AHEAD of expected, any live
+        // selection (inline autocomplete), or a lag beyond the window still drops —
+        // that is the 2026-07-27 Chrome Web Store class this guard exists for.
+        let lag = expected - caret
+        return lag >= 0 && lag <= InPlaceProbe.maxCaretLag
     }
 
     // MARK: - Engine .passthrough (32-char overflow) contract
