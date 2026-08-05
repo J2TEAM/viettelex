@@ -73,46 +73,37 @@ public enum InPlaceProbe {
         let regionDisagrees = regionReadback.map { $0 != inserted } ?? false
         if let c = caret {
             // The caret sits exactly where a compliant replace leaves it — the strongest
-            // self-report there is (an app needs a truthful caret to place its own candidate
-            // window). If the region read-back disagrees at the same time, the app is
-            // contradicting ITSELF: Chromium serves `attributedSubstring` from a cache that
-            // is stale right after `insertText`, so a mismatch there while the caret is
-            // honest means "read-back is lagging", not "the replace failed" — the deferred
-            // Accessibility read confirmed the replace HAD landed in exactly this state
-            // (Google Sheets, issue #31, and Jira before it). Learn nothing and let the AX
-            // ground truth settle it, instead of demoting a healthy field mid-word.
+            // self-report there is (an app needs a truthful caret to place its own
+            // candidate window). It outvotes the region read-back OUTRIGHT: Chromium
+            // serves `attributedSubstring` from a cache that is stale right after
+            // `insertText`, and in every measured contradiction (Google Sheets #31,
+            // Jira 2026-07-27, Discord-web 2026-08-05) the deferred Accessibility read
+            // confirmed the replace HAD landed. Returning .inconclusive here — the
+            // 2026-07-27 compromise — fed the controller's inconclusive quota and
+            // demoted HEALTHY fields to marked text after 4 stale read-backs ("Enter
+            // 2 lần mới gửi được", tester log 2026-08-05).
             //
-            // Lark, the reason the region read-back was ever allowed to override a caret, is
-            // still covered: it answers a CONSTANT caret (1), which equals `expectedReplace`
-            // at one coincidental offset only, and `HonorTracker` refuses to commit to
-            // in-place until two honored verdicts land at DIFFERENT offsets.
-            if c == expectedReplace { return regionDisagrees ? .inconclusive : .honored }
-            // Region says our text is not there AND the caret does not describe a replace:
-            // two independent signals agree it failed.
-            if regionDisagrees { return .appended }
-            // A caret BEHIND the replace position is not evidence of anything. Follow the
-            // arithmetic: a replace leaves the caret at `expectedReplace`, an append leaves
-            // it FURTHER RIGHT at start+bs+insertLength. So a report to the LEFT of
-            // `expectedReplace` cannot describe either outcome — it is a stale answer (the
-            // app reports the caret from before our edit) or a foreign coordinate space
-            // (ProseMirror counts document positions, not characters).
-            //
-            // Measured from `expectedReplace`, not from `start`: both real-world lies live
-            // in that gap. Tester logs 2026-07-27 — Jira in Chrome reported caret=1338 for
-            // expectedReplace=1340, and Google Sheets reported caret=2 for
-            // expectedReplace=3 (one edit behind) while the Accessibility tree confirmed
-            // BOTH replaces had landed. Reading those as "appended" demoted healthy fields
-            // to marked text: Jira flashed a selection and mangled text, and a Sheets cell
-            // that is selected-but-not-editing ignores marked text entirely, so typing did
-            // nothing until the user double-clicked the cell (issue #31).
-            //
-            // The window stays NARROW so real evidence still wins: a stale report is off by
-            // an edit or a few node boundaries, while a CONSTANT garbage caret is not —
-            // Lark answers 1 forever, so mid-field (expectedReplace=30) it stays
-            // `.appended` and still demotes on the usual two strikes. Being unsure must not
-            // cost more than a couple of probes (the caller bounds them).
+            // Lark, the reason the read-back was ever allowed a vote: it answers a
+            // CONSTANT caret (1), which equals `expectedReplace` at one coincidental
+            // offset only — `HonorTracker` still refuses in-place until two honored
+            // verdicts land at DIFFERENT offsets, and at every other offset the
+            // constant caret falls outside the lag window below → .appended → the
+            // usual two-strike demote.
+            if c == expectedReplace { return .honored }
+            // A caret a FEW positions BEHIND the replace is a stale answer (the app
+            // reports pre-edit state, or is one edit behind — Jira 1338/1340, Sheets
+            // 2/3, Discord-web 2/4), NOT evidence of an append: a real append leaves
+            // the caret FURTHER RIGHT (start+bs+insertLength). This check runs BEFORE
+            // the region vote on purpose — the stale cache serves BOTH signals, so
+            // "region disagrees too" is the same staleness twice, not independent
+            // confirmation (the old order turned exactly that double-staleness into
+            // .appended and demoted Discord-web, tester log 2026-08-05).
             let behind = expectedReplace - c
-            return behind > 0 && behind <= maxCaretLag ? .inconclusive : .appended
+            if behind > 0 && behind <= maxCaretLag { return .inconclusive }
+            // Caret far from BOTH expected outcomes (Lark's constant, foreign
+            // coordinate spaces beyond the lag window) or sitting at/right of the
+            // append position: the self-report describes a failure.
+            return .appended
         }
         // No caret at all: a positive read-back match keeps in-place, a mismatch is the
         // only evidence we have (so trust it), and nothing at all → safe marked-text mode.

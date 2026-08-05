@@ -893,10 +893,10 @@ final class TelexInputController: IMKInputController {
                 if fieldInconclusive >= Self.maxInconclusive {
                     fieldVerified = true
                     fieldForcedMarked = true
-                    DebugLog.log("verify: \(fieldInconclusive)× impossible caret → marked text for this focus")
+                    DebugLog.log("verify: \(fieldInconclusive)× stale self-report → marked text for this focus")
                     dropComposition(cause: "verify-impossible-caret")
                 } else {
-                    DebugLog.log("verify: impossible caret (caret < anchor) — no verdict "
+                    DebugLog.log("verify: stale self-report (caret lags the edit) — no verdict "
                         + "(\(fieldInconclusive)/\(Self.maxInconclusive)), will re-probe")
                 }
             case .honored:
@@ -920,7 +920,7 @@ final class TelexInputController: IMKInputController {
             // Impossible self-report (caret before the anchor): classify NOTHING. The app
             // keeps `needsProbe`, so the next real replace probes again; the async AX read
             // may also land and decide. Never persist a mode on garbage.
-            DebugLog.log("probe: impossible caret (caret < anchor) → no classification, keep probing")
+            DebugLog.log("probe: stale self-report (caret lags the edit) → no classification, keep probing")
             return
         case .honored:
             if let id {

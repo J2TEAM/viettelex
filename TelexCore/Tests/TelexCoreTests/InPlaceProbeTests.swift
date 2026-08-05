@@ -178,11 +178,14 @@ final class InPlaceProbeTests: XCTestCase {
         XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 9, start: 2, bs: 1,
                                             insertLength: 1, regionReadback: nil,
                                             inserted: "ê"), .appended)   // far past it
-        // Positive FAILURE evidence still wins over the impossible caret: if the target
-        // region does not hold our text, the replace demonstrably didn't land.
+        // ĐẢO 05/08/2026: caret-lag + region-disagree KHÔNG phải hai bằng chứng độc
+        // lập — Chromium phục vụ cả hai từ cùng cache stale (Discord-web log: caret=2
+        // expReplace=4 regionMatch=no trong khi deferred re-read xác nhận edit đã ăn;
+        // đường .appended ở đây chính là strike demote "Enter 2 lần"). Double-staleness
+        // trong lag window → trung tính, đợi AX/probe sau.
         XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 0, start: 2, bs: 1,
                                             insertLength: 1, regionReadback: "e",
-                                            inserted: "ê"), .appended)
+                                            inserted: "ê"), .inconclusive)
         // …and so does the AX ground truth, in both directions.
         XCTAssertEqual(InPlaceProbe.verdict(axRegion: "ê", caret: 0, start: 2, bs: 1,
                                             insertLength: 1, regionReadback: nil,
@@ -192,17 +195,18 @@ final class InPlaceProbeTests: XCTestCase {
                                             inserted: "ê"), .appended)
     }
 
-    func testHonestCaretPlusStaleReadbackIsInconclusive() {
-        // The two self-reports contradict each other: the caret says the replace landed
-        // exactly where a compliant app puts it, the region read-back says our text is not
-        // there. Chromium serves that read-back from a cache that is stale right after
-        // insertText, and the deferred AX read confirmed the replace HAD landed in exactly
-        // this state (Google Sheets #31, Jira before it) — so learn NOTHING here rather
-        // than demote a healthy field. Before 2026-07-27 this returned .appended, which is
-        // what silently pushed Sheets into marked text (where a not-yet-editing cell
-        // swallows everything typed).
+    func testHonestCaretOutvotesStaleReadback() {
+        // The caret says the replace landed exactly where a compliant app puts it; the
+        // region read-back disagrees — Chromium serves that read-back from a cache that
+        // is stale right after insertText, and the deferred AX read confirmed the
+        // replace HAD landed in every measured case (Google Sheets #31, Jira, Discord-web
+        // 2026-08-05). History of this exact input: .appended before 2026-07-27 (pushed
+        // Sheets into marked), then .inconclusive — which fed the controller's 4×
+        // inconclusive quota and STILL demoted healthy fields ("Enter 2 lần mới gửi
+        // được", 2026-08-05). The honest caret now wins outright; Lark's constant fake
+        // caret stays caught by HonorTracker (two distinct offsets) and the lag window.
         XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 8, start: 7, bs: 1, insertLength: 1,
-                                            regionReadback: "e", inserted: "ê"), .inconclusive)
+                                            regionReadback: "e", inserted: "ê"), .honored)
         // Caret honored + region confirms → honored, as always.
         XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 8, start: 7, bs: 1, insertLength: 1,
                                             regionReadback: "ê", inserted: "ê"), .honored)
@@ -265,5 +269,38 @@ final class InPlaceProbeTests: XCTestCase {
                        "empty insert is not a probe")
         XCTAssertFalse(InPlaceProbe.shouldProbe(insertLength: 1, bs: 1, clear: 0, needsProbe: false),
                        "already classified — do not re-probe")
+    }
+}
+
+// Tựa theo tester log 04-05/08/2026 (Discord web trong Chrome, "Enter 2 lần mới gửi
+// được"): Chromium ngay sau insertText trả CẢ caret lẫn attributedSubstring từ cùng
+// một cache stale. Hai chữ ký trong log phải cho verdict trung tính/honored — mọi
+// đường về .appended hay demote từ chúng đều là chấm nhầm field khỏe mạnh.
+final class DiscordWebStaleSignalTests: XCTestCase {
+    func testCaretAtExpectedReplaceWithStaleRegionIsHonored() {
+        // log: start=12 bs=2 len=2 caret=14 expReplace=14 regionMatch=no → phải honored
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 14, start: 12, bs: 2,
+                                            insertLength: 2, regionReadback: "xx", inserted: "ận"),
+                       .honored)
+    }
+    func testCaretWithinLagWindowWithStaleRegionIsInconclusive() {
+        // log: start=2 bs=2 len=2 caret=2 expReplace=4 regionMatch=no → từng ra
+        // .appended (double-staleness đếm như 2 bằng chứng độc lập) → strike → marked.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 2, start: 2, bs: 2,
+                                            insertLength: 2, regionReadback: "xx", inserted: "ẫn"),
+                       .inconclusive)
+    }
+    func testConstantGarbageCaretBeyondLagStillAppends() {
+        // Lark-class: caret hằng số 1, expReplace=30 — ngoài lag window → appended,
+        // vẫn demote theo 2 strike như thiết kế.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 1, start: 28, bs: 1,
+                                            insertLength: 2, regionReadback: "xx", inserted: "ận"),
+                       .appended)
+    }
+    func testRealAppendCaretStillAppends() {
+        // Append thật: caret ở start+bs+len (xa hơn expReplace) → appended.
+        XCTAssertEqual(InPlaceProbe.verdict(axRegion: nil, caret: 8, start: 3, bs: 2,
+                                            insertLength: 3, regionReadback: "xxx", inserted: "ận"),
+                       .appended)
     }
 }
