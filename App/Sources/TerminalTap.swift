@@ -535,6 +535,9 @@ enum FocusedFieldDetector {
     /// invalidation as `cached`; served by `wantsMarkedField` without kicking its own
     /// refresh (every browser keystroke already reads `wantsSelection` first).
     private static var cachedMarked = false
+    /// Lexical-editor field (Discord web): must be typed via the TAP backspace-retype
+    /// path — see tapFieldURL. Same cache/TTL/invalidation ride-along as `cachedMarked`.
+    private static var cachedTapField = false
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
     /// Consecutive identical verdicts — see DetectorBackoff. Separate counters for the
@@ -558,8 +561,9 @@ enum FocusedFieldDetector {
         lock.withLock {
             cached = false
             // Same asymmetry as `cached`: one keystroke of in-place in a Docs canvas
-            // is the mild failure; forcing marked into an unknown field is not.
+            // is the mild failure; forcing marked/tap into an unknown field is not.
             cachedMarked = false
+            cachedTapField = false
             lastCheckNs = 0
             stableRuns = 0
             // Backoff only — the timestamps/values of the isTextInput verdict keep the
@@ -586,12 +590,23 @@ enum FocusedFieldDetector {
             lastCheckNs = DispatchTime.now().uptimeNanoseconds
         }
     }
+    /// Same seam for the Discord-web (tap) verdict.
+    static func _testSetTapField(_ value: Bool) {
+        lock.withLock {
+            cachedTapField = value
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+        }
+    }
     #endif
 
     /// True → the focused field is a canvas editor (Google Docs) that must be typed
     /// with marked text. Cache-only read: refreshes piggyback on `wantsSelection`,
     /// which every browser keystroke reads first (tap routing then IMKit routing).
     static var wantsMarkedField: Bool { lock.withLock { cachedMarked } }
+
+    /// True → the focused field is a Discord-web-class editor: route through the TAP
+    /// backspace-retype path. Cache-only read, same contract as `wantsMarkedField`.
+    static var wantsTapField: Bool { lock.withLock { cachedTapField } }
 
     /// True → the focused field should use selection-replace; false → in-place.
     static var wantsSelection: Bool {
@@ -605,7 +620,7 @@ enum FocusedFieldDetector {
         if stale {
             scanQueue.async {
                 pokeChromiumAX()
-                let (wants, marked) = scan()
+                let (wants, marked, tapField) = scan()
                 // Diagnostic (debug logging only, and off the keystroke path): WHY this
                 // verdict. A browser whose AX tree we cannot read falls back to
                 // selection-replace for EVERY field — including page content, where each
@@ -615,12 +630,14 @@ enum FocusedFieldDetector {
                 // nothing, guessed". Role names only — never text or values.
                 if AppState.shared.debugLogging {
                     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
-                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) marked=\(marked) roles=[\(roleChain())]")
+                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) marked=\(marked) tap=\(tapField) roles=[\(roleChain())]")
                 }
                 lock.withLock {
-                    stableRuns = (wants == cached && marked == cachedMarked) ? stableRuns + 1 : 0
+                    stableRuns = (wants == cached && marked == cachedMarked
+                                  && tapField == cachedTapField) ? stableRuns + 1 : 0
                     cached = wants
                     cachedMarked = marked
+                    cachedTapField = tapField
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
                 }
@@ -747,8 +764,8 @@ enum FocusedFieldDetector {
         return roles.joined(separator: "→")
     }
 
-    private static func scan() -> (selection: Bool, marked: Bool) {
-        guard let focused = focusedElementForScan() else { return (selection: true, marked: false) }
+    private static func scan() -> (selection: Bool, marked: Bool, tap: Bool) {
+        guard let focused = focusedElementForScan() else { return (selection: true, marked: false, tap: false) }
         // NO role short-circuit on the focused element: an AXComboBox/AXSearchField
         // rule used to run BEFORE the ancestor walk ("a search box inside a web area
         // is autocomplete-prone"), but field evidence killed it — youtube.com's search
@@ -772,6 +789,7 @@ enum FocusedFieldDetector {
         // any enclosing web area's URL may still prove Docs.
         var sawWebArea = false
         var marked = false
+        var tap = false
         for _ in 0..<Self.maxAncestorHops {
             AXUIElementSetMessagingTimeout(element, 0.05)
             roleRef = nil
@@ -780,16 +798,18 @@ enum FocusedFieldDetector {
                 if verdict {
                     // Toolbar: decisive only BEFORE any web area (an omnibox is never
                     // inside page content — above one, it's just browser chrome).
-                    if !sawWebArea { return (selection: true, marked: false) }
+                    if !sawWebArea { return (selection: true, marked: false, tap: false) }
                 } else {
                     sawWebArea = true
-                    if !marked {
+                    if !marked, !tap {
                         var urlRef: CFTypeRef?
                         if AXUIElementCopyAttributeValue(element, "AXURL" as CFString, &urlRef) == .success {
-                            marked = Self.markedFieldURL(urlRef as? URL)
+                            let url = urlRef as? URL
+                            marked = Self.markedFieldURL(url)
+                            tap = Self.tapFieldURL(url)
                         }
                     }
-                    if marked { break }   // both verdicts settled
+                    if marked || tap { break }   // verdicts settled
                 }
             }
             var parentRef: CFTypeRef?
@@ -798,8 +818,21 @@ enum FocusedFieldDetector {
             else { break }
             element = parent as! AXUIElement
         }
-        return sawWebArea ? (selection: false, marked: marked)
-                          : (selection: true, marked: false)
+        return sawWebArea ? (selection: false, marked: marked, tap: tap)
+                          : (selection: true, marked: false, tap: false)
+    }
+
+    /// Pure: does this web-area URL host an editor that must be typed via the TAP
+    /// (backspace-retype) path? Discord's Lexical composer re-renders from its own
+    /// model and IGNORES replacementRange on the VISIBLE text while Chromium's
+    /// IME/AX layer reports the replace as landed ("vis "→"vií " on screen, caret
+    /// and AX both honest — video + log 2026-08-05). No self-report can catch that
+    /// class; in-place appends, marked costs double-Enter. Its Electron twin
+    /// (com.hnc.Discord) has shipped on the tap path since day one — route the web
+    /// composer the same way.
+    static func tapFieldURL(_ url: URL?) -> Bool {
+        guard let url, let host = url.host else { return false }
+        return host == "discord.com" || host.hasSuffix(".discord.com")
     }
 
     /// Pure: does this web-area URL host a canvas editor that must be typed with

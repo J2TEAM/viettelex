@@ -175,3 +175,27 @@ final class MarkedFieldURLTests: XCTestCase {
         XCTAssertFalse(FocusedFieldDetector.wantsMarkedField)
     }
 }
+
+// Discord-web (2026-08-05): Lexical composer ignores replacementRange on VISIBLE text
+// while caret + AX say honored — undetectable by probes, marked costs double-Enter.
+// URL rule routes the field through the tap path (như Discord desktop từ ngày đầu).
+final class TapFieldURLTests: XCTestCase {
+    func testDiscordHostsForceTap() {
+        for u in ["https://discord.com/channels/@me/123",
+                  "https://ptb.discord.com/channels/1/2",
+                  "https://canary.discord.com/app"] {
+            XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: u)), u)
+        }
+    }
+    func testOtherHostsDoNot() {
+        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://discord.com.evil.com/x")))
+        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://notdiscord.com/channels")))
+        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(nil))
+    }
+    func testInvalidateResetsTapVerdict() {
+        FocusedFieldDetector._testSetTapField(true)
+        XCTAssertTrue(FocusedFieldDetector.wantsTapField)
+        FocusedFieldDetector.invalidate()
+        XCTAssertFalse(FocusedFieldDetector.wantsTapField)
+    }
+}

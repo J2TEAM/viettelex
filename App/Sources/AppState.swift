@@ -520,11 +520,19 @@ final class AppState: @unchecked Sendable {
     /// legacy per-mode getters had).
     static func gateRouting(_ wants: TapWants,
                             trusted: () -> Bool,
-                            wantsSelection: () -> Bool) -> TapRouting {
+                            wantsSelection: () -> Bool,
+                            wantsTapField: () -> Bool) -> TapRouting {
         guard wants.any, trusted() else { return TapRouting() }
+        // Per-field resolution order: a Discord-web-class field (tapFieldURL) wins —
+        // its Lexical editor ignores replacementRange on the VISIBLE text while every
+        // self-report says honored ("vis "→"vií ", 2026-08-05), so neither in-place
+        // nor selection can work there; the tap backspace-retype path is what its
+        // Electron twin has always shipped on. Otherwise omnibox-vs-content decides.
+        let perField = wants.sel == .perField
+        let tapField = perField && wantsTapField()
         return TapRouting(
-            tap: wants.tap,
-            selection: wants.sel == .yes || (wants.sel == .perField && wantsSelection()),
+            tap: wants.tap || tapField,
+            selection: wants.sel == .yes || (perField && !tapField && wantsSelection()),
             emptyReset: wants.empty)
     }
 
@@ -541,7 +549,8 @@ final class AppState: @unchecked Sendable {
         }
         return Self.gateRouting(wants,
                                 trusted: { Accessibility.isTrusted },
-                                wantsSelection: { FocusedFieldDetector.wantsSelection })
+                                wantsSelection: { FocusedFieldDetector.wantsSelection },
+                                wantsTapField: { FocusedFieldDetector.wantsTapField })
     }
 
     // MARK: - Built-in typing-mode rules (typing-modes.yml)

@@ -35,18 +35,23 @@ final class RoutingDecisionTests: XCTestCase {
 
     func testGateAppliesTrustToEveryFamily() {
         let all = W(tap: true, sel: .yes, empty: true)
-        XCTAssertEqual(AppState.gateRouting(all, trusted: { true }, wantsSelection: { XCTFail("sel .yes must not consult the detector"); return false }),
+        XCTAssertEqual(AppState.gateRouting(all, trusted: { true },
+                                            wantsSelection: { XCTFail("sel .yes must not consult the detector"); return false },
+                                            wantsTapField: { XCTFail("sel .yes must not consult the tap-field verdict"); return false }),
                        R(tap: true, selection: true, emptyReset: true))
-        XCTAssertEqual(AppState.gateRouting(all, trusted: { false }, wantsSelection: { false }), R())
+        XCTAssertEqual(AppState.gateRouting(all, trusted: { false }, wantsSelection: { false },
+                                            wantsTapField: { false }), R())
     }
 
     func testGatePerFieldConsultsTheDetectorExactlyOnce() {
         var reads = 0
         let w = W(tap: false, sel: .perField, empty: false)
-        let r = AppState.gateRouting(w, trusted: { true }, wantsSelection: { reads += 1; return true })
+        let r = AppState.gateRouting(w, trusted: { true }, wantsSelection: { reads += 1; return true },
+                                     wantsTapField: { false })
         XCTAssertEqual(r, R(tap: false, selection: true, emptyReset: false))
         XCTAssertEqual(reads, 1)
-        XCTAssertFalse(AppState.gateRouting(w, trusted: { true }, wantsSelection: { false }).selection)
+        XCTAssertFalse(AppState.gateRouting(w, trusted: { true }, wantsSelection: { false },
+                                            wantsTapField: { false }).selection)
     }
 
     /// The laziness contract: no wants → NEITHER external is touched (a plain
@@ -55,10 +60,12 @@ final class RoutingDecisionTests: XCTestCase {
     func testGateIsLazyOnBothExternals() {
         _ = AppState.gateRouting(W(),
                                  trusted: { XCTFail("no wants → trusted must not be read"); return true },
-                                 wantsSelection: { XCTFail("no wants → detector must not be read"); return false })
+                                 wantsSelection: { XCTFail("no wants → detector must not be read"); return false },
+                                 wantsTapField: { XCTFail("no wants → tap-field must not be read"); return false })
         _ = AppState.gateRouting(W(tap: true, sel: .perField, empty: false),
                                  trusted: { false },
-                                 wantsSelection: { XCTFail("untrusted → detector must not be read"); return false })
+                                 wantsSelection: { XCTFail("untrusted → detector must not be read"); return false },
+                                 wantsTapField: { XCTFail("untrusted → tap-field must not be read"); return false })
     }
 
     // MARK: equivalence with the legacy per-mode getters (shared _rawWants core)
@@ -84,6 +91,18 @@ final class RoutingDecisionTests: XCTestCase {
                 XCTAssertEqual(r.tapDefer, legacy, "id=\(id ?? "nil") front=\(front ?? "nil")")
             }
         }
+    }
+
+    // Discord-web class (2026-08-05): the Lexical composer ignores replacementRange on
+    // the VISIBLE text while caret + AX report honored ("vis "→"vií ") — no self-report
+    // catches it, marked costs double-Enter, so the field routes through the TAP
+    // backspace-retype path its Electron twin has always used.
+    func testPerFieldTapVerdictWinsOverSelection() {
+        let w = W(tap: false, sel: .perField, empty: false)
+        let r = AppState.gateRouting(w, trusted: { true },
+                                     wantsSelection: { XCTFail("tap-field decides first — selection must not be consulted"); return true },
+                                     wantsTapField: { true })
+        XCTAssertEqual(r, R(tap: true, selection: false, emptyReset: false))
     }
 }
 
