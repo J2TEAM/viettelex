@@ -94,3 +94,32 @@ final class SettingsReloadCostTests: XCTestCase {
         XCTAssertGreaterThan(model.lastModeReloadAt, 0, "reloadModeTable must stamp the clock")
     }
 }
+
+// The bug-report debug header (Save debug log…) is what testers paste into chat —
+// it must reflect EVERY setting that can make one machine misbehave and another not.
+// Gap found 2026-08-05 (J2TeamNNL "chỉ mỗi em bị"): tapNativeFastPath (a hidden
+// Terminal-only flag on the tap hot path) and custom gõ tắt shortcuts were both
+// completely absent from the file testers actually send.
+final class DebugHeaderCoverageTests: XCTestCase {
+    func testHeaderIncludesHiddenTapFlagAndShortcutCount() {
+        let saved = (AppState.shared.tapNativeFastPath, AppState.shared.shortcuts)
+        defer { AppState.shared.setShortcuts(saved.1) }
+
+        AppState.shared.setShortcuts(["vn": "Việt Nam", "ko": "không", "cty": "công ty"])
+        let header = DebugHeader.build().joined(separator: "\n")
+
+        // Hidden flag must be visible even though there's no UI toggle for it.
+        XCTAssertTrue(header.contains("nativeFastPath=\(saved.0)"), header)
+        // Count only — never the trigger/expansion text itself.
+        XCTAssertTrue(header.contains("custom shortcuts: 3"), header)
+        XCTAssertFalse(header.contains("Việt Nam"), "debug header must never carry shortcut content")
+        XCTAssertFalse(header.contains("công ty"), "debug header must never carry shortcut content")
+    }
+
+    func testZeroShortcutsStillReportsTheCount() {
+        let saved = AppState.shared.shortcuts
+        defer { AppState.shared.setShortcuts(saved) }
+        AppState.shared.setShortcuts([:])
+        XCTAssertTrue(DebugHeader.build().contains("custom shortcuts: 0"))
+    }
+}

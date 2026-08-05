@@ -799,7 +799,13 @@ struct ExperimentalTab: View {
     }
 
     /// Current runtime state prepended to the log for context (no typed text).
-    private func debugHeader() -> [String] {
+    private func debugHeader() -> [String] { DebugHeader.build() }
+}
+
+/// Extracted from ExperimentalTab so it's testable without a SwiftUI environment —
+/// debugHeader() never touched `model`, only AppState.shared and statics.
+enum DebugHeader {
+    static func build() -> [String] {
         let s = AppState.shared
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         // Build timestamp = executable mtime — uniquely identifies THIS build, so we
@@ -833,8 +839,18 @@ struct ExperimentalTab: View {
             "learned in-place OK: \(inPlace.isEmpty ? "(none)" : inPlace.joined(separator: ", "))",
             "learned fallback (tap/marked): \(fallback.isEmpty ? "(none)" : fallback.joined(separator: ", "))",
             "manual overrides: \(manual.isEmpty ? "(none)" : manual.joined(separator: ", "))",
-            "flags: modifyInPlace=\(s.tapModifyEventInPlace) skipKeyUp=\(s.tapSkipSyntheticKeyUp) axReplace=\(s.axSelectionReplace) breaker=\(s.tapCascadeBreaker)",
+            // tapNativeFastPath: hidden flag (no UI — `defaults write com.viettelex.settings
+            // tapNativeFastPath -bool false`), directly on the terminal-tap hot path. Missing
+            // from every prior debug log meant a tester's own `defaults write` was invisible
+            // evidence ("chỉ mỗi em bị" — 2026-08-05).
+            "flags: modifyInPlace=\(s.tapModifyEventInPlace) skipKeyUp=\(s.tapSkipSyntheticKeyUp) axReplace=\(s.axSelectionReplace) breaker=\(s.tapCascadeBreaker) nativeFastPath=\(s.tapNativeFastPath)",
             "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord)",
+            // Count only — the trigger/expansion pairs are USER-TYPED content the log
+            // must never carry (same rule as everywhere else here), but a nonzero count
+            // is itself diagnostic: a custom gõ tắt entry colliding with a Vietnamese
+            // prefix is exactly the kind of "settings khác" one tester could have that
+            // reproduces nothing on a clean install (2026-08-05 field discussion).
+            "custom shortcuts: \(s.shortcuts.count)",
         ]
     }
 }
