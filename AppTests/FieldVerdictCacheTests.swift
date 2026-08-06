@@ -198,4 +198,14 @@ final class TapFieldURLTests: XCTestCase {
         FocusedFieldDetector.invalidate()
         XCTAssertFalse(FocusedFieldDetector.wantsTapField)
     }
+
+    // debugLastHost (2026-08-06): diagnostic-only, never consulted by routing — a
+    // field report ("caret behind by 6, past the Discord-class tolerance") on an
+    // unrecognized Chrome tab had no way to name the actual site in the log.
+    func testDebugLastHostSurvivesAndResetsOnInvalidate() {
+        FocusedFieldDetector._testSetHost("example.com")
+        XCTAssertEqual(FocusedFieldDetector.debugLastHost, "example.com")
+        FocusedFieldDetector.invalidate()
+        XCTAssertNil(FocusedFieldDetector.debugLastHost)
+    }
 }

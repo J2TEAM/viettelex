@@ -363,9 +363,14 @@ final class TelexInputController: IMKInputController {
                 let expected = anchor + onLen
                 if !Self.trackedWindowIsFresh(caret: sel.location == NSNotFound ? nil : sel.location,
                                               selectionLength: sel.length, expected: expected) {
+                    // host: DIAGNOSTIC ONLY (FocusedFieldDetector.debugLastHost, never
+                    // routing) — names the site for a future report on a lag this deep
+                    // (field report 2026-08-06: caret behind by 6, past the Discord-class
+                    // tolerance, on an unidentified Chrome tab).
                     DebugLog.log("backspace: tracked window stale "
                         + "(caret=\(sel.location == NSNotFound ? "NotFound" : String(sel.location))"
-                        + " len=\(sel.length) expected=\(expected)) → pass through, drop composition")
+                        + " len=\(sel.length) expected=\(expected) host=\(FocusedFieldDetector.debugLastHost ?? "?")) "
+                        + "→ pass through, drop composition")
                     dropComposition(cause: "backspace-window-stale")
                     onLen = 0
                     return false
