@@ -855,9 +855,21 @@ enum FocusedFieldDetector {
     /// class; in-place appends, marked costs double-Enter. Its Electron twin
     /// (com.hnc.Discord) has shipped on the tap path since day one — route the web
     /// composer the same way.
+    ///
+    /// chat.zalo.me added 2026-08-06 (J2TeamNNL, log captured DURING the incident —
+    /// the first report in this whole family with the moment actually caught): the
+    /// self-reported caret went CONSTANT at 24 across two different edits while the
+    /// AX ground truth simultaneously disagreed twice (`axMatch=no`) and reported the
+    /// field 14 chars longer than our tracking assumed (`axLen=38` vs `start=24/25`)
+    /// — the exact "unreliable rich-text-editor self-report" signature Discord's fix
+    /// exists for, not a transient staleness the caret-lag tolerance could absorb.
+    /// Zalo's Electron desktop app (com.vng.zalo, same likely composer component)
+    /// has shipped on tap since the very first typing-modes.yml — strong prior that
+    /// this path works for Zalo's editor specifically.
     static func tapFieldURL(_ url: URL?) -> Bool {
         guard let url, let host = url.host else { return false }
-        return host == "discord.com" || host.hasSuffix(".discord.com")
+        if host == "discord.com" || host.hasSuffix(".discord.com") { return true }
+        return host == "chat.zalo.me"
     }
 
     /// Pure: does this web-area URL host a canvas editor that must be typed with

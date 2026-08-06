@@ -187,9 +187,20 @@ final class TapFieldURLTests: XCTestCase {
             XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: u)), u)
         }
     }
+    /// Log captured DURING the incident (2026-08-06, first in this family to catch the
+    /// live moment): caret constant at 24 across 2 edits + AX ground truth disagreeing
+    /// twice (axMatch=no) + field length 14 chars ahead of tracking (axLen=38) — the
+    /// same unreliable-rich-text-editor signature Discord's fix targets, plus the
+    /// Electron desktop app already shipping tap for (presumably) the same composer.
+    func testZaloWebForcesTap() {
+        XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me/")))
+        XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me/conversation/123")))
+    }
     func testOtherHostsDoNot() {
         XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://discord.com.evil.com/x")))
         XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://notdiscord.com/channels")))
+        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://zalo.me/")))          // apex, not chat.
+        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me.evil.com/")))
         XCTAssertFalse(FocusedFieldDetector.tapFieldURL(nil))
     }
     func testInvalidateResetsTapVerdict() {
