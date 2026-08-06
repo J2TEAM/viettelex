@@ -85,6 +85,7 @@ final class SettingsModel: ObservableObject {
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
+    @Published var safeUnknownApps: Bool { didSet { AppState.shared.safeUnknownApps = safeUnknownApps } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
     @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
     @Published var tapSkipSyntheticKeyUp: Bool { didSet { AppState.shared.tapSkipSyntheticKeyUp = tapSkipSyntheticKeyUp } }
@@ -136,6 +137,7 @@ final class SettingsModel: ObservableObject {
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
+        safeUnknownApps = AppState.shared.safeUnknownApps
         tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
         axSelectionReplace = AppState.shared.axSelectionReplace
@@ -752,6 +754,12 @@ struct ExperimentalTab: View {
                 Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word."))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section(model.loc("Unknown apps")) {
+                Toggle(model.loc("Unknown apps use the safe channel (tap/marked)"),
+                       isOn: $model.safeUnknownApps)
+                Text(model.loc("Apps without a rule type via backspace-retype (or underlined composition without Accessibility) instead of trying direct insertion and guessing. Turn off to restore the old probe-and-learn behavior."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section(model.loc("Terminal typing latency")) {
                 Toggle(model.loc("Modify key events in place"), isOn: $model.tapModifyEventInPlace)
                 Text(model.loc("In terminals, apply a one-letter tone edit (w→ư) by rewriting the real keystroke instead of posting two synthetic events — lower latency."))
@@ -848,7 +856,7 @@ enum DebugHeader {
             // from every prior debug log meant a tester's own `defaults write` was invisible
             // evidence ("chỉ mỗi em bị" — 2026-08-05).
             "flags: modifyInPlace=\(s.tapModifyEventInPlace) skipKeyUp=\(s.tapSkipSyntheticKeyUp) axReplace=\(s.axSelectionReplace) breaker=\(s.tapCascadeBreaker) nativeFastPath=\(s.tapNativeFastPath)",
-            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord)",
+            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord) safeUnknown=\(s.safeUnknownApps)",
             // Count only — the trigger/expansion pairs are USER-TYPED content the log
             // must never carry (same rule as everywhere else here), but a nonzero count
             // is itself diagnostic: a custom gõ tắt entry colliding with a Vietnamese

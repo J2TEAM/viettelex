@@ -198,3 +198,64 @@ final class UntrustedBrowserFallbackTests: XCTestCase {
         XCTAssertFalse(AppState.shared.usesMarkedText("com.apple.Notes"))
     }
 }
+
+// POLICY 06/08/2026 "app lạ đi kênh an toàn": app không có rule ở đâu cả (không
+// manual, không built-in, không learned fallback) → TAP khi có Accessibility,
+// MARKED khi không — thay cho in-place + probe-học. Lý do: Discord (05/08) và
+// Lark (06/08, bundle id trôi khỏi rule) chứng minh lỗi in-place có thể VÔ HÌNH
+// với self-report — probe "học in-place OK" trong khi màn hình sai. Tap và
+// marked là 2 kênh duy nhất có hợp đồng. Toggle Thử Nghiệm quay về hành vi cũ.
+final class UnknownAppPolicyTests: XCTestCase {
+
+    private let unknown = "com.example.some-random-app"
+    private var savedPolicy = true
+
+    override func setUp() {
+        super.setUp()
+        savedPolicy = AppState.shared.safeUnknownApps
+    }
+
+    override func tearDown() {
+        AppState.shared.safeUnknownApps = savedPolicy
+        AppState.shared.unmarkInPlaceGood(unknown)
+        super.tearDown()
+    }
+
+    func testUnknownAppIsTapFamilyByDefault() {
+        AppState.shared.safeUnknownApps = true
+        XCTAssertEqual(AppState.shared.autoResolvedMode(unknown), .tap,
+                       "app lạ phải hiện tap trong menu, không phải 'chưa dò'")
+        XCTAssertTrue(AppState.shared.usesMarkedText(unknown),
+                      "marked là degradation của tap-family khi thiếu Accessibility")
+        XCTAssertFalse(AppState.shared.needsProbe(unknown),
+                       "không còn gì để dò — one-shot probe nghỉ hưu dưới policy này")
+    }
+
+    func testCuratedInPlaceListIsUntouched() {
+        AppState.shared.safeUnknownApps = true
+        XCTAssertEqual(AppState.shared.autoResolvedMode("com.apple.Notes"), .inPlace)
+        XCTAssertFalse(AppState.shared.usesMarkedText("com.apple.Notes"))
+        // TextEdit vào list built-in batch 06/08 (maintainer field-verified).
+        XCTAssertEqual(AppState.shared.autoResolvedMode("com.apple.TextEdit"), .inPlace)
+    }
+
+    /// probedAppsCache là chính cái cache self-report mà policy này không tin —
+    /// Lark học nhầm "in-place OK" từ caret thật thà trong khi editor nuốt edit.
+    /// Máy đã học nhầm phải TỰ KHỎI khi update, không cần xoá learned data.
+    func testLearnedInPlaceNoLongerGrantsInPlace() {
+        AppState.shared.markInPlaceGood(unknown)
+        AppState.shared.safeUnknownApps = true
+        XCTAssertEqual(AppState.shared.autoResolvedMode(unknown), .tap,
+                       "learned in-place không được cứu app lạ khỏi kênh an toàn")
+        XCTAssertTrue(AppState.shared.usesMarkedText(unknown))
+    }
+
+    func testLegacyToggleRestoresProbeAndLearn() {
+        AppState.shared.safeUnknownApps = false
+        XCTAssertNil(AppState.shared.autoResolvedMode(unknown), "legacy: chưa dò → nil")
+        AppState.shared.markInPlaceGood(unknown)
+        XCTAssertEqual(AppState.shared.autoResolvedMode(unknown), .inPlace,
+                       "legacy: learned in-place lại có hiệu lực")
+        XCTAssertFalse(AppState.shared.usesMarkedText(unknown))
+    }
+}

@@ -77,9 +77,13 @@ final class AppStateRoutingTests: XCTestCase {
         // Verified in-place stays clean.
         XCTAssertFalse(s.usesMarkedText("com.apple.Notes"))
         XCTAssertFalse(s.usesTapMode("com.apple.Notes"))
-        // Unknown app: in-place trial (probe) — nothing forces marked.
-        XCTAssertFalse(s.usesMarkedText(unknownApp))
-        XCTAssertTrue(s.needsProbe(unknownApp))
+        // Unknown app — POLICY 06/08/2026 đảo chiều: kênh an toàn (tap khi trusted,
+        // marked là umbrella degradation), KHÔNG còn in-place trial + probe. Discord/
+        // Lark chứng minh probe tin self-report là tin nhầm. Chi tiết + toggle legacy:
+        // UnknownAppPolicyTests.
+        XCTAssertTrue(s.usesTapMode(unknownApp))
+        XCTAssertTrue(s.usesMarkedText(unknownApp))
+        XCTAssertFalse(s.needsProbe(unknownApp))
     }
 
     func testAutoRoutingUntrusted() {
@@ -127,6 +131,11 @@ final class AppStateRoutingTests: XCTestCase {
     // MARK: Learned classification
 
     func testLearnedRouting() {
+        // Cỗ máy learned-classification là hành vi LEGACY (safeUnknownApps=false):
+        // dưới policy 06/08 app lạ không probe nữa nên learned in-place bất hoạt.
+        let savedPolicy = s.safeUnknownApps
+        s.safeUnknownApps = false
+        defer { s.safeUnknownApps = savedPolicy }
         s.markUsesMarkedText(learnedBadApp)
         s.markInPlaceGood(learnedGoodApp)
         Accessibility.testTrustOverride = true
@@ -193,7 +202,7 @@ final class AppStateRoutingTests: XCTestCase {
     func testPassthroughAndMisc() {
         XCTAssertEqual(s.autoResolvedMode("com.apple.ScreenSharing"), .passthrough)
         XCTAssertEqual(s.autoResolvedMode("com.microsoft.rdc.macos"), .passthrough)  // ClientPolicy floor
-        XCTAssertNil(s.autoResolvedMode(unknownApp))
+        XCTAssertEqual(s.autoResolvedMode(unknownApp), .tap)   // policy 06/08: app lạ → tap
         XCTAssertNil(s.autoResolvedMode(nil))
         XCTAssertFalse(s.usesMarkedText(nil))
         XCTAssertFalse(s.usesTapMode(nil))

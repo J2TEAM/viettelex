@@ -83,6 +83,9 @@
 "Experimental" = "Thử nghiệm";
 "Input method" = "Kiểu gõ";
 "VNI typing (experimental)" = "Gõ kiểu VNI (thử nghiệm)";
+"Unknown apps" = "App chưa nhận diện";
+"Unknown apps use the safe channel (tap/marked)" = "App lạ dùng kênh gõ an toàn (tap/marked)";
+"Apps without a rule type via backspace-retype (or underlined composition without Accessibility) instead of trying direct insertion and guessing. Turn off to restore the old probe-and-learn behavior." = "App chưa có rule sẽ gõ bằng backspace-retype (hoặc gạch chân khi thiếu quyền Trợ năng) thay vì thử gõ trực tiếp rồi tự đoán. Tắt để quay lại cơ chế dò-và-học cũ.";
 "Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones." = "Gõ dấu bằng chữ số thay cho chữ cái Telex: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = bỏ dấu. Chữ cái giữ nguyên. Nên bật “Kiểm tra chính tả khi gõ” để số như “mp3” không bị biến thành dấu.";
 "Context-based decision" = "Quyết định theo ngữ cảnh";
 "After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”." = "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.";

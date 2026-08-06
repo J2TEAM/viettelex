@@ -54,6 +54,15 @@ com.figma.Desktop: tap
 com.vng.zalo: tap
 # Đã kiểm chứng gõ trực tiếp tốt
 com.apple.Notes: inPlace
+# Batch 06/08/2026 — maintainer field-verified (learned in-place OK trên máy thật)
+com.apple.TextEdit: inPlace
+com.apple.Preview: inPlace
+com.apple.Passwords: inPlace
+com.apple.appkit.xpc.openAndSavePanelService: inPlace
+com.apple.SafariPlatformSupport.Helper: inPlace
+com.robinhood.release.Money: inPlace
+com.relaykey.client: inPlace
+com.westbridge.stremio5-mac: inPlace
 com.apple.finder: inPlace
 com.apple.ActivityMonitor: inPlace
 com.apple.Spotlight: inPlace

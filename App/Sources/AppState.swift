@@ -106,6 +106,7 @@ final class AppState: @unchecked Sendable {
         _axSelectionReplace = (defaults.object(forKey: "axSelectionReplace") as? Bool) ?? true
         _tapCascadeBreaker = (defaults.object(forKey: "tapCascadeBreaker") as? Bool) ?? true
         _debugLogging = (defaults.object(forKey: "debugLogging") as? Bool) ?? false
+        _safeUnknownApps = (defaults.object(forKey: "safeUnknownApps") as? Bool) ?? true
         shortcutsCache = (defaults.dictionary(forKey: Key.shortcuts) as? [String: String]) ?? [:]
         fallbackAppsCache = Set(defaults.stringArray(forKey: Key.fallbackApps) ?? [])
         probedAppsCache = Set(defaults.stringArray(forKey: Key.probedApps) ?? [])
@@ -225,6 +226,22 @@ final class AppState: @unchecked Sendable {
         // → "Enter 2 lần mới gửi được". Feature vẫn dùng được khi tự bật.
         get { defaults.object(forKey: Key.reEditWord) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
+    }
+
+    /// POLICY 06/08/2026 "app lạ đi kênh an toàn": an app with NO rule anywhere
+    /// (no manual pin, no built-in entry, no learned fallback) routes TAP when
+    /// Accessibility is granted, MARKED when not — never probe-and-learn in-place.
+    /// Rationale: the probe trusts self-reports (caret/AX), and Discord + Lark
+    /// (bundle-id drift) both proved in-place failures can be INVISIBLE to
+    /// self-reports — the probe "learns in-place OK" while the screen is wrong.
+    /// Tap (EVKey/OpenKey model) and marked (composition standard) are the two
+    /// channels with a real contract. In-place stays for the curated built-in
+    /// list and manual pins. OFF = legacy behavior (in-place default + probe).
+    private var _safeUnknownApps: Bool
+    var safeUnknownApps: Bool {
+        get { lock.withLock { _safeUnknownApps } }
+        set { lock.withLock { _safeUnknownApps = newValue }
+              defaults.set(newValue, forKey: "safeUnknownApps") }
     }
 
     /// Context-based decision (EXPERIMENTAL, default OFF). See `TelexEngine.contextualEnglish`.
@@ -446,6 +463,11 @@ final class AppState: @unchecked Sendable {
             }
             if fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id)
                 || Self.markedTextApps.contains(id) { return true }
+            // Safe-unknown policy: an unruled app is tap-family — marked is its
+            // untrusted degradation, same as every fallback app above. probedApps
+            // (learned in-place) intentionally does NOT rescue it: that cache is
+            // the self-report the policy distrusts (Lark 06/08 learned it wrong).
+            if _safeUnknownApps && _isUnknownApp(id) { return true }
             // Per-field (browser) app without Accessibility: the field walk itself
             // needs AX, so neither the omnibox dance nor page-content tap can run —
             // degrade the whole app to marked text (the composition contract), the
@@ -487,6 +509,22 @@ final class AppState: @unchecked Sendable {
     }
     enum SelWant: Equatable { case no, yes, perField }
 
+    /// No rule ANYWHERE for this app: not built-in (any mode), not a learned
+    /// fallback, not remote-desktop. Learned in-place (probedAppsCache) is
+    /// deliberately NOT "known" — it is the self-report cache the safe-unknown
+    /// policy exists to distrust. Caller must hold `lock`.
+    private func _isUnknownApp(_ id: String) -> Bool {
+        !(fallbackAppsCache.contains(id)
+          || Self.builtInFallbackApps.contains(id)
+          || Self.markedTextApps.contains(id)
+          || Self.builtInInPlaceApps.contains(id)
+          || Self.isPerFieldByDefault(id)
+          || Self.selectionAlwaysApps.contains(id)
+          || Self.emptyResetApps.contains(id)
+          || Self.builtInPassthroughApps.contains(id)
+          || ClientPolicy.isRemoteDesktop(id))
+    }
+
     private func _rawWants(_ id: String) -> TapWants {
         if let m = _manualMode(id) {                                // user override wins
             return TapWants(tap: m == .tap,
@@ -494,7 +532,8 @@ final class AppState: @unchecked Sendable {
                             empty: m == .emptyReset)
         }
         return TapWants(
-            tap: (fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id))
+            tap: (fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id)
+                  || (_safeUnknownApps && _isUnknownApp(id)))
                 && !Self.markedTextApps.contains(id),
             sel: Self.selectionAlwaysApps.contains(id) ? .yes
                 : Self.isPerFieldByDefault(id) ? .perField : .no,
@@ -706,7 +745,9 @@ final class AppState: @unchecked Sendable {
             if fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id) {
                 return .tap
             }
-            if probedAppsCache.contains(id) || Self.builtInInPlaceApps.contains(id) { return .inPlace }
+            if Self.builtInInPlaceApps.contains(id) { return .inPlace }
+            if !_safeUnknownApps, probedAppsCache.contains(id) { return .inPlace }
+            if _safeUnknownApps { return .tap }   // app lạ: kênh an toàn (marked khi thiếu AX)
             return nil
         }
     }
@@ -721,6 +762,11 @@ final class AppState: @unchecked Sendable {
         guard Accessibility.isTrusted else { return false }
         return lock.withLock {
             if _manualMode(id) != nil { return false }   // user pinned it; never probe
+            // Safe-unknown policy: unruled apps route tap/marked, so there is no
+            // in-place trial left to classify — the one-shot probe retires. The
+            // per-focus VERIFY probe for curated in-place apps is separate
+            // (isLearnedInPlace) and stays.
+            if _safeUnknownApps { return false }
             return !fallbackAppsCache.contains(id) && !probedAppsCache.contains(id)
                 && !Self.builtInFallbackApps.contains(id) && !Self.markedTextApps.contains(id)
                 && !Self.builtInInPlaceApps.contains(id) // verified good — skip the probe
