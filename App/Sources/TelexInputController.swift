@@ -40,6 +40,18 @@ final class TelexInputController: IMKInputController {
     private var tracking = false  // is anchor/onLen valid for the current word?
     private var selToClear = 0    // selection length to overwrite on the first insert
     private var anchorVerified = false  // one-shot re-anchor done for this word?
+    /// EDGE-TAP (06/08/2026): the current word is anchored at field offset 0 in an
+    /// app the user pinned to In-place, so its edits run on the synthetic-key
+    /// channel instead of insertText. Web editors (Discord/Slate) ignore a
+    /// replacementRange that starts at a block boundary and APPEND instead
+    /// ("cos" đầu message → "coó" — field 06/08); synthetic ⌫-retype is the one
+    /// channel they honor there. The WHOLE word stays on the CGEvent channel
+    /// (letters pass native, replaces go synthetic) — mixing insertText with
+    /// native/synthetic keys races under fast typing (same rule as the
+    /// .passthrough comment below). Manual In-place pins only: native apps'
+    /// offset-0 in-place is honored, and pinned apps get no verify probes, so
+    /// this is the only guard their first word has.
+    private var edgeTapWord = false
 
     // Consecutive failed in-place read-back probes per bundleID. A single failure is
     // usually the app being busy during the probe, not a real incompatibility, so we
@@ -396,6 +408,22 @@ final class TelexInputController: IMKInputController {
                 break
             }
             if usesMarkedNow(id) { updateMarked(client); return true }
+            if edgeTapWord {
+                // Edge word stays on the CGEvent channel: plain deletion passes the
+                // physical ⌫ through; a tone re-place ("toán"->"tóa") goes synthetic.
+                switch action {
+                case let .replace(_, insert) where insert.isEmpty:
+                    onLen = max(0, onLen - 1)
+                    if engine.isEmpty { tracking = false; edgeTapWord = false }
+                    return false
+                case let .replace(bs, insert):
+                    SyntheticKeyboard.apply(backspaces: bs, insert: insert)
+                    onLen = (engine.composed as NSString).length
+                    return true
+                default:
+                    return true
+                }
+            }
             if tracking {
                 // Rewrite the whole composition via insertText (ordered, non-empty);
                 // also handles tone re-placement on delete ("toán"->"tóa").
@@ -473,7 +501,16 @@ final class TelexInputController: IMKInputController {
             // token isn't "corrected" (auto-restore is off around [ ] { }).
             // The composed word itself is committed unchanged.
             let boundaryChar = event.characters?.utf8.first
-            boundary(client, suppressAutoRestore: boundaryChar.map(isBracket) ?? false)
+            let wasEdge = edgeTapWord
+            let rewrote = boundary(client, suppressAutoRestore: boundaryChar.map(isBracket) ?? false)
+            // Edge word rewritten at the boundary (shortcut/auto-restore): the
+            // rewrite is a synthetic burst still in the session queue — a native
+            // boundary key would overtake it. Same cure as Return below: swallow
+            // and re-post so the key lands AFTER the burst.
+            if rewrote, wasEdge, Accessibility.isTrusted, let cg = event.cgEvent {
+                SyntheticKeyboard.postBoundaryCopy(of: cg)
+                return true
+            }
             return false
         }
 
@@ -502,6 +539,11 @@ final class TelexInputController: IMKInputController {
             } else {
                 tracking = false; selToClear = 0
             }
+            edgeTapWord = Self.edgeTapEligible(
+                manualInPlace: AppState.shared.manualMode(id) == .inPlace,
+                caret: (tracking && sel.location != NSNotFound) ? sel.location : nil,
+                trusted: Accessibility.isTrusted)
+            if edgeTapWord { logDecision("edge-tap word start (offset 0, manual in-place pin)") }
         }
 
         // RE-EDIT (experimental, opt-in): a tone/mark key on an EMPTY engine right after a
@@ -532,6 +574,14 @@ final class TelexInputController: IMKInputController {
         if usesMarkedNow(id) { updateMarked(client); return true }
         switch action {
         case .passthrough:
+            if edgeTapWord {
+                // Edge word: the app inserts the raw key natively — same CGEvent
+                // queue as the synthetic replaces below, so ordering holds. A
+                // selection at offset 0 (⌘A) is overwritten by the native key.
+                selToClear = 0
+                onLen += 1
+                return false
+            }
             // Insert the letter ourselves (do NOT return false to let the system
             // insert it): mixing a system passthrough-insert with our insertText
             // transforms races under fast typing and corrupts words ("được"->"đựoc").
@@ -550,6 +600,11 @@ final class TelexInputController: IMKInputController {
         case .none:
             return true
         case let .replace(bs, insert):
+            if edgeTapWord {
+                SyntheticKeyboard.apply(backspaces: bs, insert: insert)
+                onLen = (engine.composed as NSString).length
+                return true
+            }
             applyInPlace(bs: bs, insert: insert, client)
             return true
         }
@@ -809,6 +864,7 @@ final class TelexInputController: IMKInputController {
         }
         engine.reset()
         tracking = false
+        edgeTapWord = false
     }
 
     /// In-place aborted before inserting anything (bogus selectedRange): condemn the
@@ -1150,9 +1206,19 @@ final class TelexInputController: IMKInputController {
     }
 
     @discardableResult
+    /// EDGE-TAP eligibility, decided once per word at its first key. Pure — pinned
+    /// by EdgeTapTests. Manual In-place pin ONLY (built-in in-place apps honor
+    /// offset-0; the pin is the user's escape hatch on web editors where offset-0
+    /// replacementRange gets APPENDED — "cos" → "coó" at message start). Untrusted
+    /// can't post synthetic keys, so the word falls back to plain in-place.
+    static func edgeTapEligible(manualInPlace: Bool, caret: Int?, trusted: Bool) -> Bool {
+        manualInPlace && trusted && caret == 0
+    }
+
     private func boundary(_ client: IMKTextInput, suppressAutoRestore: Bool = false,
                           allowShortcuts: Bool = true) -> Bool {
-        defer { tracking = false; onLen = 0 }
+        let wasEdge = edgeTapWord
+        defer { tracking = false; onLen = 0; edgeTapWord = false }
         guard !engine.isEmpty else { engine.reset(); return false }
         let marked = usesMarkedNow(AppState.shared.currentBundleID)
         let word = engine.composed
@@ -1171,6 +1237,7 @@ final class TelexInputController: IMKInputController {
            let expansion = AppState.shared.shortcuts[word] ?? AppState.shared.shortcuts[rawWord] {
             engine.reset()
             if marked { client.insertText(expansion, replacementRange: kNoRange) }
+            else if wasEdge { SyntheticKeyboard.apply(backspaces: onScreen, insert: expansion) }
             else { applyInPlace(bs: onScreen, insert: expansion, client) }
             return true
         }
@@ -1184,7 +1251,8 @@ final class TelexInputController: IMKInputController {
             client.insertText(restored, replacementRange: kNoRange)
             return true
         } else if restored != word {
-            applyInPlace(bs: onScreen, insert: restored, client)
+            if wasEdge { SyntheticKeyboard.apply(backspaces: onScreen, insert: restored) }
+            else { applyInPlace(bs: onScreen, insert: restored, client) }
             return true
         }
         return false

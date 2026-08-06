@@ -2085,6 +2085,21 @@ final class TerminalTapController {
             emitMode = .emptyReset
         } else if tapKeyRouting.tap {
             emitMode = .backspace
+        } else if !SyntheticKeyboard.queueDrained(),
+                  AppState.shared.manualMode(id) == .inPlace {
+            // EDGE-TAP ordering guard (06/08/2026): the IMKit controller just posted
+            // a synthetic burst for an offset-0 word in this manually-pinned
+            // In-place app (edgeTapWord). A physical key passing through natively
+            // NOW would overtake the still-draining burst (repro: "cos " typed with
+            // 0ms gaps — the space landed first and the burst's ⌫ ate it → "coó").
+            // Re-post it as a fresh NO-MAGIC copy: it queues BEHIND the burst and
+            // re-enters IMKit as a real key, so composition continues in order.
+            // notePostedKeyDown inside extends the in-flight chain, keeping any
+            // further rollover keys ordered too. queueDrained() is true in the
+            // common case, so plain typing in pinned apps never reaches the
+            // manualMode lookup.
+            SyntheticKeyboard.postBoundaryCopy(of: event)
+            return nil
         } else {
             engine.reset(); return pass
         }
