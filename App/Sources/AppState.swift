@@ -27,7 +27,7 @@ final class AppState: @unchecked Sendable {
             ? "com.viettelex.settings.tests"
             : "com.viettelex.settings"
 
-    private let defaults = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
+    let defaults = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
 
     /// Guards every mutable cache + flag below. Needed since the event tap moved to
     /// its own thread: Settings/controller write on MAIN while the tap callback reads
@@ -652,6 +652,17 @@ final class AppState: @unchecked Sendable {
     /// Extends ClientPolicy's compiled-in remote-desktop floor (kept as the safety
     /// net) with plist-declared passthrough apps.
     static let builtInPassthroughApps = builtInIDs(.passthrough)
+
+    /// Composers that APPEND when insertText's replacementRange starts at their
+    /// block boundary (offset 0) — the Slate class ("cos" đầu message → "coó",
+    /// field 06-07/08/2026). Under a manual In-place pin these words run the
+    /// EDGE-TAP synthetic channel instead. NOT a routing allowlist: it only
+    /// picks the in-place FLAVOR inside a pin the user already made. Quill
+    /// (Slack) and native apps honor offset-0 replacementRange — measured with
+    /// edgeTapKill 07/08 — and must stay on direct insertText: their composers
+    /// self-insert a newline for a swallowed Return, so the edge swallow+repost
+    /// path DOUBLES it there.
+    static let offset0AppendApps: Set<String> = ["com.hnc.Discord"]
 
     /// Terminals proper — byte-pipe apps with their own controller semantics.
     /// Stays in CODE (not the plist): it is behavior classification, not a rule

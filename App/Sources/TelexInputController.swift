@@ -499,6 +499,7 @@ final class TelexInputController: IMKInputController {
             // two-press behavior is also standard CJK composition UX. Single-press
             // Enter in terminals is what the TAP path provides — grant Accessibility.
             boundaryCommitInFlight = true
+            let wasEdge = edgeTapWord
             let rewrote = boundary(client)
             boundaryCommitInFlight = false
             logDecision("boundary-key code=\(event.keyCode) rewrote=\(rewrote)")
@@ -508,6 +509,24 @@ final class TelexInputController: IMKInputController {
             // OLD text. With Accessibility we swallow the real key and re-post a
             // stamped COPY of it (HID source intact) so it lands AFTER the edit;
             // the copy re-enters handle() with an empty engine and passes through.
+            // EDGE (Slate-class): burst async vừa post — Return PHẢI được nuốt và
+            // re-post sau burst; Slate không tự chèn newline cho phím bị nuốt nên
+            // không double (Discord verified). Check TRƯỚC nhánh pin bên dưới.
+            if rewrote, wasEdge, Accessibility.isTrusted, let cg = event.cgEvent {
+                SyntheticKeyboard.postBoundaryCopy(of: cg)
+                return true
+            }
+            // MANUAL In-place pin (không phải built-in): expansion vừa áp SYNC qua
+            // insertText ngay trong handle này, nên Return native theo sau là ĐÃ
+            // đúng thứ tự — trả false, không nuốt, không re-post. Nuốt+re-post ở
+            // đây nhân đôi newline trên Quill/ProseMirror (Slack/Claude): composer
+            // các app đó tự chèn newline cho cả phím Return bị IME nuốt (field
+            // 07/08: 'ko'+Shift+Enter → 'không' + 2 dòng). Built-in in-place
+            // (WhatsApp) giữ nuốt+re-post: insertText của nó áp async, Return
+            // native sẽ gửi tin nhắn với text CŨ (field 1.5.1).
+            if rewrote, AppState.shared.manualMode(AppState.shared.currentBundleID) == .inPlace {
+                return false
+            }
             if rewrote, Accessibility.isTrusted, let cg = event.cgEvent {
                 SyntheticKeyboard.postBoundaryCopy(of: cg)
                 return true
@@ -576,7 +595,11 @@ final class TelexInputController: IMKInputController {
             } else {
                 tracking = false; selToClear = 0
             }
-            edgeTapWord = Self.edgeTapEligible(
+            // Edge chỉ cho composer Slate-class (append ở offset 0). Đo 07/08:
+            // Quill (Slack) honor offset-0 → đi insertText trực tiếp, và Return
+            // với nó KHÔNG được nuốt/re-post (xem offset0AppendApps).
+            edgeTapWord = AppState.offset0AppendApps.contains(id ?? "")
+                && Self.edgeTapEligible(
                 manualInPlace: AppState.shared.manualMode(id) == .inPlace,
                 caret: (tracking && sel.location != NSNotFound) ? sel.location : nil,
                 trusted: Accessibility.isTrusted)
@@ -836,6 +859,7 @@ final class TelexInputController: IMKInputController {
             start = anchor + onLen - bs
             clear = selToClear
             selToClear = 0
+            logDecision("applyInPlace \(id ?? "?"): start=\(start) bs=\(bs) insLen=\((insert as NSString).length) clear=\(clear) anchor=\(anchor) onLen=\(onLen)")
             if clear > 0 {
                 DebugLog.log("selection fold \(id ?? "?"): range=(\(start),\(bs + clear)) bs=\(bs) clear=\(clear)")
             }

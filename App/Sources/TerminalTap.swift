@@ -1348,12 +1348,18 @@ enum SyntheticKeyboard {
     /// never sees a keyDown left logically held (the user's physical keyUp
     /// precedes our down and cannot pair with it).
     static func postBoundaryCopy(of event: CGEvent) {
+        postBoundaryKey(CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)),
+                        flags: event.flags)
+    }
+
+    /// Value-based variant for callers that post AFTER the original event's
+    /// lifetime (deferred edge-boundary bursts).
+    static func postBoundaryKey(_ key: CGKeyCode, flags: CGEventFlags) {
         guard Accessibility.isTrusted else {
             DebugLog.log("boundary-copy: SKIPPED (untrusted)")
             return
         }
-        let key = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        guard let (down, up) = makeBoundaryRepost(key: key, flags: event.flags) else {
+        guard let (down, up) = makeBoundaryRepost(key: key, flags: flags) else {
             DebugLog.log("boundary-copy: SKIPPED (create failed)")
             return
         }

@@ -39,6 +39,17 @@ final class EdgeTapTests: XCTestCase {
         XCTAssertFalse(TelexInputController.edgeTapEligible(manualInPlace: true, caret: 0, trusted: false))
     }
 
+    /// Flavor theo composer (07/08): edge CHỈ cho Slate-class (Discord append ở
+    /// offset 0). Quill (Slack) honor offset-0 insertText — đo bằng edgeTapKill —
+    /// và Return của nó không được đi đường nuốt+re-post (composer tự chèn
+    /// newline cho phím bị nuốt → double newline). Ai muốn thêm app vào set này
+    /// phải có bằng chứng append như Discord, không suy từ "cũng là Electron".
+    func testOnlySlateClassAppsAreEdgeEligible() {
+        XCTAssertTrue(AppState.offset0AppendApps.contains("com.hnc.Discord"))
+        XCTAssertFalse(AppState.offset0AppendApps.contains("com.tinyspeck.slackmacgap"))
+        XCTAssertFalse(AppState.offset0AppendApps.contains("com.anthropic.claudefordesktop"))
+    }
+
     func testNoCaretReadMeansNoEdgeTap() {
         // App không báo caret (một số Electron): không chứng minh được offset 0
         // → giữ đường per-op selectedRange như cũ.
