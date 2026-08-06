@@ -38,6 +38,12 @@ dev.warp.Warp-Preview: tap
 
 # Electron/CEF — in-place hỏng ở biên từ
 com.larksuite.larkApp: tap
+# Lark đổi bundle id theo bản phát hành — field report 06/08/2026: máy chỉ có
+# com.larksuite.macos.lark nên rule trên không match, probe học nhầm "in-place
+# OK" (caret thật thà nhưng editor nuốt edit ở biên từ — lớp lỗi Discord).
+com.larksuite.macos.lark: tap
+com.electron.lark: tap
+com.bytedance.macos.feishu: tap
 com.tinyspeck.slackmacgap: tap
 com.hnc.Discord: tap
 com.microsoft.VSCode: tap

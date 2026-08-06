@@ -50,6 +50,21 @@ final class BundledTypingModesTests: XCTestCase {
         }
     }
 
+    // MARK: Field report 06/08/2026 — Lark đổi bundle id, rule tap không match
+
+    func testLarkFamilyBundleIDsAllResolveToTap() throws {
+        // Máy tester chỉ có `com.larksuite.macos.lark` (bản Lark mới) trong khi bảng
+        // chỉ có `com.larksuite.larkApp` → không match rule nào → probe tự học và
+        // học NHẦM "in-place OK" (Electron nuốt edit ở biên từ nhưng caret/AX
+        // self-report thật thà — lớp lỗi Discord, không tự phát hiện được).
+        // Pin đủ họ Lark/Feishu để lần đổi id sau chỉ đỏ đúng test này.
+        for id in ["com.larksuite.larkApp", "com.larksuite.macos.lark",
+                   "com.electron.lark", "com.bytedance.macos.feishu"] {
+            XCTAssertEqual(try bundledRules()[id], "tap", "\(id) thiếu/hỏng trong typing-modes.yml")
+            XCTAssertEqual(AppState.shared.autoResolvedMode(id), .tap, id)
+        }
+    }
+
     func testEveryParsedRuleIsAValidNonAutoMode() throws {
         // Đây là hàng rào chống "unknown mode": AppState.builtInRules bỏ im lặng mọi
         // value không map được sang AppMode, và `auto` cũng bị bỏ (auto = không có
