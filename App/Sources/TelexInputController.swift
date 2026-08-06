@@ -1570,9 +1570,15 @@ final class TelexInputController: IMKInputController {
     /// Permission OK: show a debug snapshot of the runtime state.
     private func showDebugLog() {
         let id = AppState.shared.currentBundleID ?? "?"
+        // tapRouting, not the per-mode getters: page content in browsers routes to
+        // tap BY POLICY (2026-08-06) without the app ever being in a tap-mode set,
+        // so the old usesTapMode-based label showed "in-place" for a key the tap
+        // actually handled.
+        let routing = AppState.shared.tapRouting(id)
         let mode: String
-        if AppState.shared.usesSelectionReplace(id) { mode = "tap · selection-replace (Chromium)" }
-        else if AppState.shared.usesTapMode(id) { mode = "tap · backspace (terminal)" }
+        if routing.selection { mode = "tap · selection-replace (Chromium)" }
+        else if routing.tap { mode = "tap · backspace" }
+        else if routing.emptyReset { mode = "tap · emptyReset" }
         else if AppState.shared.usesMarkedText(id) { mode = "IMKit · marked text" }
         else { mode = "IMKit · in-place" }
         let s = AppState.shared

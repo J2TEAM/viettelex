@@ -59,7 +59,8 @@ final class AppState: @unchecked Sendable {
     /// (`tap`, `selection`, `emptyReset`) need Accessibility and fall back to marked
     /// text without it (never silently to in-place — that loses diacritics).
     /// `.axDetect` resolves per focused FIELD via the Accessibility tree (address
-    /// bar → selection-replace, page content → in-place); see FocusedFieldDetector.
+    /// bar → selection-replace, page content → TAP backspace-retype, Google-Docs
+    /// class → marked; no AX → marked); see FocusedFieldDetector + gateRouting.
     /// `.passthrough` = IME behaves as OFF (remote-desktop class — raw scancodes).
     enum AppMode: String, CaseIterable {
         case auto, inPlace, marked, tap, selection, emptyReset, axDetect, passthrough
@@ -445,6 +446,13 @@ final class AppState: @unchecked Sendable {
             }
             if fallbackAppsCache.contains(id) || Self.builtInFallbackApps.contains(id)
                 || Self.markedTextApps.contains(id) { return true }
+            // Per-field (browser) app without Accessibility: the field walk itself
+            // needs AX, so neither the omnibox dance nor page-content tap can run —
+            // degrade the whole app to marked text (the composition contract), the
+            // same rule every tap-family strategy already follows. In-place was the
+            // old untrusted fallback here, and it is exactly the contract-free
+            // channel the 2026-08 web-editor reports broke on (2026-08-06 policy).
+            if Self.isPerFieldByDefault(id) { return !trusted }
             if trusted { return false }
             // Untrusted default: marked, unless positively known in-place-good.
             // (Remote-desktop passthrough is resolved in the controller BEFORE this.)
@@ -514,25 +522,32 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Applies the Accessibility + per-field gates to a wants snapshot. Pure, and
-    /// LAZY on both externals — `trusted` costs a foreign lock (and a TCC refresh
-    /// kick), `wantsSelection` costs a detector read that can kick an AX scan; a key
-    /// in a plain in-place app must keep paying for NEITHER (exactly the laziness the
-    /// legacy per-mode getters had).
+    /// LAZY on the externals — `trusted` costs a foreign lock (and a TCC refresh
+    /// kick), `wantsSelection`/`wantsMarkedField` cost detector reads; a key in a
+    /// plain in-place app must keep paying for NONE of them (exactly the laziness
+    /// the legacy per-mode getters had).
     static func gateRouting(_ wants: TapWants,
                             trusted: () -> Bool,
                             wantsSelection: () -> Bool,
-                            wantsTapField: () -> Bool) -> TapRouting {
+                            wantsMarkedField: () -> Bool) -> TapRouting {
         guard wants.any, trusted() else { return TapRouting() }
-        // Per-field resolution order: a Discord-web-class field (tapFieldURL) wins —
-        // its Lexical editor ignores replacementRange on the VISIBLE text while every
-        // self-report says honored ("vis "→"vií ", 2026-08-05), so neither in-place
-        // nor selection can work there; the tap backspace-retype path is what its
-        // Electron twin has always shipped on. Otherwise omnibox-vs-content decides.
+        // Per-field resolution (browsers, maintainer decision 2026-08-06): PAGE
+        // CONTENT defaults to the TAP backspace-retype path — synthetic key events
+        // are the only channel every web editor must handle (the EVKey/OpenKey
+        // model). `insertText(replacementRange:)` has NO contract with JS editors
+        // (Lexical/ProseMirror render from their own model): Docs appended and ⌫
+        // died (07-30), Discord appended while EVERY self-report said honored
+        // (08-05), Zalo froze with a constant caret (08-06) — three per-host
+        // patches in one week, and the Discord class is provably undetectable
+        // from inside. This replaces the host allowlist with the policy itself.
+        // Order: omnibox (toolbar) → selection/emptyReset dance, unchanged; a
+        // marked-class field (Google Docs) falls through to IMKit marked text;
+        // everything else in the page → tap.
         let perField = wants.sel == .perField
-        let tapField = perField && wantsTapField()
+        let pageContent = perField && !wantsSelection()
         return TapRouting(
-            tap: wants.tap || tapField,
-            selection: wants.sel == .yes || (perField && !tapField && wantsSelection()),
+            tap: wants.tap || (pageContent && !wantsMarkedField()),
+            selection: wants.sel == .yes || (perField && !pageContent),
             emptyReset: wants.empty)
     }
 
@@ -550,7 +565,7 @@ final class AppState: @unchecked Sendable {
         return Self.gateRouting(wants,
                                 trusted: { Accessibility.isTrusted },
                                 wantsSelection: { FocusedFieldDetector.wantsSelection },
-                                wantsTapField: { FocusedFieldDetector.wantsTapField })
+                                wantsMarkedField: { FocusedFieldDetector.wantsMarkedField })
     }
 
     // MARK: - Built-in typing-mode rules (typing-modes.yml)

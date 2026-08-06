@@ -535,12 +535,10 @@ enum FocusedFieldDetector {
     /// invalidation as `cached`; served by `wantsMarkedField` without kicking its own
     /// refresh (every browser keystroke already reads `wantsSelection` first).
     private static var cachedMarked = false
-    /// Lexical-editor field (Discord web): must be typed via the TAP backspace-retype
-    /// path — see tapFieldURL. Same cache/TTL/invalidation ride-along as `cachedMarked`.
-    private static var cachedTapField = false
+
     /// First web-area host seen by the last scan — DIAGNOSTIC ONLY, never read by any
     /// routing decision. Lets a debug log line name the actual site when something
-    /// goes wrong on a host neither `markedFieldURL` nor `tapFieldURL` recognizes yet.
+    /// goes wrong on a host the routing policy has no special case for yet.
     private static var cachedHost: String?
     private static var lastCheckNs: UInt64 = 0
     private static var refreshing = false
@@ -565,9 +563,8 @@ enum FocusedFieldDetector {
         lock.withLock {
             cached = false
             // Same asymmetry as `cached`: one keystroke of in-place in a Docs canvas
-            // is the mild failure; forcing marked/tap into an unknown field is not.
+            // is the mild failure; forcing marked into an unknown field is not.
             cachedMarked = false
-            cachedTapField = false
             cachedHost = nil
             lastCheckNs = 0
             stableRuns = 0
@@ -595,13 +592,6 @@ enum FocusedFieldDetector {
             lastCheckNs = DispatchTime.now().uptimeNanoseconds
         }
     }
-    /// Same seam for the Discord-web (tap) verdict.
-    static func _testSetTapField(_ value: Bool) {
-        lock.withLock {
-            cachedTapField = value
-            lastCheckNs = DispatchTime.now().uptimeNanoseconds
-        }
-    }
     /// Same seam for the diagnostic-only host string.
     static func _testSetHost(_ value: String?) {
         lock.withLock {
@@ -616,9 +606,6 @@ enum FocusedFieldDetector {
     /// which every browser keystroke reads first (tap routing then IMKit routing).
     static var wantsMarkedField: Bool { lock.withLock { cachedMarked } }
 
-    /// True → the focused field is a Discord-web-class editor: route through the TAP
-    /// backspace-retype path. Cache-only read, same contract as `wantsMarkedField`.
-    static var wantsTapField: Bool { lock.withLock { cachedTapField } }
 
     /// Diagnostic-only: the host last seen for the focused field, or nil (not a web
     /// area, or the AX read failed). Never consulted by routing — see `cachedHost`.
@@ -636,7 +623,7 @@ enum FocusedFieldDetector {
         if stale {
             scanQueue.async {
                 pokeChromiumAX()
-                let (wants, marked, tapField, host) = scan()
+                let (wants, marked, host) = scan()
                 // Diagnostic (debug logging only, and off the keystroke path): WHY this
                 // verdict. A browser whose AX tree we cannot read falls back to
                 // selection-replace for EVERY field — including page content, where each
@@ -647,14 +634,12 @@ enum FocusedFieldDetector {
                 // the site for a future report on an unrecognized editor (2026-08-06).
                 if AppState.shared.debugLogging {
                     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
-                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) marked=\(marked) tap=\(tapField) host=\(host ?? "?") roles=[\(roleChain())]")
+                    DebugLog.log("field-scan \(front): wantsSelection=\(wants) marked=\(marked) host=\(host ?? "?") roles=[\(roleChain())]")
                 }
                 lock.withLock {
-                    stableRuns = (wants == cached && marked == cachedMarked
-                                  && tapField == cachedTapField) ? stableRuns + 1 : 0
+                    stableRuns = (wants == cached && marked == cachedMarked) ? stableRuns + 1 : 0
                     cached = wants
                     cachedMarked = marked
-                    cachedTapField = tapField
                     cachedHost = host
                     lastCheckNs = DispatchTime.now().uptimeNanoseconds
                     refreshing = false
@@ -782,8 +767,8 @@ enum FocusedFieldDetector {
         return roles.joined(separator: "→")
     }
 
-    private static func scan() -> (selection: Bool, marked: Bool, tap: Bool, host: String?) {
-        guard let focused = focusedElementForScan() else { return (selection: true, marked: false, tap: false, host: nil) }
+    private static func scan() -> (selection: Bool, marked: Bool, host: String?) {
+        guard let focused = focusedElementForScan() else { return (selection: true, marked: false, host: nil) }
         // NO role short-circuit on the focused element: an AXComboBox/AXSearchField
         // rule used to run BEFORE the ancestor walk ("a search box inside a web area
         // is autocomplete-prone"), but field evidence killed it — youtube.com's search
@@ -807,12 +792,17 @@ enum FocusedFieldDetector {
         // any enclosing web area's URL may still prove Docs.
         var sawWebArea = false
         var marked = false
-        var tap = false
         // First web-area host seen — DIAGNOSTIC ONLY (never used for routing), so a
-        // future "stale caret" report on an unrecognized site names the actual host
-        // instead of just "com.google.Chrome" (field report 2026-08-06: a backspace
-        // dropped a composition with a caret lag of 6, well past the Discord-class
-        // tolerance, on some Chrome tab the log couldn't identify).
+        // "stale caret" report names the actual site instead of just
+        // "com.google.Chrome" (added after the 2026-08-06 unidentified-tab report).
+        //
+        // NOTE (policy 2026-08-06): there is deliberately NO per-host tap allowlist
+        // here anymore. Page content routes to the TAP path BY POLICY in
+        // AppState.gateRouting — the Docs/Discord/Zalo per-host patches of early
+        // August all chased the same contract-free `insertText(replacementRange:)`
+        // channel, and the Discord case proved the failure is undetectable from
+        // inside (every self-report said honored while the visible text appended).
+        // Only the marked-class exception (Google Docs) remains URL-based.
         var host: String?
         for _ in 0..<Self.maxAncestorHops {
             AXUIElementSetMessagingTimeout(element, 0.05)
@@ -822,19 +812,18 @@ enum FocusedFieldDetector {
                 if verdict {
                     // Toolbar: decisive only BEFORE any web area (an omnibox is never
                     // inside page content — above one, it's just browser chrome).
-                    if !sawWebArea { return (selection: true, marked: false, tap: false, host: nil) }
+                    if !sawWebArea { return (selection: true, marked: false, host: nil) }
                 } else {
                     sawWebArea = true
-                    if !marked, !tap {
+                    if !marked {
                         var urlRef: CFTypeRef?
                         if AXUIElementCopyAttributeValue(element, "AXURL" as CFString, &urlRef) == .success {
                             let url = urlRef as? URL
                             if host == nil { host = url?.host }
                             marked = Self.markedFieldURL(url)
-                            tap = Self.tapFieldURL(url)
                         }
                     }
-                    if marked || tap { break }   // verdicts settled
+                    if marked { break }   // verdicts settled
                 }
             }
             var parentRef: CFTypeRef?
@@ -843,33 +832,8 @@ enum FocusedFieldDetector {
             else { break }
             element = parent as! AXUIElement
         }
-        return sawWebArea ? (selection: false, marked: marked, tap: tap, host: host)
-                          : (selection: true, marked: false, tap: false, host: nil)
-    }
-
-    /// Pure: does this web-area URL host an editor that must be typed via the TAP
-    /// (backspace-retype) path? Discord's Lexical composer re-renders from its own
-    /// model and IGNORES replacementRange on the VISIBLE text while Chromium's
-    /// IME/AX layer reports the replace as landed ("vis "→"vií " on screen, caret
-    /// and AX both honest — video + log 2026-08-05). No self-report can catch that
-    /// class; in-place appends, marked costs double-Enter. Its Electron twin
-    /// (com.hnc.Discord) has shipped on the tap path since day one — route the web
-    /// composer the same way.
-    ///
-    /// chat.zalo.me added 2026-08-06 (J2TeamNNL, log captured DURING the incident —
-    /// the first report in this whole family with the moment actually caught): the
-    /// self-reported caret went CONSTANT at 24 across two different edits while the
-    /// AX ground truth simultaneously disagreed twice (`axMatch=no`) and reported the
-    /// field 14 chars longer than our tracking assumed (`axLen=38` vs `start=24/25`)
-    /// — the exact "unreliable rich-text-editor self-report" signature Discord's fix
-    /// exists for, not a transient staleness the caret-lag tolerance could absorb.
-    /// Zalo's Electron desktop app (com.vng.zalo, same likely composer component)
-    /// has shipped on tap since the very first typing-modes.yml — strong prior that
-    /// this path works for Zalo's editor specifically.
-    static func tapFieldURL(_ url: URL?) -> Bool {
-        guard let url, let host = url.host else { return false }
-        if host == "discord.com" || host.hasSuffix(".discord.com") { return true }
-        return host == "chat.zalo.me"
+        return sawWebArea ? (selection: false, marked: marked, host: host)
+                          : (selection: true, marked: false, host: nil)
     }
 
     /// Pure: does this web-area URL host a canvas editor that must be typed with

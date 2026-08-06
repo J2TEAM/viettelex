@@ -37,21 +37,21 @@ final class RoutingDecisionTests: XCTestCase {
         let all = W(tap: true, sel: .yes, empty: true)
         XCTAssertEqual(AppState.gateRouting(all, trusted: { true },
                                             wantsSelection: { XCTFail("sel .yes must not consult the detector"); return false },
-                                            wantsTapField: { XCTFail("sel .yes must not consult the tap-field verdict"); return false }),
+                                            wantsMarkedField: { XCTFail("sel .yes must not consult the marked verdict"); return false }),
                        R(tap: true, selection: true, emptyReset: true))
         XCTAssertEqual(AppState.gateRouting(all, trusted: { false }, wantsSelection: { false },
-                                            wantsTapField: { false }), R())
+                                            wantsMarkedField: { false }), R())
     }
 
     func testGatePerFieldConsultsTheDetectorExactlyOnce() {
         var reads = 0
         let w = W(tap: false, sel: .perField, empty: false)
         let r = AppState.gateRouting(w, trusted: { true }, wantsSelection: { reads += 1; return true },
-                                     wantsTapField: { false })
+                                     wantsMarkedField: { XCTFail("omnibox must not consult the marked verdict"); return false })
         XCTAssertEqual(r, R(tap: false, selection: true, emptyReset: false))
         XCTAssertEqual(reads, 1)
         XCTAssertFalse(AppState.gateRouting(w, trusted: { true }, wantsSelection: { false },
-                                            wantsTapField: { false }).selection)
+                                            wantsMarkedField: { false }).selection)
     }
 
     /// The laziness contract: no wants → NEITHER external is touched (a plain
@@ -61,11 +61,11 @@ final class RoutingDecisionTests: XCTestCase {
         _ = AppState.gateRouting(W(),
                                  trusted: { XCTFail("no wants → trusted must not be read"); return true },
                                  wantsSelection: { XCTFail("no wants → detector must not be read"); return false },
-                                 wantsTapField: { XCTFail("no wants → tap-field must not be read"); return false })
+                                 wantsMarkedField: { XCTFail("no wants → marked verdict must not be read"); return false })
         _ = AppState.gateRouting(W(tap: true, sel: .perField, empty: false),
                                  trusted: { false },
                                  wantsSelection: { XCTFail("untrusted → detector must not be read"); return false },
-                                 wantsTapField: { XCTFail("untrusted → tap-field must not be read"); return false })
+                                 wantsMarkedField: { XCTFail("untrusted → marked verdict must not be read"); return false })
     }
 
     // MARK: equivalence with the legacy per-mode getters (shared _rawWants core)
@@ -93,16 +93,37 @@ final class RoutingDecisionTests: XCTestCase {
         }
     }
 
-    // Discord-web class (2026-08-05): the Lexical composer ignores replacementRange on
-    // the VISIBLE text while caret + AX report honored ("vis "→"vií ") — no self-report
-    // catches it, marked costs double-Enter, so the field routes through the TAP
-    // backspace-retype path its Electron twin has always used.
-    func testPerFieldTapVerdictWinsOverSelection() {
+    // POLICY 2026-08-06 (maintainer): browser PAGE CONTENT routes to the TAP
+    // backspace-retype path by default — the only channel every web editor must
+    // handle (the EVKey/OpenKey model). insertText(replacementRange:) has no
+    // contract with JS editors: Docs appended + killed ⌫ (07-30), Discord appended
+    // while EVERY self-report said honored (08-05, provably undetectable), Zalo
+    // froze with a constant caret (08-06) — three per-host patches in one week.
+    // The host allowlist is GONE; this truth table IS the policy now.
+    func testPageContentRoutesToTap() {
         let w = W(tap: false, sel: .perField, empty: false)
         let r = AppState.gateRouting(w, trusted: { true },
-                                     wantsSelection: { XCTFail("tap-field decides first — selection must not be consulted"); return true },
-                                     wantsTapField: { true })
+                                     wantsSelection: { false },      // page content, not omnibox
+                                     wantsMarkedField: { false })    // not the Docs class
         XCTAssertEqual(r, R(tap: true, selection: false, emptyReset: false))
+    }
+
+    func testMarkedClassFieldFallsThroughToIMKit() {
+        // Google-Docs-class field: neither tap nor selection — IMKit's usesMarkedNow
+        // picks it up via wantsMarkedField and composes with marked text.
+        let w = W(tap: false, sel: .perField, empty: false)
+        let r = AppState.gateRouting(w, trusted: { true },
+                                     wantsSelection: { false },
+                                     wantsMarkedField: { true })
+        XCTAssertEqual(r, R(tap: false, selection: false, emptyReset: false))
+    }
+
+    func testOmniboxStillRoutesToSelection() {
+        let w = W(tap: false, sel: .perField, empty: false)
+        let r = AppState.gateRouting(w, trusted: { true },
+                                     wantsSelection: { true },
+                                     wantsMarkedField: { XCTFail("omnibox settled before the marked verdict"); return false })
+        XCTAssertEqual(r, R(tap: false, selection: true, emptyReset: false))
     }
 }
 
@@ -141,5 +162,39 @@ final class SpotlightNoteFocusedTests: XCTestCase {
         SpotlightDetector.noteFocused()
         XCTAssertTrue(SpotlightDetector._testVisible)
         SpotlightDetector._testSetVisible(false)   // trả trạng thái cho test khác
+    }
+}
+
+// POLICY 2026-08-06, nửa còn lại: browser (axDetect) KHÔNG có quyền Trợ năng thì
+// degrade sang MARKED TEXT (kênh composition — hợp đồng chuẩn web mà mọi editor
+// phải hỗ trợ vì người dùng CJK), không còn rơi về in-place như cũ. In-place chính
+// là kênh không-hợp-đồng đã gây toàn bộ loạt bug web-editor đầu tháng 8. Quy tắc
+// này khớp với nguyên tắc đã có sẵn cho mọi mode tap-family: "thiếu AX → marked,
+// không bao giờ âm thầm về in-place".
+final class UntrustedBrowserFallbackTests: XCTestCase {
+    override func tearDown() {
+        Accessibility.testTrustOverride = nil
+        super.tearDown()
+    }
+
+    func testUntrustedBuiltInBrowserDegradesToMarked() {
+        Accessibility.testTrustOverride = false
+        XCTAssertTrue(AppState.shared.usesMarkedText("com.google.Chrome"),
+                      "browser without AX must compose with marked text")
+        XCTAssertTrue(AppState.shared.usesMarkedText("com.apple.Safari"))
+    }
+
+    func testTrustedBrowserDoesNotForceMarked() {
+        Accessibility.testTrustOverride = true
+        XCTAssertFalse(AppState.shared.usesMarkedText("com.google.Chrome"),
+                       "with AX the per-field routing decides, not blanket marked")
+    }
+
+    func testUntrustedNonBrowserRulesUnchanged() {
+        Accessibility.testTrustOverride = false
+        // Learned/built-in fallback apps already degraded to marked before this policy.
+        XCTAssertTrue(AppState.shared.usesMarkedText("com.hnc.Discord"))
+        // Built-in in-place apps stay in-place even untrusted (probed-good contract).
+        XCTAssertFalse(AppState.shared.usesMarkedText("com.apple.Notes"))
     }
 }

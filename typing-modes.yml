@@ -13,7 +13,9 @@
 #                 tự rơi về marked). Cho app hỏng in-place: terminal, Electron…
 #   marked      — ép marked text (đúng chữ tuyệt đối, có gạch chân)
 #   axDetect    — tự dò theo ô qua Accessibility: address bar → chọn-ghi-đè,
-#                 nội dung trang → gõ trực tiếp. Cho browser.
+#                 nội dung trang → tap backspace-retype (policy 06/08/2026 — web
+#                 editor không có hợp đồng với replacementRange), Google Docs →
+#                 marked; thiếu quyền Trợ năng → marked. Cho browser.
 #   selection   — chọn-ghi-đè (Shift+←) toàn app. Cho IDE có autocomplete popup.
 #   emptyReset  — chèn U+202F hủy suggestion rồi backspace-retype. Cho grid
 #                 app mà Shift+← chọn Ô KỀ thay vì ký tự (Excel).

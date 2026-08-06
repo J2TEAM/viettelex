@@ -817,9 +817,13 @@ enum DebugHeader {
         let build = bf.string(from: buildDate)
         let id = s.currentBundleID
         let frontID = FrontmostApp.shared.bundleID
+        // tapRouting, not the per-mode getters — see the same note in showDebugLog:
+        // browser page content is tap by policy without being in any tap-mode set.
+        let routing = s.tapRouting(id)
         let mode: String
-        if s.usesSelectionReplace(id) { mode = "tap · selection-replace" }
-        else if s.usesTapMode(id) { mode = "tap · backspace" }
+        if routing.selection { mode = "tap · selection-replace" }
+        else if routing.tap { mode = "tap · backspace" }
+        else if routing.emptyReset { mode = "tap · emptyReset" }
         else if s.usesMarkedText(id) { mode = "IMKit · marked text" }
         else { mode = "IMKit · in-place" }
         let inPlace = s.learnedInPlaceApps

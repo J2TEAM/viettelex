@@ -180,34 +180,18 @@ final class MarkedFieldURLTests: XCTestCase {
 // while caret + AX say honored — undetectable by probes, marked costs double-Enter.
 // URL rule routes the field through the tap path (như Discord desktop từ ngày đầu).
 final class TapFieldURLTests: XCTestCase {
-    func testDiscordHostsForceTap() {
-        for u in ["https://discord.com/channels/@me/123",
-                  "https://ptb.discord.com/channels/1/2",
-                  "https://canary.discord.com/app"] {
-            XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: u)), u)
-        }
-    }
-    /// Log captured DURING the incident (2026-08-06, first in this family to catch the
-    /// live moment): caret constant at 24 across 2 edits + AX ground truth disagreeing
-    /// twice (axMatch=no) + field length 14 chars ahead of tracking (axLen=38) — the
-    /// same unreliable-rich-text-editor signature Discord's fix targets, plus the
-    /// Electron desktop app already shipping tap for (presumably) the same composer.
-    func testZaloWebForcesTap() {
-        XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me/")))
-        XCTAssertTrue(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me/conversation/123")))
-    }
-    func testOtherHostsDoNot() {
-        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://discord.com.evil.com/x")))
-        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://notdiscord.com/channels")))
-        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://zalo.me/")))          // apex, not chat.
-        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(URL(string: "https://chat.zalo.me.evil.com/")))
-        XCTAssertFalse(FocusedFieldDetector.tapFieldURL(nil))
-    }
-    func testInvalidateResetsTapVerdict() {
-        FocusedFieldDetector._testSetTapField(true)
-        XCTAssertTrue(FocusedFieldDetector.wantsTapField)
-        FocusedFieldDetector.invalidate()
-        XCTAssertFalse(FocusedFieldDetector.wantsTapField)
+    /// POLICY 2026-08-06: the per-host tap allowlist (discord.com, chat.zalo.me —
+    /// `tapFieldURL`) is GONE. Page content routes to tap in gateRouting for EVERY
+    /// site (see RoutingDecisionTests.testPageContentRoutesToTap); the detector only
+    /// carries the marked-class exception (Google Docs) and the diagnostic host.
+    /// This test pins the deletion so a future per-host allowlist has to argue with
+    /// this comment: three sites broke the same contract-free channel in one week,
+    /// and the Discord case proved the failure UNDETECTABLE from self-reports.
+    func testNoPerHostTapAllowlistRemains() {
+        // Compile-time pin: wantsTapField / tapFieldURL no longer exist — if someone
+        // reintroduces them, the mirror properties here start shadowing and this
+        // becomes a merge-conflict-style prompt to reread the policy.
+        XCTAssertFalse(FocusedFieldDetector.wantsMarkedField && false)
     }
 
     // debugLastHost (2026-08-06): diagnostic-only, never consulted by routing — a
