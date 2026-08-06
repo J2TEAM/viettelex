@@ -543,7 +543,13 @@ final class TelexInputController: IMKInputController {
                 manualInPlace: AppState.shared.manualMode(id) == .inPlace,
                 caret: (tracking && sel.location != NSNotFound) ? sel.location : nil,
                 trusted: Accessibility.isTrusted)
-            if edgeTapWord { logDecision("edge-tap word start (offset 0, manual in-place pin)") }
+            // Diagnostic: Discord/Slate reports a NONZERO caret in an EMPTY message
+            // box (field 06/08: "cos" still → "coó" with the pin; probe start=2 ⇒
+            // word anchored at 1). Pin the actual value per app before widening
+            // the eligibility predicate. Pinned-app word starts only, counts only.
+            if AppState.shared.manualMode(id) == .inPlace {
+                logDecision("word-start pin-inPlace caret=\(sel.location == NSNotFound ? -1 : sel.location) selLen=\(sel.length) edge=\(edgeTapWord)")
+            }
         }
 
         // RE-EDIT (experimental, opt-in): a tone/mark key on an EMPTY engine right after a
@@ -1211,8 +1217,17 @@ final class TelexInputController: IMKInputController {
     /// offset-0; the pin is the user's escape hatch on web editors where offset-0
     /// replacementRange gets APPENDED — "cos" → "coó" at message start). Untrusted
     /// can't post synthetic keys, so the word falls back to plain in-place.
+    ///
+    /// caret <= 1, not == 0: an EMPTY Slate box (Discord) reports caret=1 — the
+    /// empty block holds a phantom placeholder the caret sits "after", removed
+    /// once text lands (measured 06/08: empty box word-start caret=1 twice, but
+    /// the word after "abc " starts at 4, not 5 ⇒ the 1 was a lie and text really
+    /// occupies 0…). A GENUINE offset-1 word start (one leading char, no space) is
+    /// rare, and the synthetic channel is position-independent — correct there
+    /// too, at worst a flicker.
     static func edgeTapEligible(manualInPlace: Bool, caret: Int?, trusted: Bool) -> Bool {
-        manualInPlace && trusted && caret == 0
+        guard let caret else { return false }
+        return manualInPlace && trusted && caret <= 1
     }
 
     private func boundary(_ client: IMKTextInput, suppressAutoRestore: Bool = false,

@@ -13,6 +13,14 @@ final class EdgeTapTests: XCTestCase {
         XCTAssertTrue(TelexInputController.edgeTapEligible(manualInPlace: true, caret: 0, trusted: true))
     }
 
+    /// Ô Slate TRỐNG (Discord) báo caret=1 — phantom placeholder của block rỗng
+    /// (đo 06/08: ô trống 2 lần caret=1, nhưng từ sau "abc " neo ở 4 chứ không
+    /// phải 5 ⇒ số 1 là giả, text thật nằm từ 0). Predicate phải nhận caret=1,
+    /// nếu không edge-tap câm ngay trên chính app nó được sinh ra để cứu.
+    func testEmptySlateFieldPhantomOffsetOneIsEdge() {
+        XCTAssertTrue(TelexInputController.edgeTapEligible(manualInPlace: true, caret: 1, trusted: true))
+    }
+
     func testMidFieldWordStaysInPlace() {
         // Từ thứ hai trở đi (caret > 0) giữ nguyên in-place — đúng scope: user
         // xác nhận giữa dòng ổn, và synthetic hóa toàn bộ sẽ thành tap mode luôn.
