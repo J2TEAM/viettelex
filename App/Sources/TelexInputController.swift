@@ -436,6 +436,7 @@ final class TelexInputController: IMKInputController {
             boundaryCommitInFlight = true
             let rewrote = boundary(client)
             boundaryCommitInFlight = false
+            logDecision("boundary-key code=\(event.keyCode) rewrote=\(rewrote)")
             // When the commit REWROTE the word (gõ tắt "ko"→"không", auto-restore
             // "thooiiii"), web-view editors (WhatsApp) apply that insertText
             // asynchronously — an immediately-delivered Return fires "send" on the

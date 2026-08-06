@@ -1309,22 +1309,51 @@ enum SyntheticKeyboard {
         postVirtual(key)
     }
 
-    /// Re-post a COPY of the user's own boundary keyDown (Return/Tab/Esc) so it
-    /// lands AFTER a synthesized rewrite. Unlike postKey/postVirtual this keeps
-    /// the ORIGINAL event's HID source state: Electron editors (Discord/Slate)
-    /// treat a private-source synthetic Return as "insert newline" instead of
-    /// firing their Enter-to-send handler, but an event that is byte-identical
-    /// to the hardware one triggers the real action. The copy carries no magic
-    /// and no in-flight count on purpose — when it re-enters our tap it must be
-    /// handled as a REAL key (by then the engine is empty and the edit burst has
-    /// drained, so it passes straight through; ordering is by timestamp).
-    /// Only the keyDown is copied: the user's physical keyUp was never
-    /// intercepted and reaches the app on its own.
+    /// Re-post the user's boundary key (Return/Tab/Esc) as a FRESH event so it
+    /// lands AFTER a synthesized rewrite. History of this function:
+    /// - postVirtual (private source) was rejected: Electron editors (Discord/
+    ///   Slate) treat a private-source Return as "insert newline" instead of
+    ///   firing Enter-to-send.
+    /// - `event.copy()` of the real HID event was the replacement — but macOS 26
+    ///   silently DROPS a re-posted copy of a hardware key before app delivery
+    ///   (repro 2026-08-06: copy posted → passes our tap → never reaches IMKit;
+    ///   WhatsApp beeped once, message not sent, shortcut "ko"→"không" needed a
+    ///   second Enter).
+    /// So: build a NEW event from the .hidSystemState source (hardware-like for
+    /// Electron, deliverable on macOS 26), same keycode + flags as the original.
+    /// No magic on purpose — when it re-enters IMKit it is handled as a REAL key;
+    /// by then the engine is empty (boundary() just ran) so it passes straight
+    /// through (`rewrote=false`), no loop. The keyUp is posted too so the app
+    /// never sees a keyDown left logically held (the user's physical keyUp
+    /// precedes our down and cannot pair with it).
     static func postBoundaryCopy(of event: CGEvent) {
-        guard Accessibility.isTrusted else { return }
-        guard let down = event.copy() else { return }
-        stamp(down)
-        down.post(tap: .cgSessionEventTap)
+        guard Accessibility.isTrusted else {
+            DebugLog.log("boundary-copy: SKIPPED (untrusted)")
+            return
+        }
+        let key = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        guard let (down, up) = makeBoundaryRepost(key: key, flags: event.flags) else {
+            DebugLog.log("boundary-copy: SKIPPED (create failed)")
+            return
+        }
+        notePostedKeyDown()
+        stamp(down); down.post(tap: .cgSessionEventTap)
+        stamp(up); up.post(tap: .cgSessionEventTap)
+        DebugLog.log("boundary-copy: posted fresh key=\(key)")
+    }
+
+    /// Builds the down/up pair postBoundaryCopy sends. Split out so tests can pin
+    /// the load-bearing properties without posting: .hidSystemState source (NOT the
+    /// private magic source — Electron demotes private-source Return to "newline",
+    /// and magic would make IMKit skip it) and NOT a copy of the hardware event
+    /// (macOS 26 drops re-posted copies before app delivery).
+    static func makeBoundaryRepost(key: CGKeyCode, flags: CGEventFlags) -> (down: CGEvent, up: CGEvent)? {
+        let src = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false) else { return nil }
+        down.flags = flags
+        up.flags = flags
+        return (down, up)
     }
 
     /// Shift+LeftArrow: extend the selection one char left (used by selectionReplace).
