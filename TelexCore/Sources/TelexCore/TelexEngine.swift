@@ -773,6 +773,32 @@ public struct TelexEngine {
         }
     }
 
+    /// True when every letter parsed so far is a bare CONSONANT (no vowel — a
+    /// rendered Đ counts as its consonant base, not a mark exception) and shares
+    /// ONE case with `upper`. This is the shape of a Vietnamese initialism typed
+    /// with dd for Đ ANYWHERE in the string — "VNĐ", "HTĐ", "HĐND" — not just at
+    /// the start ("ĐSQ"/"ĐHQG" already worked: the live-spell-check freeze hadn't
+    /// triggered yet when their doubler ran, since a leading 'd' alone doesn't
+    /// invalidate any prefix). No real English or Vietnamese WORD is ever
+    /// multiple letters with zero vowels — "add"/"odd"/"ladder"/"kidding"/"middle"
+    /// all carry a vowel before their "dd" — so this can never fire on them.
+    private func isAbbreviationPrefix(upper: Bool) -> Bool {
+        guard pCount > 0 else { return false }
+        for k in 0..<pCount {
+            let l = letters[k]
+            if isVowelAscii(l.base) || l.upper != upper { return false }
+        }
+        return true
+    }
+
+    /// Live-spell-check freeze exception (2026-08-06, maintainer-specified feature):
+    /// a 'd' that continues a bare-consonant, single-case prefix keeps folding to
+    /// Đ even after the word has frozen — see `isAbbreviationPrefix`. VNI spells
+    /// Đ with a digit, not by doubling, so it is untouched.
+    private func abbreviationDoublerException(lower: UInt8, upper: Bool) -> Bool {
+        !pVniMode && lower == UInt8(ascii: "d") && isAbbreviationPrefix(upper: upper)
+    }
+
     /// NON-mutating: letter classes go into a small STACK buffer
     /// (`withUnsafeTemporaryAllocation`, ≤33 bytes — no heap), not `basesScratch`,
     /// so the boundary decision is shareable by `peekCommitText` per keystroke.
@@ -792,22 +818,31 @@ public struct TelexEngine {
             }
             if bareConsonantsOnly { return true }
         }
-        // ALL-CAPS abbreviation whose only transform is DD→Đ ("ĐSQ" = Đại Sứ Quán,
-        // "ĐHQG"…): the doubled D was deliberate, restoring to "DDSQ" is strictly
-        // worse (user report 2026-07-21). Conditions: every raw key uppercase,
-        // no tone, no vowel mark — only the đ bar. A literal all-caps DD is still
-        // reachable through the double-key cancel: DDD → DD (so DDDR → DDR).
+        // Single-case abbreviation whose only transform is DD→Đ ("ĐSQ" = Đại Sứ
+        // Quán, "ĐHQG", "VNĐ", "HTĐ", "HĐND"…): the doubled D was deliberate,
+        // restoring to raw is strictly worse (ALL-CAPS: user report 2026-07-21;
+        // generalized to all-lowercase, "vnđ" etc.: maintainer spec 2026-08-06 —
+        // ONE case throughout, never mixed, since a mixed-case word is a real
+        // typing attempt, not an initialism). Conditions: every raw key the SAME
+        // case, no tone, EVERY letter a bare consonant except the đ bar — a
+        // VOWEL anywhere exits the rule (that's a real word attempt, not an
+        // initialism: "address"/"ladder" have a vowel before their "dd" and MUST
+        // still restore to raw; "ddsqa" — consonants then a trailing vowel — is
+        // the same exit, tested explicitly). A literal DD is still reachable
+        // through the double-key cancel: DDD → DD (so DDDR → DDR, "ddd" → "dd").
         if lastEffTone == .none, rawCount >= 2 {
-            var allUpper = true
-            for i in 0..<rawCount where raw[i] < UInt8(ascii: "A") || raw[i] > UInt8(ascii: "Z") {
-                allUpper = false
+            var sameCase = true
+            let firstIsUpper = isUpperAscii(raw[0])
+            for i in 0..<rawCount where isUpperAscii(raw[i]) != firstIsUpper {
+                sameCase = false
                 break
             }
-            if allUpper {
+            if sameCase {
                 var hasBar = false
                 var onlyBar = true
                 for k in 0..<pCount {
                     let l = renderLetters[k]
+                    if isVowelAscii(l.base) { onlyBar = false; break }
                     if l.base == UInt8(ascii: "d"), l.mark == .bar { hasBar = true }
                     else if l.mark != .none { onlyBar = false; break }
                 }
@@ -1209,8 +1244,10 @@ public struct TelexEngine {
         // token stays as typed. The cancel itself is handled by the branches below,
         // which set `pCancelled`; from the next key on this short-circuits.
         // Cancelled diacritic, OR live spell-check froze the word from here on:
-        // emit every remaining key literally (no tone/mark transforms).
-        if pCancelled || at >= disabledAtCount {
+        // emit every remaining key literally (no tone/mark transforms) — UNLESS
+        // this 'd' continues a bare-consonant abbreviation prefix (VNĐ, HTĐ,
+        // HĐND…), where dd→Đ must still fire (see abbreviationDoublerException).
+        if pCancelled || (at >= disabledAtCount && !abbreviationDoublerException(lower: lower, upper: upper)) {
             appendLetter(base: lower, mark: .none, upper: upper)
             rawLetter[at] = pCount - 1
             return
