@@ -1292,6 +1292,27 @@ enum SyntheticKeyboard {
         if !text.isEmpty { postUnicode(text) }
     }
 
+    /// Edge-tap variant of apply (.backspace mode only): returns the number of
+    /// keyDowns actually posted. The IMKit controller needs the EXACT count —
+    /// Electron rebuilds our synthetic events on the way to the IME (magic
+    /// userData stripped, "handle ENTER … magic=false" for our own burst), so
+    /// recognition by stamp is impossible there and the controller instead
+    /// swallows exactly this many laundered echoes (field 06/08: the "ư" echo
+    /// hit the boundary path, reset the engine mid-word, "thuwr" → "thưr").
+    /// Returns (backspace count, insert chunks) — NOT a single number: whether an
+    /// echo re-enters IMKit.handle is APP-DEPENDENT. ⌫ keyDowns always come back;
+    /// unicode-string keyDowns come back in Chromium/Electron but are inserted
+    /// directly by AppKit in native apps (TextEdit trace 07/08: the "ư" echo never
+    /// reached handle and a blind count swallowed the next REAL letter — "thưr"
+    /// with 'r' eaten as echo #2). The controller therefore matches echoes by
+    /// CONTENT: keycode 51 against the backspace budget, event.characters against
+    /// the pending chunk list.
+    static func applyForEdge(backspaces: Int, insert text: String) -> (backspaces: Int, chunks: [String]) {
+        if tripped || !Accessibility.isTrusted { return (0, []) }
+        apply(backspaces: backspaces, insert: text, mode: .backspace)
+        return (max(0, backspaces), text.isEmpty ? [] : unicodeInsertChunks(text))
+    }
+
     /// Does this edit need the U+202F placeholder dance? Only `.emptyReset`, only a real
     /// replace, and only when there IS text to retype: the placeholder exists to stop an
     /// inline suggestion from swallowing the RETYPE, so on a pure deletion it protects

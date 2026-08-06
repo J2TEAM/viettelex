@@ -52,6 +52,16 @@ final class TelexInputController: IMKInputController {
     /// offset-0 in-place is honored, and pinned apps get no verify probes, so
     /// this is the only guard their first word has.
     private var edgeTapWord = false
+    /// Echo budget of the edge word's synthetic bursts. macOS 26 strips the magic
+    /// userData before events reach IMKit (measured: our own burst arrives
+    /// "magic=false" even in TextEdit), so echoes are recognized by CONTENT:
+    /// keycode 51 spends a backspace, characters==chunk spends a chunk. Whether
+    /// a unicode chunk re-enters handle at all is app-dependent (Electron yes,
+    /// native no — AppKit inserts it directly), which is exactly why a blind
+    /// total count is wrong.
+    private var edgeEchoBackspaces = 0
+    private var edgeEchoChunks: [String] = []
+    private var edgeEchoStampNs: UInt64 = 0
 
     // Consecutive failed in-place read-back probes per bundleID. A single failure is
     // usually the app being busy during the probe, not a real incompatibility, so we
@@ -202,7 +212,34 @@ final class TelexInputController: IMKInputController {
                 + "srcPid=\(srcPid) myPid=\(getpid())")
         }
 
-        if synth { return false }
+        if synth {
+            // An edge-burst echo that arrived with its magic INTACT (older macOS)
+            // must still spend its slot, or the budget wedges and eats a real key.
+            if event.keyCode == kDelete, edgeEchoBackspaces > 0 { edgeEchoBackspaces -= 1 }
+            else if let chars = event.characters, chars == edgeEchoChunks.first { edgeEchoChunks.removeFirst() }
+            return false
+        }
+
+        // Echo of an edge-tap burst (see edgeEchoBackspaces/Chunks): pass it to
+        // the app untouched — the engine already holds the post-replace state.
+        // Content match, not count: a real key mid-drain (physical 'r' between
+        // our ⌫ and "ư") matches neither and composes normally. Self-heals like
+        // queueDrained: a lost echo must not linger, so a stale budget (>1s
+        // since the burst) is discarded.
+        if edgeEchoBackspaces > 0 || !edgeEchoChunks.isEmpty {
+            if DispatchTime.now().uptimeNanoseconds &- edgeEchoStampNs > 1_000_000_000 {
+                edgeEchoBackspaces = 0
+                edgeEchoChunks = []
+            } else if event.keyCode == kDelete, edgeEchoBackspaces > 0 {
+                edgeEchoBackspaces -= 1
+                logDecision("edge-echo ⌫ swallowed, bs left=\(edgeEchoBackspaces)")
+                return false
+            } else if let chars = event.characters, chars == edgeEchoChunks.first {
+                edgeEchoChunks.removeFirst()
+                logDecision("edge-echo chunk swallowed, chunks left=\(edgeEchoChunks.count)")
+                return false
+            }
+        }
 
         // A real key reaching handle() proves VietTelex is the selected source —
         // un-latch a stale imeActive=false so tap-mode apps aren't left dormant
@@ -417,7 +454,7 @@ final class TelexInputController: IMKInputController {
                     if engine.isEmpty { tracking = false; edgeTapWord = false }
                     return false
                 case let .replace(bs, insert):
-                    SyntheticKeyboard.apply(backspaces: bs, insert: insert)
+                    noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: bs, insert: insert))
                     onLen = (engine.composed as NSString).length
                     return true
                 default:
@@ -607,7 +644,7 @@ final class TelexInputController: IMKInputController {
             return true
         case let .replace(bs, insert):
             if edgeTapWord {
-                SyntheticKeyboard.apply(backspaces: bs, insert: insert)
+                noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: bs, insert: insert))
                 onLen = (engine.composed as NSString).length
                 return true
             }
@@ -871,6 +908,16 @@ final class TelexInputController: IMKInputController {
         engine.reset()
         tracking = false
         edgeTapWord = false
+        edgeEchoBackspaces = 0
+        edgeEchoChunks = []
+    }
+
+    /// Book an edge burst's echo budget (see edgeEchoBackspaces/Chunks).
+    private func noteEdgeBurst(_ posted: (backspaces: Int, chunks: [String])) {
+        edgeEchoBackspaces += posted.backspaces
+        edgeEchoChunks.append(contentsOf: posted.chunks)
+        edgeEchoStampNs = DispatchTime.now().uptimeNanoseconds
+        logDecision("edge-burst booked: bs=\(edgeEchoBackspaces) chunks=\(edgeEchoChunks.count)")
     }
 
     /// In-place aborted before inserting anything (bogus selectedRange): condemn the
@@ -1252,7 +1299,7 @@ final class TelexInputController: IMKInputController {
            let expansion = AppState.shared.shortcuts[word] ?? AppState.shared.shortcuts[rawWord] {
             engine.reset()
             if marked { client.insertText(expansion, replacementRange: kNoRange) }
-            else if wasEdge { SyntheticKeyboard.apply(backspaces: onScreen, insert: expansion) }
+            else if wasEdge { noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: onScreen, insert: expansion)) }
             else { applyInPlace(bs: onScreen, insert: expansion, client) }
             return true
         }
@@ -1266,7 +1313,7 @@ final class TelexInputController: IMKInputController {
             client.insertText(restored, replacementRange: kNoRange)
             return true
         } else if restored != word {
-            if wasEdge { SyntheticKeyboard.apply(backspaces: onScreen, insert: restored) }
+            if wasEdge { noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: onScreen, insert: restored)) }
             else { applyInPlace(bs: onScreen, insert: restored, client) }
             return true
         }
@@ -1327,6 +1374,19 @@ final class TelexInputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
+        // EDGE-TAP: the app processing our own synthetic ⌫/insert echoes makes
+        // AppKit ask the IME to commit — SILENTLY resetting the engine mid-word
+        // (the "thưr" trace: echoes swallowed clean, then commitComposition, then
+        // 'r' fed an empty engine). Within the echo window this commit is an
+        // artifact of our own burst, not a user action: ignore it. Real session
+        // ends still work — clicks go through the reset notification and focus
+        // changes through deactivateServer/activateServer, both of which drop
+        // the composition themselves.
+        if edgeTapWord,
+           DispatchTime.now().uptimeNanoseconds &- edgeEchoStampNs < 500_000_000 {
+            logDecision("commitComposition ignored (edge echo window)")
+            return
+        }
         if let client = sender as? IMKTextInput {
             // NO shortcut expansion here (tester bug 2026-07-23): some apps
             // (omnibox/Spotlight-style fields) force-commit after every
