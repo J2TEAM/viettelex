@@ -489,6 +489,15 @@ final class TelexInputController: IMKInputController {
                 anchor = sel.location; onLen = 0; tracking = true
                 anchorVerified = false
                 selToClear = sel.length
+                // Diagnostic (counts only, never text): field report 2026-08-06
+                // ("bôi đen rồi gõ … thay vì replace thì viết thêm") has no log
+                // evidence yet of WHERE the fold breaks — this pins whether a
+                // selection was even seen at word-start, so a future capture can
+                // show whether the re-anchor below (fresh caret further right)
+                // shifted `anchor` out from under this `selToClear` extent.
+                if sel.length > 0 {
+                    DebugLog.log("selection at word-start: loc=\(sel.location) len=\(sel.length)")
+                }
             } else {
                 tracking = false; selToClear = 0
             }
@@ -527,6 +536,9 @@ final class TelexInputController: IMKInputController {
             // transforms races under fast typing and corrupts words ("được"->"đựoc").
             // Every edit must go through the one ordered insertText channel.
             if tracking {
+                if selToClear > 0 {
+                    DebugLog.log("selection fold (letter) \(id ?? "?"): range=(\(anchor + onLen),\(selToClear))")
+                }
                 client.insertText(String(ch), replacementRange: NSRange(location: anchor + onLen, length: selToClear))
                 selToClear = 0
                 onLen += 1
@@ -712,13 +724,22 @@ final class TelexInputController: IMKInputController {
                 let fresh = client.selectedRange()
                 let expected = anchor + onLen
                 if fresh.location != NSNotFound, fresh.location > expected {
-                    DebugLog.log("re-anchor \(id ?? "?"): stale word-start caret, +\(fresh.location - expected)")
+                    // selToClear (if any) was captured against the OLD anchor — a
+                    // shift here moves `start` below but NOT the selection's own
+                    // extent, so a pending selection at this exact moment is the
+                    // scenario the 2026-08-06 "bôi đen … viết thêm thay vì replace"
+                    // report needs to distinguish (see the word-start log).
+                    DebugLog.log("re-anchor \(id ?? "?"): stale word-start caret, +\(fresh.location - expected)"
+                        + (selToClear > 0 ? " (pending selToClear=\(selToClear))" : ""))
                     anchor += fresh.location - expected
                 }
             }
             start = anchor + onLen - bs
             clear = selToClear
             selToClear = 0
+            if clear > 0 {
+                DebugLog.log("selection fold \(id ?? "?"): range=(\(start),\(bs + clear)) bs=\(bs) clear=\(clear)")
+            }
         } else {
             let sel = client.selectedRange()
             guard sel.location != NSNotFound, sel.location >= bs else {
