@@ -1023,6 +1023,13 @@ final class TelexInputController: IMKInputController {
         }
 
         // Async ground-truth read. Fired for shadow probes too (log-only there).
+        // MANUAL In-place pin: skip every AX follow-up. The verdict can't be used
+        // (a pin is never demoted), and the read itself is the suspect in the
+        // Discord "mất focus giữa lúc gõ" report 07/08 — touching the AX tree of
+        // an Electron app nudges Chromium's accessibility mode, which can blur/
+        // re-render the composer. IMK self-report probes (XPC) stay for the
+        // debug-log picture; only the AX churn goes.
+        if AppState.shared.manualMode(AppState.shared.currentBundleID) == .inPlace { return }
         Self.axProbeQueue.async { [weak self] in
             let axRegion = AXTextEdit.readString(at: start, length: len)
             guard axRegion != nil else { return }   // AX unavailable → preliminary stands
@@ -1197,6 +1204,14 @@ final class TelexInputController: IMKInputController {
             imk2 = sub.string
         }
         let sel = client.selectedRange()
+        // Pin In-place: no AX touches (see the probeInPlace gate) — log the IMK
+        // half only, from here, without the probe-queue AX round trip.
+        if AppState.shared.manualMode(AppState.shared.currentBundleID) == .inPlace {
+            DebugLog.log("reprobe \(p.id ?? "?"): t0=\(p.verdict) start=\(p.start) bs=\(p.bs) len=\(p.len) "
+                + "ax=skipped(pin) imkMatch2=\(imk2.map { $0 == p.inserted ? "yes" : "no" } ?? "nil") "
+                + "caret2=\(sel.location == NSNotFound ? "none" : String(sel.location))")
+            return
+        }
         Self.axProbeQueue.async {
             let ax2 = AXTextEdit.readString(at: p.start, length: p.len)
             let axLen = AXTextEdit.readLength()
