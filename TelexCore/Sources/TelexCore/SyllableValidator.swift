@@ -112,6 +112,16 @@ public enum SyllableValidator {
     /// AND rime exact-accepted AND the rime's tone mask allows `tone`.
     public static func isValidSyllable(classes: [UInt8], count n: Int, tone: Tone) -> Bool {
         if n == 0 { return false }
+        // TEENCODE "òy" (maintainer 07/08/2026): standalone open rime "oy" is a
+        // valid syllable — chat spelling for "òi/rồi" ("òy", "óy"…). All six
+        // tones (open rime). ZERO ONSET ONLY, deliberately NOT in the rime
+        // table: blessing "b/t/j + oy" would let English "boys"/"toys" compose
+        // to "bóy"/"tóy" the moment a trailing s lands. Widening this (e.g.
+        // teencode "gòy") needs that collision review first.
+        if n == 2, classes[0] == UInt8(ascii: "o") - UInt8(ascii: "a"),
+           classes[1] == UInt8(ascii: "y") - UInt8(ascii: "a") {
+            return true
+        }
         let q = UInt8(ascii: "q") - UInt8(ascii: "a")
         let u = UInt8(ascii: "u") - UInt8(ascii: "a")
         let g = UInt8(ascii: "g") - UInt8(ascii: "a")
@@ -212,6 +222,13 @@ public enum SyllableValidator {
             return true                                 // any live trie node = valid prefix
         }
 
+        // TEENCODE "òy": the standalone "oy" intermediate must stay composable
+        // while typing (no rime starts with "oy", so the trie walk below would
+        // freeze live spell-check at the y). Exact pair, zero onset, unmarked o —
+        // longer tails ("oyt…") fall through and freeze as before.
+        if n == 2, bases[0] == UInt8(ascii: "o"), bases[1] == UInt8(ascii: "y") {
+            return true
+        }
         // Nucleus-start candidates. Default = right after the leading consonants; the
         // qu-/gi- glides give an alternative where the glide vowel joins the onset.
         // Every interpretation is tried and ANY plausible one accepts (permissive).

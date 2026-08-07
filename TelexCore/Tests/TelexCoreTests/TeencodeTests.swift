@@ -218,3 +218,46 @@ final class TeencodeTests: XCTestCase {
         XCTAssertEqual(commitVNI("va6nggggg"), "vânggggg")
     }
 }
+
+// TEENCODE "òy" (maintainer 07/08/2026): vần mở "oy" ĐỨNG MỘT MÌNH là âm tiết
+// hợp lệ — chat spelling của "òi/rồi" ("òy", "óy"…). Zero onset CÓ CHỦ ĐÍCH:
+// bless "b/t/j + oy" là "boys"/"toys" tiếng Anh thành "bóy"/"tóy" ngay khi s
+// đáp xuống. Muốn nới (vd "gòy") phải review collision tiếng Anh trước.
+final class TeencodeOyTests: XCTestCase {
+
+    private func run(_ keys: String) -> String {
+        var e = TelexEngine()
+        e.freeMarking = true
+        e.liveSpellCheck = true
+        for ch in keys { _ = e.feed(ch) }
+        return e.commitText(autoRestore: true)
+    }
+
+    func testStandaloneOyTakesTonesLikeOi() {
+        XCTAssertEqual(run("oyf"), "òy")
+        XCTAssertEqual(run("oys"), "óy")
+        XCTAssertEqual(run("oyj"), "ọy")
+        XCTAssertEqual(run("oyr"), "ỏy")
+    }
+
+    func testUppercaseVariant() {
+        XCTAssertEqual(run("Oyf"), "Òy")
+    }
+
+    func testEnglishOnsetWordsAreUntouched() {
+        // Onset chặn vần "oy": các từ tiếng Anh phổ biến không được biến hình.
+        XCTAssertEqual(run("boys"), "boys")
+        XCTAssertEqual(run("toys"), "toys")
+        XCTAssertEqual(run("joys"), "joys")
+        XCTAssertEqual(run("oyster"), "oyster")
+    }
+
+    func testValidatorScopeIsZeroOnsetOnly() {
+        XCTAssertTrue(SyllableValidator.isValidSyllable("òy"))
+        XCTAssertTrue(SyllableValidator.isValidSyllable("oy"))
+        XCTAssertFalse(SyllableValidator.isValidSyllable("bòy"))
+        XCTAssertFalse(SyllableValidator.isValidSyllable("gòy"), "nới gòy cần review collision trước")
+        XCTAssertTrue(SyllableValidator.isValidPrefix("oy"))
+        XCTAssertFalse(SyllableValidator.isValidPrefix("oyt"), "đuôi dài hơn vẫn freeze như cũ")
+    }
+}

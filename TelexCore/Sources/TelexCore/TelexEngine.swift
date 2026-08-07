@@ -1833,6 +1833,11 @@ private extension SyllableValidator {
     static func isValidSyllable(classes: UnsafeMutableBufferPointer<UInt8>,
                                 count n: Int, tone: Tone) -> Bool {
         if n == 0 { return false }
+        // TEENCODE "òy" — lockstep with the Array twin (zero-onset "oy" only).
+        if n == 2, classes[0] == UInt8(ascii: "o") - UInt8(ascii: "a"),
+           classes[1] == UInt8(ascii: "y") - UInt8(ascii: "a") {
+            return true
+        }
         let q = UInt8(ascii: "q") - UInt8(ascii: "a")
         let u = UInt8(ascii: "u") - UInt8(ascii: "a")
         let g = UInt8(ascii: "g") - UInt8(ascii: "a")
