@@ -25,8 +25,10 @@ public enum ClientPolicy {
         "com.nulana.remotixmac",
         "com.carriez.rustdesk",
         "com.philandro.anydesk",
-        // iPhone Mirroring — keystrokes forward to the phone, synthetic Unicode is meaningless there
-        "com.apple.ScreenContinuity",
+        // NOT here: com.apple.ScreenContinuity (iPhone Mirroring). It was assumed
+        // remote-desktop-class (raw scancodes to the phone) until maintainer
+        // field-test 07/08/2026 showed it bridges Continuity to a REAL text field
+        // — typing in-place works cleanly. See typing-modes.yml for the inPlace rule.
     ]
 
     /// True when the built-in list marks this client as force-passthrough.

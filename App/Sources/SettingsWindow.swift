@@ -449,7 +449,20 @@ struct SettingsView: View {
     @EnvironmentObject var model: SettingsModel
 
     // Icon sidebar (macOS 15+) — tab cổ điển chỉ hiện Text nên Label vẫn ổn cho cả hai.
-    private var tabs: some View {
+    // .focusEffectDisabled() (macOS 14+, no-op below that): tắt viền focus-ring xanh
+    // quanh tab đang chọn — field report 07/08/2026, ảnh cho thấy viền tách rời khỏi
+    // nền pill, khác hẳn segmented control chuẩn của System Settings (chỉ có nền đặc,
+    // không viền riêng). CHƯA verify trực quan được (không có cách screenshot cửa sổ
+    // Settings từ ngoài phiên IME đang chạy) — nhờ xác nhận lại sau khi cài bản mới.
+    @ViewBuilder private var tabs: some View {
+        if #available(macOS 14.0, *) {
+            tabView.focusEffectDisabled()
+        } else {
+            tabView
+        }
+    }
+
+    private var tabView: some View {
         TabView(selection: $model.selectedTab) {
             GeneralTab()
                 .tabItem { Label(model.loc("Settings"), systemImage: "slider.horizontal.3") }
@@ -522,6 +535,11 @@ struct GeneralTab: View {
                     TelexInputController.openKeyboardInputSources()
                 }
                 Text(model.loc("Opens Keyboard settings — set automatic input-source switching per app / document there."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Button(model.loc("Input source hotkey…")) {
+                    TelexInputController.openInputSourceHotkeySettings()
+                }
+                Text(model.loc("Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Spelling")) {

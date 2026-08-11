@@ -1547,6 +1547,149 @@ final class TelexInputController: IMKInputController {
         }
     }
 
+    /// Shared by the Settings window: open System Settings → Keyboard → Keyboard
+    /// Shortcuts… → Input Sources — where the actual switch-input-source HOTKEY
+    /// lives (distinct from openKeyboardInputSources() above, which reaches the
+    /// Edit… sheet that adds/removes sources). Field request 2026-08-07.
+    static func openInputSourceHotkeySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
+        // No URL reaches past the Keyboard pane here either. Two AX presses:
+        // "Keyboard Shortcuts…" opens a sheet with a category sidebar (Dock,
+        // Display, Mission Control, Window management, Keyboard, INPUT SOURCES,
+        // Screenshots…); selecting that row shows the actual hotkey. Both anchors
+        // are button/row DESCRIPTIONS, so they follow the system language — unlike
+        // the "ViệtTelex"-name anchor above, there's no app-specific text to hang
+        // onto here, so this only matches English or Vietnamese (the two this app
+        // ships) and falls back to a how-to popup on any other system language,
+        // exactly like the existing Edit… flow does when its tree doesn't match.
+        // Verified live via UI-tree dump on macOS 26 (English) 2026-08-07.
+        guard Accessibility.isTrusted else { showInputSourceHotkeyHowTo(); return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var opened = false
+            for attempt in 0..<6 {
+                Thread.sleep(forTimeInterval: attempt == 0 ? 1.2 : 0.5)
+                if pressKeyboardShortcutsButton() { opened = true; break }
+            }
+            guard opened else {
+                DispatchQueue.main.async { showInputSourceHotkeyHowTo() }
+                return
+            }
+            for attempt in 0..<6 {
+                Thread.sleep(forTimeInterval: attempt == 0 ? 0.6 : 0.4)
+                if selectInputSourcesShortcutsRow() { return }
+            }
+            DispatchQueue.main.async { showInputSourceHotkeyHowTo() }
+        }
+    }
+
+    private static func showInputSourceHotkeyHowTo() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = VTLocalized("Input source hotkey howto title")
+        alert.informativeText = VTLocalized("Input source hotkey howto body")
+        alert.addButton(withTitle: VTLocalized("OK"))
+        alert.runModal()
+    }
+
+    /// Presses the "Keyboard Shortcuts…" button in the Keyboard pane's main
+    /// window (NOT the Edit… button — a different button in the same pane).
+    private static func pressKeyboardShortcutsButton() -> Bool {
+        guard let settings = NSRunningApplication
+                .runningApplications(withBundleIdentifier: "com.apple.systempreferences").first
+        else { return false }
+        let app = AXUIElementCreateApplication(settings.processIdentifier)
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &winRef) == .success,
+              let window = winRef else { return false }
+        // Sheet already up from an earlier attempt → nothing left to press here.
+        var sheetsRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window as! AXUIElement, "AXSheets" as CFString, &sheetsRef) == .success,
+           let sheets = sheetsRef as? [AXUIElement], !sheets.isEmpty {
+            return true
+        }
+        guard let button = findButtonByDescription(window as! AXUIElement,
+                                                    matching: ["Keyboard Shortcuts", "Phím tắt bàn phím"],
+                                                    depth: 0)
+        else { return false }
+        return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    }
+
+    /// Selects the "Input Sources shortcuts" row in the Keyboard Shortcuts sheet's
+    /// category sidebar (AXRow > … > description, not AXStaticText — a different
+    /// shape than the Edit… anchor above).
+    private static func selectInputSourcesShortcutsRow() -> Bool {
+        guard let settings = NSRunningApplication
+                .runningApplications(withBundleIdentifier: "com.apple.systempreferences").first
+        else { return false }
+        let app = AXUIElementCreateApplication(settings.processIdentifier)
+        var winsRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &winsRef)
+        guard let windows = winsRef as? [AXUIElement] else { return false }
+        for window in windows {
+            guard let row = findRowByDescendantDescription(window,
+                                                            matching: ["Input Sources shortcuts", "Nguồn nhập"],
+                                                            depth: 0)
+            else { continue }
+            return AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success
+        }
+        return false
+    }
+
+    /// First AXButton (reading order) whose description matches one of `needles`.
+    private static func findButtonByDescription(_ el: AXUIElement, matching needles: [String], depth: Int) -> AXUIElement? {
+        if depth > 15 { return nil }
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+        if roleRef as? String == kAXButtonRole as String {
+            var descRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXDescriptionAttribute as CFString, &descRef)
+            if let d = descRef as? String, needles.contains(where: { d.contains($0) }) { return el }
+        }
+        var kidsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &kidsRef) == .success,
+              let kids = kidsRef as? [AXUIElement] else { return nil }
+        for k in kids {
+            if let found = findButtonByDescription(k, matching: needles, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    /// First AXRow (reading order) with a descendant whose description matches one
+    /// of `needles`. Used for sidebar category lists where the label lives one or
+    /// two levels below the row, not on the row itself.
+    private static func findRowByDescendantDescription(_ el: AXUIElement, matching needles: [String], depth: Int) -> AXUIElement? {
+        if depth > 20 { return nil }
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+        if roleRef as? String == "AXRow", descriptionExists(in: el, matching: needles, depth: 0) {
+            return el
+        }
+        var kidsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &kidsRef) == .success,
+              let kids = kidsRef as? [AXUIElement] else { return nil }
+        for k in kids {
+            if let found = findRowByDescendantDescription(k, matching: needles, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    /// True if any descendant (any role) of `el` has a description matching one of
+    /// `needles` — used to test an AXRow's subtree without caring which role/depth
+    /// carries the label (macOS 26's sidebar puts it on an AXUnknown two levels down).
+    private static func descriptionExists(in el: AXUIElement, matching needles: [String], depth: Int) -> Bool {
+        if depth > 5 { return false }
+        var descRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXDescriptionAttribute as CFString, &descRef)
+        if let d = descRef as? String, needles.contains(where: { d.contains($0) }) { return true }
+        var kidsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &kidsRef) == .success,
+              let kids = kidsRef as? [AXUIElement] else { return false }
+        for k in kids where descriptionExists(in: k, matching: needles, depth: depth + 1) { return true }
+        return false
+    }
+
     /// AX couldn't (or isn't allowed to) press Edit… — tell the user where it is.
     private static func showInputSourcesHowTo() {
         NSApp.activate(ignoringOtherApps: true)

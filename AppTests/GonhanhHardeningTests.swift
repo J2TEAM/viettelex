@@ -11,10 +11,19 @@ final class GonhanhHardeningTests: XCTestCase {
     }
 
     func testRemoteDesktopPassthroughRouting() {
-        for id in ["com.carriez.rustdesk", "com.philandro.anydesk", "com.apple.ScreenContinuity"] {
+        for id in ["com.carriez.rustdesk", "com.philandro.anydesk"] {
             XCTAssertEqual(AppState.shared.autoResolvedMode(id), .passthrough, id)
             XCTAssertTrue(AppState.builtInPassthroughApps.contains(id), "\(id) missing from plist")
         }
+    }
+
+    /// iPhone Mirroring reuses the OLD Screen Sharing bundle id — it used to sit in
+    /// the remote-desktop passthrough bucket above, until maintainer field-test
+    /// 07/08/2026 confirmed it bridges Continuity to a REAL text field on the phone
+    /// (not raw scancodes for a guest OS), so it belongs in inPlace instead.
+    func testIPhoneMirroringIsInPlaceNotPassthrough() {
+        XCTAssertEqual(AppState.shared.autoResolvedMode("com.apple.ScreenContinuity"), .inPlace)
+        XCTAssertFalse(AppState.builtInPassthroughApps.contains("com.apple.ScreenContinuity"))
     }
 
     func testBundledPlistCarriesTheNewRules() {
@@ -26,7 +35,7 @@ final class GonhanhHardeningTests: XCTestCase {
         else { return XCTFail("bundled typing-modes.yml unreadable") }
         XCTAssertEqual(dict["com.carriez.rustdesk"], "passthrough")
         XCTAssertEqual(dict["com.philandro.anydesk"], "passthrough")
-        XCTAssertEqual(dict["com.apple.ScreenContinuity"], "passthrough")
+        XCTAssertEqual(dict["com.apple.ScreenContinuity"], "inPlace")
     }
 
     // Watchdog/lifecycle safety: with Accessibility revoked, ensureRunning must

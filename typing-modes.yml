@@ -54,6 +54,11 @@ com.figma.Desktop: tap
 com.vng.zalo: tap
 # Đã kiểm chứng gõ trực tiếp tốt
 com.apple.Notes: inPlace
+# iPhone Mirroring — CÙNG bundle id với Screen Sharing cũ (com.apple.ScreenContinuity)
+# nên từng bị xếp nhầm vào nhóm remote-desktop passthrough; khác VNC/RDP/VM, nó bắc
+# cầu Continuity tới ô nhập THẬT trên iPhone (không phải scancode thô cho guest OS) —
+# maintainer field-test 07/08/2026: gõ trực tiếp mượt.
+com.apple.ScreenContinuity: inPlace
 # Batch 06/08/2026 — maintainer field-verified (learned in-place OK trên máy thật)
 com.apple.TextEdit: inPlace
 com.apple.Preview: inPlace
@@ -132,4 +137,3 @@ com.realvnc.vncviewer: passthrough
 com.nulana.remotixmac: passthrough
 com.carriez.rustdesk: passthrough
 com.philandro.anydesk: passthrough
-com.apple.ScreenContinuity: passthrough

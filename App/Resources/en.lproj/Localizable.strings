@@ -35,6 +35,10 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 /* System Settings → Input Sources how-to (AX press failed or not allowed) */
 "Input sources howto title" = "One more step in System Settings";
 "Input sources howto body" = "In the Keyboard pane that just opened, find “Input Sources” under “Text Input” and press the “Edit…” button next to it.";
+"Input source hotkey…" = "Input source hotkey…";
+"Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives." = "Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives.";
+"Input source hotkey howto title" = "One more step in System Settings";
+"Input source hotkey howto body" = "In the Keyboard pane that just opened, press “Keyboard Shortcuts…”, then select “Input Sources” in the sidebar of the sheet that appears.";
 "OK" = "OK";
 "Learn Telex typing" = "Learn Telex typing";
 "How to report a bug" = "How to report a bug";

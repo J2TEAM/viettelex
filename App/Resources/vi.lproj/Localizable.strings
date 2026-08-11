@@ -185,6 +185,10 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 /* System Settings → Input Sources how-to (AX press failed or not allowed) */
 "Input sources howto title" = "Còn một bước nữa trong Cài đặt hệ thống";
 "Input sources howto body" = "Trong bảng Bàn phím (Keyboard) vừa mở, tìm mục “Input Sources” (Nguồn nhập) dưới phần “Text Input” rồi bấm nút “Edit…” (Sửa…) bên cạnh.";
+"Input source hotkey…" = "Cài đặt hotkey…";
+"Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives." = "Mở Phím tắt bàn phím → Nguồn nhập — nơi có phím tắt chuyển đổi giữa ViệtTelex và các nguồn nhập khác.";
+"Input source hotkey howto title" = "Còn một bước nữa trong Cài đặt hệ thống";
+"Input source hotkey howto body" = "Trong bảng Bàn phím (Keyboard) vừa mở, bấm “Keyboard Shortcuts…” (Phím tắt bàn phím…), rồi chọn “Input Sources” (Nguồn nhập) trong danh sách bên trái.";
 "OK" = "OK";
 "Learn Telex typing" = "Học gõ Telex";
 "How to report a bug" = "Hướng dẫn báo lỗi";

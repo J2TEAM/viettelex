@@ -211,9 +211,16 @@ final class EnglishCollisionTests: XCTestCase {
     // MARK: - Remote-desktop passthrough ids (item 3)
 
     func testNewPassthroughBundleIDs() {
-        for id in ["com.carriez.rustdesk", "com.philandro.anydesk", "com.apple.ScreenContinuity"] {
+        for id in ["com.carriez.rustdesk", "com.philandro.anydesk"] {
             XCTAssertTrue(ClientPolicy.isRemoteDesktop(id), "\(id) must be passthrough")
         }
         XCTAssertFalse(ClientPolicy.isRemoteDesktop("com.apple.Terminal"))
+    }
+
+    /// Corrected 07/08/2026 (maintainer field-test): iPhone Mirroring reuses the old
+    /// Screen Sharing bundle id but bridges Continuity to a REAL text field on the
+    /// phone, not raw scancodes — it must NOT be in the remote-desktop force list.
+    func testIPhoneMirroringIsNotForcedPassthrough() {
+        XCTAssertFalse(ClientPolicy.isRemoteDesktop("com.apple.ScreenContinuity"))
     }
 }
