@@ -39,6 +39,23 @@ final class GonhanhHardeningTests: XCTestCase {
         XCTAssertEqual(dict["com.carriez.rustdesk"], "passthrough")
         XCTAssertEqual(dict["com.philandro.anydesk"], "passthrough")
         XCTAssertEqual(dict["com.apple.ScreenContinuity"], "inPlace")
+        XCTAssertEqual(dict["ru.keepcoder.Telegram"], "tap")
+        XCTAssertEqual(dict["com.facebook.archon.developerID"], "tap")
+    }
+
+    /// Messenger desktop (unofficial Electron wrapper) — field report 2026-08-11:
+    /// fell through the safe-unknown-app default and showed marked text/underline.
+    func testMessengerDesktopIsTapNotUnknown() {
+        XCTAssertEqual(AppState.shared.autoResolvedMode("com.facebook.archon.developerID"), .tap)
+        XCTAssertTrue(AppState.builtInFallbackApps.contains("com.facebook.archon.developerID"))
+    }
+
+    /// Telegram was on the field-verified in-place batch; maintainer report moved it
+    /// to tap (backspace-retype) — same Electron/CEF edge-of-word class as Lark/
+    /// Slack/Discord/VSCode above, not actually clean in-place.
+    func testTelegramIsTapNotInPlace() {
+        XCTAssertEqual(AppState.shared.autoResolvedMode("ru.keepcoder.Telegram"), .tap)
+        XCTAssertTrue(AppState.builtInFallbackApps.contains("ru.keepcoder.Telegram"))
     }
 
     // Watchdog/lifecycle safety: with Accessibility revoked, ensureRunning must

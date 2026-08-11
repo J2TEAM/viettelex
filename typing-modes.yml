@@ -52,6 +52,11 @@ notion.id: tap
 md.obsidian: tap
 com.figma.Desktop: tap
 com.vng.zalo: tap
+ru.keepcoder.Telegram: tap
+# Messenger desktop (unofficial Electron wrapper) — field report 2026-08-11: marked
+# text/underline (app fell through the safe-unknown-app default). Same Electron
+# edge-of-word class as Slack/Discord/Lark above.
+com.facebook.archon.developerID: tap
 # Đã kiểm chứng gõ trực tiếp tốt
 com.apple.Notes: inPlace
 # iPhone Mirroring — CÙNG bundle id với Screen Sharing cũ (com.apple.ScreenContinuity)
@@ -81,7 +86,6 @@ com.apple.iWork.Numbers: inPlace
 com.apple.iWork.Keynote: inPlace
 com.apple.dt.Xcode: inPlace
 com.apple.MobileSMS: inPlace
-ru.keepcoder.Telegram: inPlace
 # Browsers — tự dò theo ô (address bar vs nội dung trang)
 com.apple.Safari: axDetect
 com.apple.SafariTechnologyPreview: axDetect
