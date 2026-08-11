@@ -1417,6 +1417,14 @@ final class TelexInputController: IMKInputController {
                     DebugLog.log("Spotlight re-activated within 5s (gapNs=\(now &- lastSpotlightActivateNs)) → distrust next word's anchor")
                 }
                 lastSpotlightActivateNs = now
+            } else {
+                // Any OTHER client activating is authoritative proof Spotlight no
+                // longer owns the keyboard (macOS wouldn't route activateServer here
+                // otherwise) — clear the visibility cache NOW rather than waiting on
+                // the passive CGWindowList re-scan, whose backoff can leave it stale
+                // for 500ms+ after a long-open Spotlight session (issue: Chrome
+                // omnibox typed right after Esc got its first few keys raw-passed).
+                SpotlightDetector.noteUnfocused()
             }
             // What identifier does this client REPORT? (Catalyst/Electron apps may not
             // report what NSWorkspace says — a mismatch mis-routes every mode lookup.)

@@ -361,6 +361,25 @@ enum SpotlightDetector {
         }
     }
 
+    /// IMKit just activated a DIFFERENT client — authoritative proof the overlay is
+    /// gone (closed, or lost keyboard focus to whatever's behind it): macOS would not
+    /// route activateServer to another client while Spotlight still owned the
+    /// keyboard. Same reasoning as `noteFocused()`, opposite direction. Without this,
+    /// DetectorBackoff's growing TTL (built up while Spotlight sat open and stable)
+    /// can leave `isVisible` reporting stale-true for 500ms+ after close — long
+    /// enough for the tap's overlay-raw gate to keep raw-passthrough-ing the first
+    /// several keystrokes of the NEXT word into whatever app now has focus (field
+    /// report 2026-08-11: typing "được" in Chrome's omnibox right after closing
+    /// Spotlight → "dduwợc", the first four keys landing raw before the stale cache
+    /// finally caught up).
+    static func noteUnfocused() {
+        lock.withLock {
+            cached = false
+            lastCheckNs = DispatchTime.now().uptimeNanoseconds
+            stableRuns = 0
+        }
+    }
+
     #if DEBUG
     static func _testSetVisible(_ value: Bool) {
         lock.withLock {

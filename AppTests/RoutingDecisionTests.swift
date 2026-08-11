@@ -230,6 +230,37 @@ final class SpotlightNoteFocusedTests: XCTestCase {
         XCTAssertTrue(SpotlightDetector._testVisible)
         SpotlightDetector._testSetVisible(false)   // trả trạng thái cho test khác
     }
+
+    // Field report 2026-08-11: typing "được" in Chrome's omnibox right away after
+    // closing Spotlight produced "dduwợc" — the first four keys landed raw because
+    // isVisible kept reporting stale-true (DetectorBackoff's TTL had grown during
+    // Spotlight's long-open, stable session) for 500ms+ after activateServer had
+    // already moved to Chrome. noteUnfocused() must clear the cache immediately,
+    // the same way noteFocused() sets it — activateServer(anyOtherClient) is
+    // equally authoritative proof in the opposite direction.
+    func testNoteUnfocusedClearsVisibleImmediately() {
+        SpotlightDetector._testSetVisible(true)
+        XCTAssertTrue(SpotlightDetector._testVisible)
+        SpotlightDetector.noteUnfocused()
+        XCTAssertFalse(SpotlightDetector._testVisible)
+    }
+
+    /// End-to-end: chains noteUnfocused() into the ACTUAL gate the tap consults per
+    /// keystroke (spotlightOverlayForcesRaw), pinning the fix at its point of use —
+    /// not just at the cache getter. Before the fix, a long-open Spotlight session
+    /// left `visible` stale-true here for 500ms+ after activateServer had already
+    /// moved to Chrome, so the gate kept forcing raw passthrough into the omnibox.
+    func testNoteUnfocusedStopsOverlayFromForcingRawOnTheNextKey() {
+        SpotlightDetector._testSetVisible(true)   // Spotlight was just open
+        XCTAssertTrue(TerminalTapController.spotlightOverlayForcesRaw(
+            visible: SpotlightDetector._testVisible, manualPin: nil),
+            "sanity: while still marked visible, the gate must force raw")
+
+        SpotlightDetector.noteUnfocused()          // activateServer moved to Chrome
+        XCTAssertFalse(TerminalTapController.spotlightOverlayForcesRaw(
+            visible: SpotlightDetector._testVisible, manualPin: nil),
+            "the very next key must be allowed to compose, not forced raw")
+    }
 }
 
 // POLICY 2026-08-06, nửa còn lại: browser (axDetect) KHÔNG có quyền Trợ năng thì
