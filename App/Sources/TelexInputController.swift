@@ -1412,8 +1412,13 @@ final class TelexInputController: IMKInputController {
             if AppState.shared.currentBundleID == AppState.spotlightBundleID {
                 SpotlightDetector.noteFocused()
                 let now = DispatchTime.now().uptimeNanoseconds
-                if Self.spotlightReactivatedTooSoon(now: now, lastActivateNs: lastSpotlightActivateNs) {
-                    distrustNextAnchor = true
+                // ASSIGN (not just set-true): an arm from a rapid cycle the user
+                // never typed after must not survive into a fresh session opened
+                // minutes later — every activation recomputes the verdict, so a
+                // slow reopen clears any stale arm (review find 2026-08-12).
+                distrustNextAnchor = Self.spotlightReactivatedTooSoon(now: now,
+                                                                      lastActivateNs: lastSpotlightActivateNs)
+                if distrustNextAnchor {
                     DebugLog.log("Spotlight re-activated within 5s (gapNs=\(now &- lastSpotlightActivateNs)) → distrust next word's anchor")
                 }
                 lastSpotlightActivateNs = now
