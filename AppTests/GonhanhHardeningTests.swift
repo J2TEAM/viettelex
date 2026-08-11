@@ -7,6 +7,9 @@ final class GonhanhHardeningTests: XCTestCase {
 
     override func tearDown() {
         Accessibility.testTrustOverride = nil
+        // A leaked poll timer would keep calling ensureRunning() every 3s on
+        // RunLoop.main for the rest of the test run, across every other suite.
+        TerminalTapController.shared._testDisarmTrustPoll()
         super.tearDown()
     }
 
@@ -47,5 +50,57 @@ final class GonhanhHardeningTests: XCTestCase {
         controller.ensureRunning()
         controller.ensureRunning()          // idempotent
         XCTAssertFalse(controller.isRunning)
+    }
+
+    // Field report 2026-08-11: a process already running when the user granted
+    // Accessibility never picked up the change — nothing re-attempts start() unless
+    // an app/focus switch or the (occasionally missed) TCC notification fires. Fix:
+    // ensureRunning() must itself arm a retry poll while untrusted, and disarm it the
+    // moment trust returns, so a grant is noticed within one tick with no restart.
+    func testEnsureRunningArmsRetryPollWhileUntrusted() {
+        Accessibility.testTrustOverride = false
+        let controller = TerminalTapController.shared
+        controller.ensureRunning()
+        XCTAssertTrue(controller._testTrustPollIsRunning,
+                      "still untrusted after ensureRunning() — the retry poll must be armed")
+    }
+
+    func testTrustPollDisarmsExplicitly() {
+        Accessibility.testTrustOverride = false
+        let controller = TerminalTapController.shared
+        controller.ensureRunning()
+        XCTAssertTrue(controller._testTrustPollIsRunning)
+        controller._testDisarmTrustPoll()
+        XCTAssertFalse(controller._testTrustPollIsRunning)
+    }
+
+    /// Repeated calls while still untrusted (activateServer fires on every app
+    /// switch) must reuse the SAME poll timer, not leak a fresh one each time —
+    /// a leaked timer would fire ensureRunning() at an ever-increasing rate.
+    func testEnsureRunningDoesNotLeakDuplicatePollTimers() {
+        Accessibility.testTrustOverride = false
+        let controller = TerminalTapController.shared
+        controller.ensureRunning()
+        let firstToken = controller._testTrustPollToken
+        XCTAssertNotNil(firstToken)
+        controller.ensureRunning()
+        controller.ensureRunning()
+        XCTAssertEqual(controller._testTrustPollToken, firstToken,
+                       "second/third ensureRunning() while untrusted must not replace the poll timer")
+    }
+
+    /// A fresh arm after an explicit disarm must actually re-arm (proves the dedup
+    /// guard keys off "is one running right now", not off "has one ever run" — a
+    /// latched flag would leave the poll permanently disabled after any disarm).
+    func testTrustPollCanReArmAfterDisarm() {
+        Accessibility.testTrustOverride = false
+        let controller = TerminalTapController.shared
+        controller.ensureRunning()
+        XCTAssertNotNil(controller._testTrustPollToken)
+        controller._testDisarmTrustPoll()
+        XCTAssertNil(controller._testTrustPollToken)
+
+        controller.ensureRunning()
+        XCTAssertNotNil(controller._testTrustPollToken, "must re-arm, not stay disarmed forever")
     }
 }

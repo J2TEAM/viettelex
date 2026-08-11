@@ -1639,6 +1639,47 @@ final class TerminalTapController {
     /// window in which a wedge can take the whole machine's input down.
     private var watchdog: Timer?
 
+    /// Retry loop for the FIRST grant only — alive ONLY while no tap exists BECAUSE
+    /// Accessibility isn't trusted yet (mirrors watchdog's "only while a tap does"
+    /// shape, at the opposite end of the lifecycle). Without this, nothing re-attempts
+    /// `start()` after the user grants Accessibility mid-session unless an app/focus
+    /// switch calls `ensureRunning()` (activateServer) or the `com.apple.accessibility.
+    /// api` distributed notification fires — field report 2026-08-11: an ALREADY-
+    /// RUNNING process kept composing marked text (underlined, needs Space/Enter)
+    /// minutes after the grant, with the user staying in the same field the whole
+    /// time (no focus switch) — only killing and relaunching the process picked up
+    /// the new permission. Polling here means a grant is noticed within one tick
+    /// (same 3s cadence as the health watchdog) with no cooperation required from
+    /// either of those signals.
+    private var trustPoll: Timer?
+
+    private func startTrustPollIfNeeded() {
+        guard trustPoll == nil else { return }
+        let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+            self?.ensureRunning()
+        }
+        t.tolerance = 1
+        RunLoop.main.add(t, forMode: .common)
+        trustPoll = t
+    }
+
+    #if DEBUG
+    var _testTrustPollIsRunning: Bool { trustPoll != nil }
+    /// Identity of the current poll Timer, or nil if not armed — lets a test prove
+    /// a second arm attempt reused the SAME timer instead of leaking a new one.
+    var _testTrustPollToken: ObjectIdentifier? { trustPoll.map(ObjectIdentifier.init) }
+    // Exercise the poll's start/stop mechanics directly — NOT through ensureRunning()
+    // with testTrustOverride=true, which would reach CGEvent.tapCreate in the test
+    // host (see GonhanhHardeningTests' testEnsureRunningIsSafeWithoutTrust for why
+    // that path is only ever exercised untrusted).
+    func _testDisarmTrustPoll() { stopTrustPoll() }
+    #endif
+
+    private func stopTrustPoll() {
+        trustPoll?.invalidate()
+        trustPoll = nil
+    }
+
     private func startWatchdog() {
         watchdog?.invalidate()
         let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
@@ -1847,7 +1888,8 @@ final class TerminalTapController {
     /// stick, so tear it down and create a fresh one. Called on every activateServer,
     /// so switching input source / focusing a terminal self-heals a dead tap.
     func ensureRunning() {
-        guard Accessibility.isTrusted else { return }
+        guard Accessibility.isTrusted else { startTrustPollIfNeeded(); return }
+        stopTrustPoll()   // trusted now — the health watchdog below takes over once start() runs
         if let tap = stateLock.withLock({ tap }) {
             // A tripped breaker disabled the tap on purpose. Re-enabling + re-arming is
             // safe now: pid-based isSynthetic no longer fails open, so the cascade that
