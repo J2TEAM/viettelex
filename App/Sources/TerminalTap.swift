@@ -941,6 +941,29 @@ enum AXTextEdit {
         return AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
     }
 
+    /// Caret location (0-length selection start) of the system-wide focused element,
+    /// or nil on any failure/timeout — same 50ms budget as every other tap-thread AX
+    /// call. Factored out of `replaceTrailing` for the re-edit-word feature (below),
+    /// which needs the caret WITHOUT immediately writing anything.
+    static func readCaret() -> Int? {
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05)
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID()
+        else { return nil }
+        let element = focused as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rangeVal = rangeRef, CFGetTypeID(rangeVal) == AXValueGetTypeID()
+        else { return nil }
+        var selected = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(rangeVal as! AXValue, .cfRange, &selected), selected.length == 0
+        else { return nil }   // a live selection (not a caret) — re-edit must not touch it
+        return selected.location
+    }
+
     /// Ground-truth read for the in-place probe: the ACTUAL text the focused element
     /// holds at `[start, start+length)`, via the Accessibility tree — a channel
     /// INDEPENDENT of the IMKit read-back (attributedSubstring / selectedRange) that
@@ -2257,6 +2280,15 @@ final class TerminalTapController {
             return nil
         }
 
+        // RE-EDIT (experimental, opt-in): a tone/mark key on an EMPTY engine right
+        // after a word means "add this diacritic to that word" — seed from the text
+        // already on screen so the replace below edits IT instead of starting fresh.
+        if Self.reEditGateOpen(engineIsEmpty: engine.isEmpty, reEditEnabled: AppState.shared.reEditWord,
+                               isDiacriticKey: TelexInputController.isDiacriticOnlyKey(ascii, vni: engine.vniMode),
+                               emitMode: emitMode) {
+            tryReEditWordTap(id: id)
+        }
+
         // Ordering rule: a native letter must never race ahead of a still-queued
         // synthetic edit ("nuwax" showed as "nuẵ" because native 'a' landed before
         // the synthetic ư from 'w'). Historically EVERY key was therefore suppressed
@@ -2313,6 +2345,41 @@ final class TerminalTapController {
             event.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)
         }
         return true
+    }
+
+    // MARK: - Re-edit the word before the caret (tap path)
+
+    /// TAP counterpart of `TelexInputController.tryReEditWord` — same feature ("toan"
+    /// + s → toán without retyping), same safety gates, ported for apps that compose
+    /// via backspace-retype instead of IMKit insertText (field report 2026-08-07:
+    /// worked in TextMate — in-place — but not in Google Chrome page content, which
+    /// the 06/08 axDetect policy moved onto THIS path). Reads via Accessibility
+    /// instead of `IMKTextInput.attributedSubstring`; needs no anchor/onLen bookkeeping
+    /// the way the IMKit version does, because every tap edit already targets the LIVE
+    /// caret (backspace N + retype), never a tracked range.
+    /// Pure gate, factored out for testing: everything about WHETHER to attempt
+    /// re-edit that doesn't need a live Accessibility tree. Same per-field exclusion
+    /// as IMKit's version: only the omnibox/search-bar's inline autocomplete makes
+    /// re-editing unsafe, so this keys off emitMode (per FIELD), not the app —
+    /// page content is exactly where re-edit is wanted, and page content is exactly
+    /// what emits .backspace (.selection/.emptyReset are the per-field browser modes
+    /// this excludes, matching FocusedFieldDetector.wantsSelection on the IMKit side).
+    static func reEditGateOpen(engineIsEmpty: Bool, reEditEnabled: Bool,
+                              isDiacriticKey: Bool, emitMode: TapEmit) -> Bool {
+        engineIsEmpty && reEditEnabled && isDiacriticKey && emitMode == .backspace
+    }
+
+    private func tryReEditWordTap(id: String?) {
+        guard let caret = AXTextEdit.readCaret(), caret > 0 else { return }
+        let window = min(caret, 24)
+        guard let text = AXTextEdit.readString(at: caret - window, length: window) else { return }
+        guard text == text.precomposedStringWithCanonicalMapping else {
+            DebugLog.log("re-edit(tap) \(id ?? "?"): skipped (field text is not precomposed)")
+            return
+        }
+        guard let word = TelexInputController.trailingWord(text) else { return }
+        guard (word as NSString).length <= caret, engine.seed(word) else { return }
+        DebugLog.log("re-edit(tap) \(id ?? "?"): seeded \((word as NSString).length) chars before caret")
     }
 
     /// Emit a shortcut expansion / auto-restore rewrite for the composed word. Returns

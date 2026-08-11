@@ -360,6 +360,39 @@ final class ReEditWordTests: XCTestCase {
     }
 }
 
+// TAP-path port of the same feature (2026-08-07 field report: worked in TextMate —
+// in-place — but not in Google Chrome page content, which the 06/08 axDetect policy
+// moved onto the tap). Only the PURE gate is unit-testable here — the AX read-back
+// itself needs a live focused element, same limitation as the IMKit version above.
+final class ReEditWordTapGateTests: XCTestCase {
+
+    func testOpensOnlyInBackspaceEmitMode() {
+        XCTAssertTrue(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace))
+        // The omnibox/search-bar's inline autocomplete is exactly what re-edit must
+        // avoid — .selection and .emptyReset are the per-field browser modes for it.
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .selection))
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .emptyReset))
+    }
+
+    func testRequiresEmptyEngineEnabledSettingAndDiacriticKey() {
+        let base = (engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: TapEmit.backspace)
+        XCTAssertTrue(TerminalTapController.reEditGateOpen(engineIsEmpty: base.engineIsEmpty,
+                     reEditEnabled: base.reEditEnabled, isDiacriticKey: base.isDiacriticKey, emitMode: base.emitMode))
+        // Mid-word (engine not empty): a plain tone edit, not a re-edit — never seed.
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: false, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace))
+        // Feature off.
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: false, isDiacriticKey: true, emitMode: .backspace))
+        // A plain letter never triggers the read-back, same as the IMKit gate.
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: false, emitMode: .backspace))
+    }
+}
+
 // The ⌫ guard: our tracked composition window may only be rewritten while the app's
 // caret still agrees with it. Tester report 2026-07-27 (Chrome Web Store search box):
 // the first ⌫ ate TWO characters and afterwards nothing typed showed up until a space —
