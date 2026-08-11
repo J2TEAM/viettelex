@@ -70,7 +70,9 @@ quyền lật, còn lại phải tôn trọng cái đang hiện trên màn hình
 Chi tiết trong `shouldRestoreRaw()` (`TelexEngine.swift`), golden test
 `testAdjacentDoubleKeepsWhatTheScreenShows` + `testReachBackToneCancelRestoresWithoutDict`.
 
-Bù lại bằng từ điển — `gen-english` có 2 thay đổi:
+Bù lại bằng từ điển — `gen-english` có 2 thay đổi (nguyên liệu đầu vào là
+[`google-10000-english`](https://github.com/first20hours/google-10000-english),
+danh sách 10.000 từ tiếng Anh xếp theo tần suất):
 - **Monotone**: bảng sinh ra là HỢP với bảng đang ship (luật mới cứu được từ nào thì
   vẫn giữ entry, vì cài đặt không mặc định như tắt bỏ dấu tự do / Simple Telex có thể
   vẫn cần).
