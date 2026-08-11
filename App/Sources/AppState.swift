@@ -598,7 +598,19 @@ final class AppState: @unchecked Sendable {
     func tapRouting(_ bundleID: String?, front: String? = nil) -> TapRouting {
         let wants: TapWants = lock.withLock {
             var w = bundleID.map { _rawWants($0) } ?? TapWants()
-            if let f = front, f != bundleID { w = Self.mergedWants(w, _rawWants(f)) }
+            // The frontmost-app merge is a safety net for a NIL/uncertain client id
+            // (leaking physical keys to a tap-routed terminal — see the tap-defer
+            // comment in TelexInputController.handle). Spotlight's client id is never
+            // uncertain: IMKit reports it faithfully every time (field-verified), so
+            // merging in whatever sits BEHIND the overlay wrongly makes Spotlight
+            // itself defer whenever that app wants tap/selection (e.g. Chrome, a
+            // terminal) — issue #32: Spotlight over Chrome produced zero composition,
+            // the same word over TextMate (in-place, no tap wants) worked fine. The
+            // tap already force-passes Spotlight's own keys raw independently
+            // (spotlightOverlayForcesRaw), so this merge buys Spotlight nothing.
+            if let f = front, f != bundleID, bundleID != Self.spotlightBundleID {
+                w = Self.mergedWants(w, _rawWants(f))
+            }
             return w
         }
         return Self.gateRouting(wants,

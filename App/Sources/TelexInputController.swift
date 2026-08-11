@@ -40,6 +40,28 @@ final class TelexInputController: IMKInputController {
     private var tracking = false  // is anchor/onLen valid for the current word?
     private var selToClear = 0    // selection length to overwrite on the first insert
     private var anchorVerified = false  // one-shot re-anchor done for this word?
+    /// Timestamp of the last activateServer(Spotlight) — set on EVERY Spotlight
+    /// activation, whatever the client was before it. Distinct from
+    /// SpotlightDetector's visibility cache, which answers "is the overlay open
+    /// right now"; this answers "did Spotlight's IMK session just get torn down
+    /// and recreated" (field report 2026-08-11: Esc appears to reset the query
+    /// without closing the overlay, cycling activateServer(iTerm)→
+    /// activateServer(Spotlight) within ~1ms — the fresh session's
+    /// client.selectedRange() then reported a stale huge caret (start=6632 in an
+    /// emptied field), garbling the next word: "được" → "dđuưoựoược").
+    private var lastSpotlightActivateNs: UInt64 = 0
+    /// One-shot: set when the CURRENT activateServer(Spotlight) followed a
+    /// PRIOR one closely enough that the fresh client's selectedRange() cannot be
+    /// trusted as a real caret. Consumed by the very next word-start anchor.
+    private var distrustNextAnchor = false
+
+    /// Pure so the 5s window is pinned by a test without mocking IMKTextInput.
+    /// lastActivateNs == 0 means "never activated before" — never distrust the
+    /// very first Spotlight session of the process's life.
+    static func spotlightReactivatedTooSoon(now: UInt64, lastActivateNs: UInt64,
+                                            thresholdNs: UInt64 = 5_000_000_000) -> Bool {
+        lastActivateNs != 0 && now &- lastActivateNs < thresholdNs
+    }
     /// EDGE-TAP (06/08/2026): the current word is anchored at field offset 0 in an
     /// app the user pinned to In-place, so its edits run on the synthetic-key
     /// channel instead of insertText. Web editors (Discord/Slate) ignore a
@@ -576,7 +598,16 @@ final class TelexInputController: IMKInputController {
         // forcing marked text. Only a failed probe pushes an app to marked text.
         if engine.isEmpty {
             let sel = client.selectedRange()
-            if sel.location != NSNotFound {
+            if distrustNextAnchor {
+                // Spotlight's session just cycled (see lastSpotlightActivateNs) — the
+                // caret it reports for this first key cannot be trusted (measured:
+                // start=6632 in a field that was actually empty). Same safe path as
+                // "no caret at all": skip tracking for this one word rather than
+                // anchor on a number that will garble every insert after it.
+                distrustNextAnchor = false
+                tracking = false; selToClear = 0
+                DebugLog.log("word-start anchor distrusted (post-Spotlight-cycle): reported loc=\(sel.location)")
+            } else if sel.location != NSNotFound {
                 // A non-empty selection (e.g. after ⌘A) must be OVERWRITTEN by the
                 // first key, not inserted-before. Remember its length and fold it
                 // into the first insert's replacementRange below.
@@ -1380,6 +1411,12 @@ final class TelexInputController: IMKInputController {
             // after the first keys have already been mis-composed (2026-07-31).
             if AppState.shared.currentBundleID == AppState.spotlightBundleID {
                 SpotlightDetector.noteFocused()
+                let now = DispatchTime.now().uptimeNanoseconds
+                if Self.spotlightReactivatedTooSoon(now: now, lastActivateNs: lastSpotlightActivateNs) {
+                    distrustNextAnchor = true
+                    DebugLog.log("Spotlight re-activated within 5s (gapNs=\(now &- lastSpotlightActivateNs)) → distrust next word's anchor")
+                }
+                lastSpotlightActivateNs = now
             }
             // What identifier does this client REPORT? (Catalyst/Electron apps may not
             // report what NSWorkspace says — a mismatch mis-routes every mode lookup.)

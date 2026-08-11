@@ -152,6 +152,73 @@ final class SpotlightOverlayGateTests: XCTestCase {
     }
 }
 
+// Issue #32 (field report 2026-08-11): Spotlight opened over a tap/per-field app
+// (Chrome, a terminal) composed NOTHING — raw "dduowcj" stayed on screen. Live trace
+// showed the client id resolved correctly (client=com.apple.Spotlight) but tapRouting
+// still returned tapDefer=true, because it merges in the FRONTMOST app's wants
+// (Chrome: sel=.perField) even though Spotlight's own id is never uncertain. Same word
+// over TextMate (in-place, no tap wants) worked — the merge contributed nothing there.
+final class SpotlightClientIDNeverMergesWithFrontTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Accessibility.testTrustOverride = true   // gateRouting is a no-op untrusted
+    }
+
+    override func tearDown() {
+        Accessibility.testTrustOverride = nil
+        super.tearDown()
+    }
+
+    func testSpotlightOverChromeStillComposesInPlace() {
+        let r = AppState.shared.tapRouting(AppState.spotlightBundleID, front: "com.google.Chrome")
+        XCTAssertFalse(r.tapDefer, "Spotlight's own id must decide routing, not the app behind the overlay")
+    }
+
+    func testSpotlightOverTerminalStillComposesInPlace() {
+        let r = AppState.shared.tapRouting(AppState.spotlightBundleID, front: "com.apple.Terminal")
+        XCTAssertFalse(r.tapDefer)
+    }
+
+    func testNonSpotlightClientsStillMergeWithFront() {
+        // The nil/uncertain-id safety net must survive for everyone else.
+        let r = AppState.shared.tapRouting(nil, front: "com.apple.Terminal")
+        XCTAssertTrue(r.tapDefer, "nil client id must still fall back to the frontmost app's rule")
+    }
+}
+
+// Field report 2026-08-11: Esc in Spotlight resets the query without closing the
+// overlay, cycling activateServer(iTerm)→activateServer(Spotlight) within ~1ms. The
+// freshly re-activated session's client.selectedRange() then reported a stale huge
+// caret (start=6632 in a field that was actually empty), garbling the next word
+// ("được" → "dđuưoựoược"). TelexInputController.spotlightReactivatedTooSoon pins the
+// distrust window so the anchor at that first key falls back to the safe
+// no-tracking path instead of trusting the bogus caret.
+final class SpotlightRapidReactivationTests: XCTestCase {
+    private let oneSecondNs: UInt64 = 1_000_000_000
+
+    func testFirstEverActivationIsNeverDistrusted() {
+        XCTAssertFalse(TelexInputController.spotlightReactivatedTooSoon(now: oneSecondNs, lastActivateNs: 0))
+    }
+
+    func testReactivationWithinWindowIsDistrusted() {
+        let last: UInt64 = 10 * oneSecondNs
+        let now = last + 3 * oneSecondNs   // matches the field report's ~3.27s gap
+        XCTAssertTrue(TelexInputController.spotlightReactivatedTooSoon(now: now, lastActivateNs: last))
+    }
+
+    func testReactivationAfterWindowIsTrusted() {
+        let last: UInt64 = 10 * oneSecondNs
+        let now = last + 6 * oneSecondNs
+        XCTAssertFalse(TelexInputController.spotlightReactivatedTooSoon(now: now, lastActivateNs: last))
+    }
+
+    func testExactlyAtWindowBoundaryIsTrusted() {
+        let last: UInt64 = 10 * oneSecondNs
+        let now = last + 5 * oneSecondNs
+        XCTAssertFalse(TelexInputController.spotlightReactivatedTooSoon(now: now, lastActivateNs: last))
+    }
+}
+
 // noteFocused: activateServer(com.apple.Spotlight) là bằng chứng chắc chắn overlay
 // đang mở — cache phải TRUE ngay lập tức, không đợi CGWindowList scan (burst "pas"
 // 2026-07-31: phím dấu emit vào overlay khi cache còn false).
