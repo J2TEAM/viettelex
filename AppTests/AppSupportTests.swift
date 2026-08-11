@@ -192,6 +192,68 @@ final class AppSupportTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: src.path), "source should be consumed")
     }
 
+    // MARK: SelfUpdater — designated-requirement signature gate (security-scan
+    // finding 2026-08-11, medium): the old gate substring-matched the team ID out
+    // of `codesign -dv` text, which any app signed by the same Apple Developer Team
+    // would satisfy. verifyDesignatedRequirement uses SecStaticCodeCheckValidity
+    // against the FULL requirement (identifier + anchor + cert fields + team OU).
+
+    /// The two ends of the release pipeline (Scripts/make-release.sh's DR guard and
+    /// SelfUpdater's install-time gate) hand-carry the same requirement string
+    /// because it can't be `import`ed across a shell script and a Swift app — this
+    /// pins them byte-identical so the two can't silently drift apart.
+    func testExpectedRequirementStringMatchesReleaseScript() throws {
+        let scriptURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Scripts/make-release.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+        guard let line = script.split(separator: "\n").first(where: { $0.hasPrefix("EXPECTED_DR=") })
+        else { return XCTFail("EXPECTED_DR line not found in make-release.sh") }
+        // EXPECTED_DR='designated => identifier "..." and ...' — strip the
+        // `designated => ` prefix codesign -d -r- prints that make-release.sh
+        // matches against verbatim, and the surrounding single quotes.
+        var value = String(line.dropFirst("EXPECTED_DR=".count))
+        XCTAssertTrue(value.hasPrefix("'") && value.hasSuffix("'"), "unexpected quoting in \(line)")
+        value = String(value.dropFirst().dropLast())
+        XCTAssertTrue(value.hasPrefix("designated => "))
+        value = String(value.dropFirst("designated => ".count))
+        XCTAssertEqual(SelfUpdater.expectedRequirementString, value)
+    }
+
+    /// The requirement must at minimum be a well-formed, parseable Designated
+    /// Requirement string — a typo here would silently make every update fail
+    /// (worse: if malformed in a way SecRequirementCreateWithString still accepts,
+    /// it could accept MORE than intended). Doesn't need code-signing entitlements
+    /// to run: this only exercises the requirement-language parser.
+    func testExpectedRequirementStringParses() {
+        var requirement: SecRequirement?
+        let status = SecRequirementCreateWithString(
+            SelfUpdater.expectedRequirementString as CFString, [], &requirement)
+        XCTAssertEqual(status, errSecSuccess)
+        XCTAssertNotNil(requirement)
+    }
+
+    /// The gate must REJECT an artifact that doesn't satisfy the requirement — the
+    /// exact failure mode the old substring-match gate couldn't produce (any team
+    /// member's signed app passed). The test bundle's own Contents/MacOS/xctest
+    /// binary is signed by Apple, not by us, so it must fail our identifier+OU check.
+    func testVerifyDesignatedRequirementRejectsWrongIdentity() {
+        let xctestBinary = URL(fileURLWithPath: "/usr/bin/xcodebuild")
+        XCTAssertThrowsError(try SelfUpdater.verifyDesignatedRequirement(at: xctestBinary))
+    }
+
+    /// The positive case: a REAL Developer ID-signed VietTelex.app must pass. Skips
+    /// gracefully where none is installed (CI, a fresh checkout) — this only proves
+    /// the gate isn't so strict it rejects the app's OWN legitimate signature.
+    func testVerifyDesignatedRequirementAcceptsOurOwnSignedApp() throws {
+        let installed = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Input Methods/VietTelex.app")
+        guard FileManager.default.fileExists(atPath: installed.path) else {
+            throw XCTSkip("no installed VietTelex.app on this machine")
+        }
+        try SelfUpdater.verifyDesignatedRequirement(at: installed)   // must not throw
+    }
+
     // MARK: Accessibility trust cache
 
     func testTrustOverrideAndCache() {

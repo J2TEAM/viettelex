@@ -8,6 +8,7 @@
 import Foundation
 import AppKit
 import UserNotifications
+import Security
 
 enum UpdateCheck {
     /// Set by the weekly auto-check when a newer STABLE version exists, so the About tab
@@ -212,13 +213,17 @@ enum SelfUpdater {
                     throw NSError(domain: "SelfUpdater", code: 2,
                                   userInfo: [NSLocalizedDescriptionKey: "app missing in zip"])
                 }
-                // Signature gate: Developer ID, OUR team — refuse anything else.
+                // Signature gate: the seal must be intact (--verify --deep --strict),
+                // AND the artifact must match OUR exact designated requirement — not
+                // just "some app signed by our team". Security-scan finding 2026-08-11
+                // (medium): the old gate substring-matched `codesign -dv`'s team-id text,
+                // which lets through ANY app signed by the same Apple Developer Team ID,
+                // not specifically com.viettelex.inputmethod.telex. The requirement string
+                // is the SAME one Scripts/make-release.sh already enforces at release time
+                // (identifier + Apple anchor + Developer ID cert extension + team OU) —
+                // one designated requirement, checked at both ends of the pipeline.
                 try runTool("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
-                let info = try toolOutput("/usr/bin/codesign", ["-dv", "--verbose=2", newApp.path])
-                guard info.contains("TeamIdentifier=84T567KMYD") else {
-                    throw NSError(domain: "SelfUpdater", code: 3,
-                                  userInfo: [NSLocalizedDescriptionKey: "unexpected signing team"])
-                }
+                try verifyDesignatedRequirement(at: newApp)
 
                 let dest = ("~/Library/Input Methods/VietTelex.app" as NSString).expandingTildeInPath
                 // Stop the event tap BEFORE the bundle under us is replaced. Apple's
@@ -285,6 +290,43 @@ enum SelfUpdater {
         }
     }
 
+    /// The exact designated requirement Scripts/make-release.sh's DR guard defines and
+    /// verifies before an artifact is ever uploaded — pins identifier + Apple anchor +
+    /// Developer ID Application cert extension + team OU, all four together. Kept as a
+    /// single source of truth in comments on both ends since it can't be `import`ed
+    /// across a shell script and a Swift app; `testExpectedRequirementStringMatchesReleaseScript`
+    /// asserts the two stay byte-identical.
+    static let expectedRequirementString =
+        "identifier \"com.viettelex.inputmethod.telex\" and anchor apple generic " +
+        "and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ " +
+        "and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ " +
+        "and certificate leaf[subject.OU] = \"84T567KMYD\""
+
+    /// Throws unless `url` satisfies `expectedRequirementString` via
+    /// `SecStaticCodeCheckValidity` — the OS's own designated-requirement evaluator,
+    /// not a text-parse of `codesign -dv` output (fragile across macOS/codesign
+    /// versions, and — the bug this replaces — a plain substring match on the team ID
+    /// alone, which any app from the same Apple Developer Team could satisfy).
+    static func verifyDesignatedRequirement(at url: URL) throws {
+        var staticCode: SecStaticCode?
+        var status = SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode)
+        guard status == errSecSuccess, let code = staticCode else {
+            throw NSError(domain: "SelfUpdater", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "couldn't read code signature (\(status))"])
+        }
+        var requirement: SecRequirement?
+        status = SecRequirementCreateWithString(expectedRequirementString as CFString, [], &requirement)
+        guard status == errSecSuccess, let req = requirement else {
+            throw NSError(domain: "SelfUpdater", code: 5,
+                          userInfo: [NSLocalizedDescriptionKey: "couldn't parse designated requirement (\(status))"])
+        }
+        status = SecStaticCodeCheckValidity(code, SecCSFlags(), req)
+        guard status == errSecSuccess else {
+            throw NSError(domain: "SelfUpdater", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: "unexpected signing identity (\(status))"])
+        }
+    }
+
     @discardableResult
     private static func runTool(_ path: String, _ args: [String]) throws -> Int32 {
         let p = Process()
@@ -299,16 +341,4 @@ enum SelfUpdater {
         return p.terminationStatus
     }
 
-    private static func toolOutput(_ path: String, _ args: [String]) throws -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardError = pipe    // codesign -dv writes to stderr
-        p.standardOutput = pipe
-        try p.run()
-        p.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
-    }
 }

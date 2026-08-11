@@ -9,7 +9,27 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 consoleUser="$(stat -f%Su /dev/console)"
 [ -z "$consoleUser" ] && consoleUser="$USER"
 uid="$(id -u "$consoleUser")"
-APP="/Users/$consoleUser/Library/Input Methods/VietTelex.app"
+
+# Same Directory-Services resolution + symlink-containment check as preinstall
+# (security-scan finding 2026-08-11, medium) — this script also acts on $APP
+# as root (lsregister, the register-source helper), so the same escape would
+# let a local process get an ATTACKER-PLANTED bundle registered as the input
+# method. By this point the installer has already written the payload, so
+# "Input Methods" is guaranteed to exist — the deepest-existing-ancestor walk
+# still degrades gracefully if that ever changes.
+homeDir="$(dscl . -read "/Users/$consoleUser" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+[ -z "$homeDir" ] && homeDir="/Users/$consoleUser"
+target="$homeDir/Library/Input Methods"
+check="$target"
+while [ ! -e "$check" ] && [ "$check" != "/" ]; do
+    check="$(dirname "$check")"
+done
+real="$(cd "$check" 2>/dev/null && pwd -P)"
+if [ "$real" != "$check" ]; then
+    echo "postinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
+    exit 1
+fi
+APP="$target/VietTelex.app"
 
 # Upgrade path: kill any RUNNING old instance so the next keystroke relaunches
 # the freshly installed binary. Without this the old version keeps serving until

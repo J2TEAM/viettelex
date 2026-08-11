@@ -18,7 +18,32 @@ set +e
 consoleUser="$(stat -f%Su /dev/console)"
 [ -z "$consoleUser" ] && consoleUser="$USER"
 uid="$(id -u "$consoleUser")"
-APP="/Users/$consoleUser/Library/Input Methods/VietTelex.app"
+
+# Resolve the REAL home directory via Directory Services, not a naive
+# /Users/$consoleUser string build — mobile/network accounts can differ, and
+# this is also the first line of defense against a symlinked /Users/<user>.
+homeDir="$(dscl . -read "/Users/$consoleUser" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+[ -z "$homeDir" ] && homeDir="/Users/$consoleUser"
+
+# Symlink containment (security-scan finding 2026-08-11, medium): this script
+# runs as ROOT while every component of the target path is normally writable
+# by the (unprivileged) console user. A local process could pre-position
+# ~/Library (or ~/Library/Input Methods) as a symlink before the installer
+# runs, redirecting the rm -rf/mv below to an arbitrary root-reachable path.
+# Walk to the deepest EXISTING ancestor (a fresh account may have neither
+# folder yet — nothing to escape through then) and require its real,
+# symlink-resolved path to still equal the literal path we expect.
+target="$homeDir/Library/Input Methods"
+check="$target"
+while [ ! -e "$check" ] && [ "$check" != "/" ]; do
+    check="$(dirname "$check")"
+done
+real="$(cd "$check" 2>/dev/null && pwd -P)"
+if [ "$real" != "$check" ]; then
+    echo "preinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
+    exit 1
+fi
+APP="$target/VietTelex.app"
 
 launchctl asuser "$uid" sudo -u "$consoleUser" pkill -x VietTelex 2>/dev/null
 

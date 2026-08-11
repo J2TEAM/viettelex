@@ -1,5 +1,13 @@
 name: CI
 
+# Security-scan hardening (2026-08-11): this workflow only reads the repo and runs
+# tests/builds — it never needs to write anything (no releases published from CI,
+# see Scripts/make-release.sh which runs locally). Declaring the ceiling explicitly
+# means a future step that DOES need write access has to opt in visibly, instead of
+# silently inheriting whatever broad default the repo/org has configured.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -13,7 +21,7 @@ jobs:
     name: TelexCore tests
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: swift test
         run: cd TelexCore && swift test
       - name: Benchmarks + zero-alloc (release)
@@ -43,8 +51,12 @@ jobs:
     name: Build app (unsigned)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install XcodeGen
+        # Unpinned (security-scan finding 2026-08-11, low): resolves whatever the
+        # CURRENT Homebrew formula is. Low priority while this workflow builds
+        # UNSIGNED, unpublished artifacts only — pin to a specific formula/release
+        # if CI ever starts producing anything that ships.
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate

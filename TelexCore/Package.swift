@@ -11,10 +11,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "TelexCore",
-            swiftSettings: [
-                .unsafeFlags(["-Ounchecked"], .when(configuration: .release))
-            ]
+            name: "TelexCore"
         ),
         .executableTarget(
             name: "GenLessons",
