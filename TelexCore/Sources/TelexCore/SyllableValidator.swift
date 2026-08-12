@@ -37,6 +37,11 @@ public enum SyllableValidator {
     // syllables and the boundary keeps them with no special-case restore logic.
     // Scope is deliberately the OPEN rime only: closed "iec"/"ien"/… stay out (their
     // real forms are iêc/iên), so English "diet"/"field" are untouched.
+    // TEENCODE/interjection "ưm ưn" (maintainer 2026-08-12): "ừm" (uh-huh), "ưn"
+    // ("ưng") — full rime-table entries, ALL onsets ("hừm", "hửm" ride along),
+    // unlike the zero-onset "oy" special case: these rimes require the explicit
+    // w-mark (ư), so no bare-ascii English word can wander into them — reaching
+    // "ưm" needs the literal key sequence "uw"+"m", which English doesn't produce.
     static let rimes: Set<String> = {
         let list = """
         a ac ach ai am an ang anh ao ap at au ay ak
@@ -59,7 +64,7 @@ public enum SyllableValidator {
         uê uêch uên uênh
         uô uôc uôi uôm uôn uông uôt uơ
         uy uya uych uyn uynh uyt uyu uyên uyêt
-        ư ưa ưc ưi ưng ưt ưu
+        ư ưa ưc ưi ưm ưn ưng ưt ưu
         ươ ươi ươm ươn ương ươp ươt ươu ươc
         y yê yêm yên yêng yêt yêu
         """

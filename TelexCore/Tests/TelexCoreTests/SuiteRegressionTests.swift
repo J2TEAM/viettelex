@@ -114,7 +114,11 @@ final class SuiteRegressionTests: XCTestCase {
         // valid-syllable keep, so the floor holds. (A FULL-corpus regeneration was
         // tried and REVERTED: it swept in unvetted VN-colliding words — mays≡máy,
         // vans≡ván. Only monotone base + explicit extras.)
-        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7135,
+        // 2026-08-12 (teencode, maintainer-approved): rimes "ưm"/"ưn" became valid
+        // ("uwm"→ưm, "uwmf"→ừm, "uwn"→ưn). Two 2-letter suite tokens flipped —
+        // "wm"≡ưm, "wn"≡ưn — the same protected-VN-collision class as won≡ươn /
+        // wi≡ưi already counted among this bucket's accepted misses. 7135 → 7133.
+        XCTAssertGreaterThanOrEqual(pass["restore_raw"] ?? 0, 7133,
                                     "English-restore coverage regressed")
         // Trailing-cancel screen-truth (2026-07-31): the escape gesture commits the
         // rendered text even when raw is a real English word — EXACT, no floor.

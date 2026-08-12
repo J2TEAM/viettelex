@@ -261,3 +261,54 @@ final class TeencodeOyTests: XCTestCase {
         XCTAssertFalse(SyllableValidator.isValidPrefix("oyt"), "đuôi dài hơn vẫn freeze như cũ")
     }
 }
+
+// TEENCODE/interjection "ưm ưn" (maintainer 12/08/2026): "uwm"→ưm, "uwmf"→ừm
+// (uh-hứm), "uwn"→ưn ("ưng"). Vào thẳng bảng rime (mọi onset — "hừm" đi kèm),
+// KHÁC 'oy' zero-onset: vần này đòi mark w tường minh (ư) nên không từ tiếng Anh
+// bare-ascii nào lạc vào được — muốn tới "ưm" phải gõ đúng chuỗi "uw"+"m".
+final class TeencodeUmUnTests: XCTestCase {
+
+    private func run(_ keys: String) -> String {
+        var e = TelexEngine()
+        e.freeMarking = true
+        e.liveSpellCheck = true
+        for ch in keys { _ = e.feed(ch) }
+        return e.commitText(autoRestore: true)
+    }
+
+    func testStandaloneUmUnCompose() {
+        XCTAssertEqual(run("uwm"), "ưm")
+        XCTAssertEqual(run("uwn"), "ưn")
+    }
+
+    func testTonesOnUm() {
+        XCTAssertEqual(run("uwmf"), "ừm")
+        XCTAssertEqual(run("uwms"), "ứm")
+        XCTAssertEqual(run("uwmj"), "ựm")
+        XCTAssertEqual(run("uwnf"), "ừn")
+    }
+
+    func testUppercaseVariant() {
+        XCTAssertEqual(run("Uwmf"), "Ừm")
+    }
+
+    func testOnsetsRideAlong() {
+        // Bảng rime bless mọi onset — hừm/hửm là từ cảm thán thật.
+        XCTAssertEqual(run("huwmf"), "hừm")
+        XCTAssertEqual(run("huwmr"), "hửm")
+    }
+
+    func testValidatorAcceptsNewRimes() {
+        XCTAssertTrue(SyllableValidator.isValidSyllable("ưm"))
+        XCTAssertTrue(SyllableValidator.isValidSyllable("ừm"))
+        XCTAssertTrue(SyllableValidator.isValidSyllable("ưn"))
+        XCTAssertFalse(SyllableValidator.isValidSyllable("ưnh"), "chỉ thêm ưm/ưn, không thêm ưnh")
+    }
+
+    func testEnglishStaysUntouched() {
+        // Không có 'uw' + m/n trong tiếng Anh thường — các từ un/um thật không đổi.
+        XCTAssertEqual(run("unwind"), "unwind")
+        XCTAssertEqual(run("umbrella"), "umbrella")
+        XCTAssertEqual(run("column"), "column")
+    }
+}
