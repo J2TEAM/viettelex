@@ -204,7 +204,7 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore)." = "Từ không phải tiếng Việt hợp lệ sẽ tự trả về đúng phím đã gõ khi kết thúc từ (retore → retore).";
 "Type “toan”, then “s” → “toán” — no need to retype the whole word." = "Gõ “toan” rồi “s” → “toán”, không cần gõ lại từ.";
 "No Accessibility permission — typing in Terminal/Chrome won’t work" = "Chưa có quyền Trợ năng — gõ trong Terminal/Chrome sẽ không hoạt động";
-"Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed." = "Vào Quyền riêng tư & Bảo mật → Trợ năng rồi tick VietTelex. Gõ chạy lại ngay khi tick, không cần khởi động lại.";
+"Tick VietTelex in Privacy & Security → Accessibility. You may need to restart your Mac for the permission to take effect." = "Vào Quyền riêng tư & Bảo mật → Trợ năng rồi tick VietTelex. Có thể bạn phải khởi động lại máy để quyền Trợ năng có tác dụng.";
 "Manual check: the newest release on GitHub. Weekly check: the stable channel." = "Kiểm tra thủ công: bản mới nhất trên GitHub; kiểm tra hằng tuần: kênh ổn định.";
 "No app matches “%@”" = "Không có app nào khớp “%@”";
 "Clear filter" = "Xoá bộ lọc";

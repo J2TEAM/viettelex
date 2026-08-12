@@ -512,7 +512,7 @@ struct GeneralTab: View {
                         SettingsModel.openAccessibilitySettings()
                     }
                     .prominentGlass()
-                    Text(model.loc("Tick VietTelex in Privacy & Security → Accessibility. Typing starts working the moment you do — no restart needed."))
+                    Text(model.loc("Tick VietTelex in Privacy & Security → Accessibility. You may need to restart your Mac for the permission to take effect."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
