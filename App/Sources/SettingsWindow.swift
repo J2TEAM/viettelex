@@ -120,10 +120,12 @@ final class SettingsModel: ObservableObject {
     /// Rows the user added by hand this session but hasn't pinned yet (mode still
     /// auto, nothing learned) — kept visible so the dropdown can be used on them.
     private var addedApps: Set<String> = []
-    /// Snapshot of `Accessibility.isTrusted` for the General-tab warning banner. NOT
-    /// polled: refreshed on appear and when the Settings window regains key, the same
-    /// event-driven refresh the mode table uses (AX trust only changes while the user is
-    /// away in System Settings, so coming back is exactly the moment to re-read it).
+    /// Snapshot of the AX trust state for the General-tab warning banner. NOT polled:
+    /// refreshed on appear, when the Settings window regains key, and — since the user
+    /// does not have to come back to this window at all — the moment macOS says the
+    /// Accessibility list changed (`com.apple.accessibility.api`, the same signal
+    /// `main.swift` uses to rebuild the tap). Coming back used to be the ONLY trigger,
+    /// which left the red warning standing next to a checkbox the user had just ticked.
     @Published var accessibilityTrusted: Bool = Accessibility.isTrusted
 
     init(selected: SettingsTab) {
@@ -154,9 +156,24 @@ final class SettingsModel: ObservableObject {
     func loc(_ key: String) -> String { VTLocalized(key) }
 
     /// Re-read the Accessibility trust snapshot (see `accessibilityTrusted`).
+    /// `readTrustNow`, not `isTrusted`: this is a UI path, and the cached reader can
+    /// serve the pre-grant answer while its background probe is still in flight.
     func refreshAccessibilityStatus() {
-        let now = Accessibility.isTrusted
+        let now = Accessibility.readTrustNow()
         if now != accessibilityTrusted { accessibilityTrusted = now }
+    }
+
+    /// The Accessibility list changed while the user was in System Settings. Re-read
+    /// NOW and once more after 1.5s: right after the toggle tccd can still report the
+    /// OLD value (the same race `TerminalTapController.trustMayHaveChanged` guards
+    /// against with the same delay), so an immediate read alone can latch the banner
+    /// into lying in the other direction — claiming permission is fine right after a
+    /// REVOKE. Two reads, no timer, no polling.
+    func accessibilityMayHaveChanged() {
+        refreshAccessibilityStatus()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshAccessibilityStatus()
+        }
     }
 
     /// Open System Settings → Privacy & Security → Accessibility. One definition, used
@@ -576,6 +593,15 @@ struct GeneralTab: View {
         // comes back, which makes this window key again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             model.refreshAccessibilityStatus()
+        }
+        // …and the moment the checkbox is ticked, WITHOUT waiting for the user to come
+        // back here. System Settings keeps the focus after a grant, so with only the
+        // didBecomeKey trigger above the red warning stayed on screen next to a
+        // permission that was already live — reported as "cấp quyền rồi nhưng vẫn báo".
+        // Same distributed notification main.swift already observes for the tap.
+        .onReceive(DistributedNotificationCenter.default()
+            .publisher(for: Notification.Name("com.apple.accessibility.api"))) { _ in
+            model.accessibilityMayHaveChanged()
         }
     }
 }
