@@ -624,7 +624,7 @@ final class AppState: @unchecked Sendable {
     // MARK: - Built-in typing-mode rules (typing-modes.yml)
     //
     // The per-app DEFAULTS ship as data, not code: typing-modes.yml at the repo
-    // root is bundled as a resource and attached to every GitHub release —
+    // root is bundled as a resource —
     // contributors add rules without touching Swift, and its String→String format
     // is exactly what Bảng cơ chế gõ's "Nhập từ plist…" imports, so users can also
     // apply an edited copy locally as manual pins. The field lore that used to

@@ -42,9 +42,9 @@ if [ "$ACTUAL_DR" != "$EXPECTED_DR" ]; then
 fi
 echo "→ DR ok (identity-based: bundle id + team, no cdhash pin)"
 
-# The built-in rules file ships alongside the binaries: users can read it,
-# edit a copy, and import it via Bảng cơ chế gõ → "Nhập từ plist…".
-cp typing-modes.yml "$OUTDIR/typing-modes.yml"
+# typing-modes.yml is NOT attached to releases any more (maintainer decision
+# 2026-08-12) — it ships inside the app bundle, and the repo copy is the
+# reference for contributors; a third, release-attached copy just drifted.
 
 ZIP="$OUTDIR/VietTelex-$VER.app.zip"
 echo "→ zipping stapled app → $ZIP"
@@ -66,7 +66,7 @@ echo "app.zip sha256 (for the Homebrew cask):"
 echo "  $SHA"
 echo
 echo "Next — publish (needs your OK; these push to the public release + tap):"
-echo "  gh release upload v$VER \"$ZIP\" \"$PKG\" \"$OUTDIR/typing-modes.yml\""
+echo "  gh release upload v$VER \"$ZIP\" \"$PKG\""
 echo "  # then in ptrinh/homebrew-viettelex bump Casks/viettelex.rb:"
 echo "  #   version \"$VER\""
 echo "  #   sha256 \"$SHA\""

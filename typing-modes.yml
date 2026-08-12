@@ -2,7 +2,7 @@
 #
 # Đóng góp rule mới: thêm một dòng `bundle-id: mode` rồi mở PR — không cần sửa
 # Swift. LƯU Ý: comment phải nằm RIÊNG một dòng — parser không hỗ trợ comment
-# cùng dòng với rule (`id: tap  # chú thích` sẽ hỏng mode). File này được bundle vào app lúc build và đính kèm mỗi GitHub release.
+# cùng dòng với rule (`id: tap  # chú thích` sẽ hỏng mode). File này được bundle vào app lúc build.
 # Format trùng với "Nhập…" trong Bảng cơ chế gõ, nên cũng có thể sửa bản copy
 # rồi import làm rule cá nhân.
 #
