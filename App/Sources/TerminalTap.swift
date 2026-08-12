@@ -1816,6 +1816,14 @@ final class TerminalTapController {
     /// handle() before any edit is emitted. TAP-thread confined.
     private var emitMode: TapEmit = .backspace
 
+    /// TRUE while the most recent physical key was a word BOUNDARY (space/Return/
+    /// Tab/Esc/punctuation/navigation) — consulted by the re-edit gate, which must
+    /// not seed the word on the far side of a boundary the AX tree may not show
+    /// yet (issue #38, see reEditGateOpen). Mouse clicks CLEAR it: clicking at the
+    /// end of an existing word then pressing a tone key is re-edit's main use.
+    /// TAP-thread confined (mouse/key branches of the same serial callback).
+    private var lastTapKeyWasBoundary = false
+
     /// TRUE → the Spotlight overlay owns the keys and no one may compose: the
     /// routing verdict (from the app BEHIND the overlay) says tap-family, but a
     /// synthetic emit into Spotlight's inline autocomplete garbles the word. Only an
@@ -2097,6 +2105,7 @@ final class TerminalTapController {
         // signal the IMKit controller (other apps) to drop its composition.
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
+            lastTapKeyWasBoundary = false   // click at a word's end re-arms re-edit
             if imeActive { NotificationCenter.default.post(name: .telexResetComposition, object: nil) }
             return pass
         }
@@ -2277,6 +2286,7 @@ final class TerminalTapController {
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
 
         if keyCode == kDelete {
+            lastTapKeyWasBoundary = false   // ⌫ is word-adjacent editing, not a boundary
             if engine.isEmpty {
                 // Deleting previously-committed text: the "previous word" is now unclear,
                 // so drop the English context (undetermined → Vietnamese). In-word
@@ -2294,6 +2304,7 @@ final class TerminalTapController {
             return nil
         }
         if keyCode == kReturn || keyCode == kEnter || keyCode == kTab || keyCode == kEscape {
+            lastTapKeyWasBoundary = true
             // A newline breaks the English run: the first word on the next line has no
             // preceding word, so "is" → "í". Reset AFTER emitBoundary commits (and
             // classifies) the current word, via defer so every return path clears it.
@@ -2322,6 +2333,7 @@ final class TerminalTapController {
         guard len >= 1, let scalar = Unicode.Scalar(buf[0]) else {
             // Dead/function key: flush the word, let the odd key through.
             // (no shortcut expansion — not an explicit text boundary)
+            lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             return pass
         }
@@ -2333,6 +2345,7 @@ final class TerminalTapController {
         // REAL KEY THROUGH so cursor/history work — never re-emit it as inserted text
         // (re-emitting arrows as 0x1C killed arrow-key navigation).
         if buf[0] < 0x20 || (buf[0] >= 0xF700 && buf[0] <= 0xF8FF) {
+            lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             return pass
         }
@@ -2341,6 +2354,7 @@ final class TerminalTapController {
         // (same fix as the IMKit path — issue #28, 2026-07-27).
         guard let ascii = ch.asciiValue,
               isWordKey(ascii, vniMode: engine.vniMode) else {
+            lastTapKeyWasBoundary = true
             // Non-letter boundary (space, digit outside VNI, punctuation). Brackets skip
             // auto-restore (code context). Mirror the Return/Tab handling above: only
             // when a rewrite ACTUALLY happened (emitBoundary → true) or a synthetic
@@ -2364,9 +2378,11 @@ final class TerminalTapController {
         // already on screen so the replace below edits IT instead of starting fresh.
         if Self.reEditGateOpen(engineIsEmpty: engine.isEmpty, reEditEnabled: AppState.shared.reEditWord,
                                isDiacriticKey: TelexInputController.isDiacriticOnlyKey(ascii, vni: engine.vniMode),
-                               emitMode: emitMode) {
+                               emitMode: emitMode,
+                               lastKeyWasBoundary: lastTapKeyWasBoundary) {
             tryReEditWordTap(id: id)
         }
+        lastTapKeyWasBoundary = false   // this key is a word key
 
         // Ordering rule: a native letter must never race ahead of a still-queued
         // synthetic edit ("nuwax" showed as "nuẵ" because native 'a' landed before
@@ -2443,9 +2459,20 @@ final class TerminalTapController {
     /// page content is exactly where re-edit is wanted, and page content is exactly
     /// what emits .backspace (.selection/.emptyReset are the per-field browser modes
     /// this excludes, matching FocusedFieldDetector.wantsSelection on the IMKit side).
+    /// `lastKeyWasBoundary`: the PREVIOUS physical key in this tap ended a word
+    /// (space/Return/Tab/Esc/punctuation/navigation). A tone key right after a
+    /// boundary must NOT re-edit — the word before the caret is separated from it
+    /// by that boundary. The IMKit version gets this for free by reading the REAL
+    /// text (a trailing space stops `trailingWord`); the tap reads via AX, and a
+    /// laggy AX tree (JetBrains terminals) can still show the text WITHOUT the
+    /// just-typed space — issue #38 (2026-08-12): `git st` in PhpStorm's terminal
+    /// seeded "git" across the space and the `s` of "st" became sắc → "gít".
+    /// The keystream itself is the one boundary signal AX lag can't fake.
     static func reEditGateOpen(engineIsEmpty: Bool, reEditEnabled: Bool,
-                              isDiacriticKey: Bool, emitMode: TapEmit) -> Bool {
+                              isDiacriticKey: Bool, emitMode: TapEmit,
+                              lastKeyWasBoundary: Bool) -> Bool {
         engineIsEmpty && reEditEnabled && isDiacriticKey && emitMode == .backspace
+            && !lastKeyWasBoundary
     }
 
     private func tryReEditWordTap(id: String?) {

@@ -447,28 +447,45 @@ final class ReEditWordTapGateTests: XCTestCase {
 
     func testOpensOnlyInBackspaceEmitMode() {
         XCTAssertTrue(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace))
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace,
+            lastKeyWasBoundary: false))
         // The omnibox/search-bar's inline autocomplete is exactly what re-edit must
         // avoid — .selection and .emptyReset are the per-field browser modes for it.
         XCTAssertFalse(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .selection))
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .selection,
+            lastKeyWasBoundary: false))
         XCTAssertFalse(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .emptyReset))
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .emptyReset,
+            lastKeyWasBoundary: false))
     }
 
     func testRequiresEmptyEngineEnabledSettingAndDiacriticKey() {
-        let base = (engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: TapEmit.backspace)
-        XCTAssertTrue(TerminalTapController.reEditGateOpen(engineIsEmpty: base.engineIsEmpty,
-                     reEditEnabled: base.reEditEnabled, isDiacriticKey: base.isDiacriticKey, emitMode: base.emitMode))
+        XCTAssertTrue(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace,
+            lastKeyWasBoundary: false))
         // Mid-word (engine not empty): a plain tone edit, not a re-edit — never seed.
         XCTAssertFalse(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: false, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace))
+            engineIsEmpty: false, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace,
+            lastKeyWasBoundary: false))
         // Feature off.
         XCTAssertFalse(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: true, reEditEnabled: false, isDiacriticKey: true, emitMode: .backspace))
+            engineIsEmpty: true, reEditEnabled: false, isDiacriticKey: true, emitMode: .backspace,
+            lastKeyWasBoundary: false))
         // A plain letter never triggers the read-back, same as the IMKit gate.
         XCTAssertFalse(TerminalTapController.reEditGateOpen(
-            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: false, emitMode: .backspace))
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: false, emitMode: .backspace,
+            lastKeyWasBoundary: false))
+    }
+
+    /// Issue #38 (2026-08-12): `git st` in PhpStorm's terminal — the space committed
+    /// "git", but JetBrains' laggy AX tree still showed the text WITHOUT the space,
+    /// so the tap re-edit seeded "git" across the boundary and the `s` of "st"
+    /// became sắc ("gít"). A tone key whose PREVIOUS key was a boundary must never
+    /// re-edit, whatever the AX text claims — the keystream can't be stale.
+    func testToneKeyRightAfterBoundaryNeverReEdits() {
+        XCTAssertFalse(TerminalTapController.reEditGateOpen(
+            engineIsEmpty: true, reEditEnabled: true, isDiacriticKey: true, emitMode: .backspace,
+            lastKeyWasBoundary: true))
     }
 }
 
