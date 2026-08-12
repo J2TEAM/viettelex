@@ -219,6 +219,38 @@ final class SpotlightRapidReactivationTests: XCTestCase {
     }
 }
 
+// Issue #32 vòng 3 (field report 12/08, v1.5.5): activateServer(browser) reset
+// verdict per-field về false (page content) nhưng scan mới chỉ được kick ở PHÍM
+// ĐẦU TIÊN — verdict về sau 77–500ms, cả từ đầu sau refocus chạy trên default
+// stale: omnibox bị bare-⌫ ("được" → "ddược"). prefetch() phải kick scan ngay
+// từ activateServer để verdict thường về xong TRƯỚC phím đầu.
+final class FieldVerdictPrefetchTests: XCTestCase {
+    func testPrefetchKicksAScanAfterInvalidate() {
+        FocusedFieldDetector.invalidate()
+        XCTAssertFalse(FocusedFieldDetector._testIsFresh, "invalidate must zero the stamp")
+        FocusedFieldDetector.prefetch()
+        // The scan runs on a background queue; in the (untrusted) test host it
+        // returns the safe default but must still stamp the cache as fresh.
+        let deadline = Date().addingTimeInterval(2)
+        while !FocusedFieldDetector._testIsFresh && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(FocusedFieldDetector._testIsFresh,
+                      "prefetch() must kick the async scan without waiting for a keystroke")
+    }
+
+    /// Chỉ browser per-field mới đáng prefetch — gate ở call site dựa trên
+    /// usesAxDetect, pin ở đây cho cả hai chiều.
+    func testPrefetchGateMatchesPerFieldBrowsers() {
+        Accessibility.testTrustOverride = true
+        defer { Accessibility.testTrustOverride = nil }
+        XCTAssertTrue(AppState.shared.usesAxDetect("com.google.Chrome"))
+        XCTAssertTrue(AppState.shared.usesAxDetect("com.apple.Safari"))
+        XCTAssertFalse(AppState.shared.usesAxDetect(AppState.spotlightBundleID))
+        XCTAssertFalse(AppState.shared.usesAxDetect("com.apple.Notes"))
+    }
+}
+
 // noteFocused: activateServer(com.apple.Spotlight) là bằng chứng chắc chắn overlay
 // đang mở — cache phải TRUE ngay lập tức, không đợi CGWindowList scan (burst "pas"
 // 2026-07-31: phím dấu emit vào overlay khi cache còn false).

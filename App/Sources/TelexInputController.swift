@@ -1430,6 +1430,13 @@ final class TelexInputController: IMKInputController {
                 // for 500ms+ after a long-open Spotlight session (issue: Chrome
                 // omnibox typed right after Esc got its first few keys raw-passed).
                 SpotlightDetector.noteUnfocused()
+                // Per-field browser: start the field-verdict scan NOW, not on the
+                // first keystroke — issue #32 round 3 (see prefetch's doc): the
+                // first word after refocus otherwise runs on the stale "page
+                // content" default and a tone key bare-⌫'s the omnibox.
+                if AppState.shared.usesAxDetect(AppState.shared.currentBundleID) {
+                    FocusedFieldDetector.prefetch()
+                }
             }
             // What identifier does this client REPORT? (Catalyst/Electron apps may not
             // report what NSWorkspace says — a mismatch mis-routes every mode lookup.)

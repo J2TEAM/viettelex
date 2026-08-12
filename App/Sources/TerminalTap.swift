@@ -593,7 +593,25 @@ enum FocusedFieldDetector {
         }
     }
 
+    /// Kick ONE background verdict scan NOW instead of waiting for the first
+    /// keystroke to do it. Issue #32 follow-up (field report 2026-08-12, v1.5.5):
+    /// activateServer → invalidate() resets the verdict to false (page content, the
+    /// safe default), and the re-scan used to be kicked only by the FIRST keystroke's
+    /// `wantsSelection` read — landing 77–500ms later. Every first word after
+    /// refocusing a browser therefore ran on the stale default: an omnibox was
+    /// treated as page content, a tone key inside that window emitted a bare
+    /// Backspace burst into the omnibox, and inline autocomplete ate the ⌫
+    /// ("được" → "ddược", the historical "gooogle" class). Prefetching at
+    /// activation means the scan typically lands during the user's focus-to-first-
+    /// key gap (~350ms in the field trace) instead of after the first key.
+    /// Implementation: a plain read — invalidate() zeroed `lastCheckNs`, so the
+    /// read observes staleness and kicks the dedup-guarded async scan.
+    static func prefetch() { _ = wantsSelection }
+
     #if DEBUG
+    /// TRUE once a scan (or a test seam) has stamped the cache since the last
+    /// invalidate() — lets a test observe that prefetch() really kicked a scan.
+    static var _testIsFresh: Bool { lock.withLock { lastCheckNs != 0 } }
     /// Test seam: set the cached verdict AND stamp it fresh, so the invalidation contract
     /// can be pinned without a live Accessibility tree (the scan itself needs one).
     static func _testSetCached(_ value: Bool) {
