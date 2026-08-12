@@ -149,6 +149,23 @@ enum Accessibility {
         kickRefresh()
     }
 
+    /// Synchronous, cache-bypassing read for UI paths (the Settings banner). NEVER
+    /// call this from the keystroke path — that is what `isTrusted` and its cache are
+    /// for. The distinction matters: a stale-TTL read of `isTrusted` returns
+    /// `.serveCachedAndRefresh`, i.e. it hands back the OLD value and only converges
+    /// on a background round trip. That is correct for a keystroke (a microsecond of
+    /// staleness, and the paths that must not be wrong read TCC directly) and wrong
+    /// for a banner the user is staring at one second after ticking the checkbox in
+    /// System Settings: nothing re-reads afterwards, so the warning kept claiming
+    /// "no permission" until some later event happened to make the window key again.
+    @discardableResult
+    static func readTrustNow() -> Bool {
+        #if DEBUG
+        if let forced = testTrustOverride { return forced }
+        #endif
+        return syncRefresh()
+    }
+
     #if DEBUG
     /// Test seams: drive the cache without a live TCC grant.
     static func _testSetTrustCache(_ value: Bool) {
