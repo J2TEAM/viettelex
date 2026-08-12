@@ -199,8 +199,28 @@ public struct TelexEngine {
     // a doubler is normal typing.
     private var upperToneKey = false
 
+    // MARK: Re-open snapshot (⌫ right after a word boundary — issue #40)
+    //
+    // The keystrokes of the word the LAST boundary committed, kept only while that
+    // word is still exactly what the screen shows: the commit did not auto-restore
+    // to raw and did not overflow, so `composed` is on screen character for
+    // character. Deleting the boundary character then re-opens the word instead of
+    // starting from nothing ("tháy" ␣ ⌫ a → "thấy"), which is what every other
+    // Vietnamese IME does. Fixed buffers — the capture runs on the boundary hot
+    // path and must not allocate.
+    private var reopenRaw: [UInt8]
+    private var reopenOut: [UInt32]
+    private var reopenRawCount = 0
+    private var reopenOutCount = 0
+    // `previousWordEnglish` as it was BEFORE the commit folded this word in. Re-opening
+    // puts the word back into the buffer, so the context it composes against must be
+    // the one from the word BEFORE it, not the one it just produced.
+    private var reopenPrevEnglish = false
+
     public init() {
         raw = [UInt8](repeating: 0, count: Self.capacity)
+        reopenRaw = [UInt8](repeating: 0, count: Self.capacity)
+        reopenOut = [UInt32](repeating: 0, count: Self.capacity)
         out = [UInt32](repeating: 0, count: Self.capacity)
         scratch = [UInt32](repeating: 0, count: Self.capacity)
         letters = [LetterUnit](repeating: LetterUnit(), count: Self.capacity)
@@ -309,6 +329,11 @@ public struct TelexEngine {
             return .passthrough
         }
         guard rawCount < Self.capacity else { overflowed = true; return .passthrough }
+
+        // First key of a NEW word: whatever the last boundary committed is now two
+        // edits away from the caret, so a later ⌫ must not re-open it (typing then
+        // backspacing all the way back would otherwise resurrect the wrong word).
+        if rawCount == 0 { reopenRawCount = 0; reopenOutCount = 0 }
 
         raw[rawCount] = ascii
         rawCount += 1
@@ -471,12 +496,13 @@ public struct TelexEngine {
     /// composed word is not a valid Vietnamese syllable. Resets the engine.
     /// The caller inserts the boundary character itself afterwards.
     public mutating func commitBoundary(autoRestore: Bool) -> TelexAction {
-        defer { reset() }
-        guard rawCount > 0 else { return .none }
+        defer { resetWord() }
+        guard rawCount > 0 else { reopenRawCount = 0; reopenOutCount = 0; return .none }
         // Overflowed: the 32-char view is stale vs. the screen, so `outCount`
         // backspaces would hit the wrong characters. No restore, no rewrite.
         if overflowed {
             if contextualEnglish { previousWordEnglish = false }   // undetermined → Vietnamese
+            reopenRawCount = 0; reopenOutCount = 0                 // stale prefix: never re-open
             return .none
         }
         // Skip restore when the user cancelled a diacritic on purpose ("iss"→is).
@@ -500,8 +526,60 @@ public struct TelexEngine {
             for i in lcp..<rawCount { s.append(Unicode.Scalar(raw[i])) }
             action = .replace(backspaces: backspaces, insert: String(s))
         }
+        captureReopen(restored: wantsRestore)
         updateContext(restored: wantsRestore)
         return action
+    }
+
+    /// Remember the just-committed word so a ⌫ on the boundary character can put it
+    /// back (see `reopenLastCommit`). Only when the screen ends up showing `composed`:
+    /// a restore-to-raw ("google") or a caller-side rewrite leaves other text there,
+    /// and re-opening would desync the buffer from the screen. Allocation-free.
+    private mutating func captureReopen(restored: Bool) {
+        guard !restored, rawCount > 0 else { reopenRawCount = 0; reopenOutCount = 0; return }
+        for i in 0..<rawCount { reopenRaw[i] = raw[i] }
+        for i in 0..<outCount { reopenOut[i] = out[i] }
+        reopenRawCount = rawCount
+        reopenOutCount = outCount
+        reopenPrevEnglish = previousWordEnglish
+    }
+
+    /// Discard the re-open snapshot: the boundary character the caller inserted after
+    /// a commit is no longer the thing a ⌫ would delete (shortcut expansion, a
+    /// caller-side rewrite, a dropped composition). Cheaper and clearer at the call
+    /// site than a full `reset()`, which also throws away the live word.
+    public mutating func forgetLastCommit() {
+        reopenRawCount = 0
+        reopenOutCount = 0
+    }
+
+    /// True while `reopenLastCommit()` has something to put back.
+    public var canReopenLastCommit: Bool { rawCount == 0 && reopenRawCount > 0 }
+
+    /// RE-OPEN the word the last boundary committed — the ⌫ counterpart of `seed`.
+    /// The user typed a word, ended it, then deleted the boundary character; the word
+    /// is still on screen and they expect to keep editing it ("tháy" ␣ ⌫ then `a` →
+    /// "thấy", issue #40). Replays the remembered keystrokes so tone placement, ươ
+    /// propagation, ⌫ mapping and the boundary decision all behave exactly as if the
+    /// word had never been committed.
+    ///
+    /// Returns the composed word now in the buffer — which is byte-for-byte what the
+    /// screen shows, so the caller can point its tracking window at it — or nil when
+    /// there is nothing to re-open. Like `seed`, the replay is VERIFIED: if a setting
+    /// changed since the commit and the word no longer composes the same, the engine
+    /// resets and nil is returned rather than compose against text it cannot match.
+    /// The snapshot is consumed either way — one ⌫ gets one chance.
+    public mutating func reopenLastCommit() -> String? {
+        guard canReopenLastCommit else { return nil }
+        let n = reopenRawCount
+        let expected = reopenOutCount
+        let prevEnglish = reopenPrevEnglish
+        reset()                                   // consume the snapshot before replaying
+        previousWordEnglish = prevEnglish         // compose against the word BEFORE this one
+        for i in 0..<n { _ = feed(Character(Unicode.Scalar(reopenRaw[i]))) }
+        guard rawCount == n, outCount == expected else { reset(); return nil }
+        for i in 0..<outCount where out[i] != reopenOut[i] { reset(); return nil }
+        return composed
     }
 
     /// Boundary restore decision, shared by both commit paths.
@@ -669,16 +747,18 @@ public struct TelexEngine {
     /// (non-Vietnamese syllables fall back to the raw keystrokes). Resets the engine.
     /// Used by the marked-text controller path.
     public mutating func commitText(autoRestore: Bool) -> String {
-        defer { reset() }
+        defer { resetWord() }
         // Overflowed: never restore to `rawKeystrokes` (only the first 32 keys) —
         // return the composed prefix unchanged; the caller keeps the rest on screen.
         if overflowed {
             if contextualEnglish { previousWordEnglish = false }
+            reopenRawCount = 0; reopenOutCount = 0                 // stale prefix: never re-open
             return composed
         }
         // Decide with the PREVIOUS word's context, then refresh it for the NEXT word
         // (reusing the restore decision — no repeated checks).
         let wantsRestore = autoRestore && outCount > 0 && shouldRestoreRaw()
+        captureReopen(restored: wantsRestore)
         updateContext(restored: wantsRestore)
         return wantsRestore ? rawKeystrokes : composed
     }
@@ -988,7 +1068,19 @@ public struct TelexEngine {
         return false
     }
 
+    /// Drop the current word AND the re-open snapshot. What callers use when the
+    /// composition is abandoned (focus change, app switch, caret moved): after this
+    /// no ⌫ may re-open anything, because the text before the caret is unknown.
     public mutating func reset() {
+        resetWord()
+        reopenRawCount = 0
+        reopenOutCount = 0
+    }
+
+    /// Word state only; the re-open snapshot survives. The boundary commits capture
+    /// the snapshot and then clear the word through THIS — a full `reset()` would
+    /// wipe what they just captured.
+    private mutating func resetWord() {
         rawCount = 0
         outCount = 0
         markCancelled = false

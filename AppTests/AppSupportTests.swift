@@ -504,6 +504,40 @@ final class ReEditWordTapGateTests: XCTestCase {
     }
 }
 
+// Issue #40 — "tháy" ␣ ⌫ then `a` must give "thấy". The engine keeps the committed
+// word (TelexEngine.reopenLastCommit, covered by ReopenTests) but may only put it back
+// when the ⌫ is deleting a BOUNDARY CHARACTER: that is true only if the key that ended
+// the word left exactly one character behind it. This is the pure half of that rule;
+// the read-back that verifies the screen needs a live client/AX tree.
+final class ReopenBoundaryKeyTests: XCTestCase {
+
+    func testPrintableAsciiKeysInsertOneCharacter() {
+        for s in [" ", ".", ",", "!", "-", "5", "(", "/", "~"] {
+            XCTAssertTrue(TelexInputController.insertsOneCharacter(s),
+                          "'\(s)' puts one character after the word")
+        }
+    }
+
+    func testKeysThatInsertNothingOrSomethingElse() {
+        // Arrow / function keys arrive as U+F700… — they move the caret, insert nothing.
+        for scalar: UInt32 in [0xF700, 0xF701, 0xF702, 0xF703, 0xF729, 0xF72B] {
+            XCTAssertFalse(TelexInputController.insertsOneCharacter(String(UnicodeScalar(scalar)!)),
+                           "U+\(String(scalar, radix: 16)) is navigation, not text")
+        }
+        // Control characters (Return/Tab/Esc reach the keycode branch, but iTerm also
+        // delivers arrows as 0x1C–0x1F) and DEL.
+        for scalar: UInt32 in [0x00, 0x09, 0x0D, 0x1B, 0x1C, 0x1F, 0x7F] {
+            XCTAssertFalse(TelexInputController.insertsOneCharacter(String(UnicodeScalar(scalar)!)))
+        }
+        // Non-ascii text and multi-character strings: not worth reasoning about.
+        XCTAssertFalse(TelexInputController.insertsOneCharacter("–"))
+        XCTAssertFalse(TelexInputController.insertsOneCharacter("ơ"))
+        XCTAssertFalse(TelexInputController.insertsOneCharacter("ab"))
+        XCTAssertFalse(TelexInputController.insertsOneCharacter(""))
+        XCTAssertFalse(TelexInputController.insertsOneCharacter(nil))
+    }
+}
+
 // The ⌫ guard: our tracked composition window may only be rewritten while the app's
 // caret still agrees with it. Tester report 2026-07-27 (Chrome Web Store search box):
 // the first ⌫ ate TWO characters and afterwards nothing typed showed up until a space —

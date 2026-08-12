@@ -99,6 +99,12 @@ Yêu cầu engine:
 - Double-key hủy dấu (aaa→aa, ss→s) + latch: từ đã hủy dấu là tiếng Anh, các phím sau
   literal.
 - Backspace xóa nguyên ký tự hiển thị cuối (không chỉ pop một phím raw), re-render.
+- Backspace ngay sau ranh giới **mở lại từ vừa chốt** (issue #40): boundary nhớ đúng
+  chuỗi phím nó vừa commit (chỉ khi màn hình đang hiển thị `composed` — không
+  auto-restore, không overflow, không gõ tắt), ⌫ xóa ký tự ranh giới thì replay lại
+  chuỗi đó nên `tháy` ␣ ⌫ `a` → `thấy` thay vì `tháya`. Snapshot chết ngay khi có
+  bất kỳ input nào khác, và chỉ được dùng sau khi **đọc lại text trên màn hình**
+  (IMKit: `attributedSubstring`; tap: AX) đúng bằng từ đó.
 
 Quy tắc ổn định đã rút ra khi implement (chi tiết trong `MACOS_IME_NOTES.md`):
 - Mọi edit đi qua **một kênh có thứ tự duy nhất** (không trộn passthrough hệ thống với
