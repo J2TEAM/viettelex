@@ -16,7 +16,21 @@
 set +e
 
 consoleUser="$(stat -f%Su /dev/console)"
-[ -z "$consoleUser" ] && consoleUser="$USER"
+# /dev/console can be owned by ROOT (headless Mac mini, some login states) —
+# and a user-home-domain pkg does not always run its scripts as root either:
+# macOS 15 runs them AS THE TARGET USER (uid 501 in the field log, issue #34).
+# In that state `id -un` names the right user; a naive "root" would aim the
+# whole script at /var/root.
+if [ -z "$consoleUser" ] || [ "$consoleUser" = "root" ]; then
+    consoleUser="$(id -un)"
+fi
+if [ "$consoleUser" = "root" ]; then
+    # Genuinely running as root with a root-owned console: no way to name the
+    # target user. Skip this script's cleanup (the payload still lands where
+    # PackageKit decides) instead of failing the whole install.
+    echo "preinstall: cannot determine console user — skipping cleanup" >&2
+    exit 0
+fi
 uid="$(id -u "$consoleUser")"
 
 # Resolve the REAL home directory via Directory Services, not a naive
@@ -25,27 +39,38 @@ uid="$(id -u "$consoleUser")"
 homeDir="$(dscl . -read "/Users/$consoleUser" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
 [ -z "$homeDir" ] && homeDir="/Users/$consoleUser"
 
-# Symlink containment (security-scan finding 2026-08-11, medium): this script
-# runs as ROOT while every component of the target path is normally writable
-# by the (unprivileged) console user. A local process could pre-position
-# ~/Library (or ~/Library/Input Methods) as a symlink before the installer
-# runs, redirecting the rm -rf/mv below to an arbitrary root-reachable path.
-# Walk to the deepest EXISTING ancestor (a fresh account may have neither
-# folder yet — nothing to escape through then) and require its real,
-# symlink-resolved path to still equal the literal path we expect.
+# Symlink containment (security-scan finding 2026-08-11, medium): when this
+# script runs as ROOT while every component of the target path is writable by
+# the (unprivileged) console user, a local process could pre-position ~/Library
+# (or ~/Library/Input Methods) as a symlink, redirecting the rm -rf/mv below to
+# an arbitrary root-reachable path. Walk to the deepest EXISTING ancestor (a
+# fresh account may have neither folder yet) and require its real, resolved
+# path to still equal the literal path we expect.
+# ROOT-ONLY on purpose (issue #34, macOS 15.7.4): user-home-domain installs can
+# run this script as the TARGET USER, where (a) the attack steals no privilege,
+# and (b) `cd` can fail on permissions alone — which this guard then misread as
+# a symlink escape and aborted every install ("/var/root resolves to ").
 target="$homeDir/Library/Input Methods"
-check="$target"
-while [ ! -e "$check" ] && [ "$check" != "/" ]; do
-    check="$(dirname "$check")"
-done
-real="$(cd "$check" 2>/dev/null && pwd -P)"
-if [ "$real" != "$check" ]; then
-    echo "preinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
-    exit 1
+if [ "$(id -u)" = "0" ]; then
+    check="$target"
+    while [ ! -e "$check" ] && [ "$check" != "/" ]; do
+        check="$(dirname "$check")"
+    done
+    real="$(cd "$check" 2>/dev/null && pwd -P)"
+    if [ "$real" != "$check" ]; then
+        echo "preinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
+        exit 1
+    fi
 fi
 APP="$target/VietTelex.app"
 
-launchctl asuser "$uid" sudo -u "$consoleUser" pkill -x VietTelex 2>/dev/null
+# Root → hop into the user's GUI session; already the user (macOS 15 user-home
+# domain) → run directly, sudo would just fail without a tty.
+if [ "$(id -u)" = "0" ]; then
+    launchctl asuser "$uid" sudo -u "$consoleUser" pkill -x VietTelex 2>/dev/null
+else
+    pkill -x VietTelex 2>/dev/null
+fi
 
 if [ -d "$APP" ]; then
     # Keep one backup so a failed install is recoverable by hand.

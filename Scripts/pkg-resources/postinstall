@@ -7,27 +7,49 @@ set +e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 consoleUser="$(stat -f%Su /dev/console)"
-[ -z "$consoleUser" ] && consoleUser="$USER"
+# Same console-user resolution as preinstall (issue #34, macOS 15.7.4):
+# /dev/console can be root-owned, and user-home-domain installs can run this
+# script AS THE TARGET USER instead of root — `id -un` is then authoritative.
+if [ -z "$consoleUser" ] || [ "$consoleUser" = "root" ]; then
+    consoleUser="$(id -un)"
+fi
+if [ "$consoleUser" = "root" ]; then
+    echo "postinstall: cannot determine console user — skipping registration" >&2
+    exit 0
+fi
 uid="$(id -u "$consoleUser")"
 
+# Root → hop into the user's GUI session (Text Input Source state and `open`
+# must target the logged-in user); already the user → run directly (sudo has
+# no tty here and would silently fail).
+run_as_user() {
+    if [ "$(id -u)" = "0" ]; then
+        launchctl asuser "$uid" sudo -u "$consoleUser" "$@"
+    else
+        "$@"
+    fi
+}
+
 # Same Directory-Services resolution + symlink-containment check as preinstall
-# (security-scan finding 2026-08-11, medium) — this script also acts on $APP
-# as root (lsregister, the register-source helper), so the same escape would
-# let a local process get an ATTACKER-PLANTED bundle registered as the input
-# method. By this point the installer has already written the payload, so
-# "Input Methods" is guaranteed to exist — the deepest-existing-ancestor walk
-# still degrades gracefully if that ever changes.
+# (security-scan finding 2026-08-11, medium) — when running as root, this
+# script acts on $APP with root privileges (lsregister, the register-source
+# helper), so a symlink escape would let a local process get an ATTACKER-
+# PLANTED bundle registered as the input method. ROOT-ONLY like preinstall:
+# as the target user the attack steals no privilege and the cd-based check
+# misfires on permissions (issue #34).
 homeDir="$(dscl . -read "/Users/$consoleUser" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
 [ -z "$homeDir" ] && homeDir="/Users/$consoleUser"
 target="$homeDir/Library/Input Methods"
-check="$target"
-while [ ! -e "$check" ] && [ "$check" != "/" ]; do
-    check="$(dirname "$check")"
-done
-real="$(cd "$check" 2>/dev/null && pwd -P)"
-if [ "$real" != "$check" ]; then
-    echo "postinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
-    exit 1
+if [ "$(id -u)" = "0" ]; then
+    check="$target"
+    while [ ! -e "$check" ] && [ "$check" != "/" ]; do
+        check="$(dirname "$check")"
+    done
+    real="$(cd "$check" 2>/dev/null && pwd -P)"
+    if [ "$real" != "$check" ]; then
+        echo "postinstall: refusing — $check resolves to $real (symlink escape, aborting)" >&2
+        exit 1
+    fi
 fi
 APP="$target/VietTelex.app"
 
@@ -35,22 +57,20 @@ APP="$target/VietTelex.app"
 # the freshly installed binary. Without this the old version keeps serving until
 # logout — field report: pkg upgraded the bundle on disk but the app still ran
 # (and reported) the previous version.
-launchctl asuser "$uid" sudo -u "$consoleUser" pkill -x VietTelex 2>/dev/null
+run_as_user pkill -x VietTelex 2>/dev/null
 
 # Make LaunchServices aware of the freshly installed bundle.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 "$LSREGISTER" -f "$APP" 2>/dev/null
 
 # Register + best-effort enable, inside the user's GUI session.
-launchctl asuser "$uid" sudo -u "$consoleUser" "$DIR/register-source" "$APP" 2>/dev/null
+run_as_user "$DIR/register-source" "$APP" 2>/dev/null
 
 # Drop the user straight into System Settings → Keyboard for the final "＋" step,
 # and open the illustrated install guide (screenshots were removed from the
 # conclusion screen — the guide IS the visual walkthrough now). Settings first so
 # the browser ends up frontmost with the instructions.
-launchctl asuser "$uid" sudo -u "$consoleUser" \
-    open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" 2>/dev/null
-launchctl asuser "$uid" sudo -u "$consoleUser" \
-    open "https://ptrinh.github.io/viettelex/#install" 2>/dev/null
+run_as_user open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" 2>/dev/null
+run_as_user open "https://ptrinh.github.io/viettelex/#install" 2>/dev/null
 
 exit 0
