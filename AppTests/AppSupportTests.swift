@@ -267,6 +267,21 @@ final class AppSupportTests: XCTestCase {
         XCTAssertEqual(Accessibility.isTrusted, real)   // …the cache answers the same
     }
 
+    /// PR #41's UI reader: sync, cache-bypassing — but it must still honor the
+    /// DEBUG override BOTH ways, or every test that forces a trust state would
+    /// leak the build machine's real TCC answer into the banner logic.
+    func testReadTrustNowHonorsOverrideBothWays() {
+        Accessibility.testTrustOverride = true
+        XCTAssertTrue(Accessibility.readTrustNow())
+        Accessibility.testTrustOverride = false
+        XCTAssertFalse(Accessibility.readTrustNow())
+        Accessibility.testTrustOverride = nil
+        // No override: agrees with the machine's real TCC answer, and — since it
+        // refreshes the shared cache on the way — a subsequent cached read agrees too.
+        let real = Accessibility.readTrustNow()
+        XCTAssertEqual(Accessibility.isTrusted, real)
+    }
+
     // MARK: SyntheticKeyboard state helpers (safe: nothing is posted)
 
     func testSyntheticKeyboardStateHelpers() {

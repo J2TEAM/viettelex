@@ -599,8 +599,12 @@ struct GeneralTab: View {
         // didBecomeKey trigger above the red warning stayed on screen next to a
         // permission that was already live — reported as "cấp quyền rồi nhưng vẫn báo".
         // Same distributed notification main.swift already observes for the tap.
+        // receive(on: main): the DNC publisher gives no delivery-thread guarantee
+        // (main.swift specifies queue: .main explicitly for the same reason), and
+        // the handler mutates @Published state.
         .onReceive(DistributedNotificationCenter.default()
-            .publisher(for: Notification.Name("com.apple.accessibility.api"))) { _ in
+            .publisher(for: Notification.Name("com.apple.accessibility.api"))
+            .receive(on: DispatchQueue.main)) { _ in
             model.accessibilityMayHaveChanged()
         }
     }
