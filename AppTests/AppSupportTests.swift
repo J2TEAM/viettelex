@@ -349,6 +349,23 @@ extension AppSupportTests {
         XCTAssertFalse(VTLocalized("Close").isEmpty)   // localization lookup path
         _ = s.tapNativeFastPath
     }
+
+    /// Maintainer decision 2026-08-12: the power-user surface (Bảng chế độ gõ +
+    /// Thử Nghiệm) ships VISIBLE — hiding it made every support round-trip start
+    /// with "bật advanced lên đã". A fresh install (key absent) must read true;
+    /// an explicit user OFF must still stick.
+    func testAdvancedFeaturesDefaultsOn() {
+        let s = AppState.shared
+        let saved = s.defaults.object(forKey: "advancedFeatures") as? Bool
+        defer {
+            if let saved { s.defaults.set(saved, forKey: "advancedFeatures") }
+            else { s.defaults.removeObject(forKey: "advancedFeatures") }
+        }
+        s.defaults.removeObject(forKey: "advancedFeatures")
+        XCTAssertTrue(s.advancedFeatures, "fresh install (no stored value) must show the advanced tabs")
+        s.advancedFeatures = false
+        XCTAssertFalse(s.advancedFeatures, "explicit OFF must survive the ON default")
+    }
 }
 
 // The key-ROUTING predicate shared by the IMKit controller and the terminal tap:

@@ -276,11 +276,13 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "lastNotifiedUpdateVersion") }
     }
 
-    /// Show the power-user surface (Bảng chế độ gõ + Thử Nghiệm tabs). Default OFF —
-    /// the philosophy is "cài xong là gõ"; per-app strategy names are implementation
-    /// vocabulary most users never need. Settings-UI only (main thread), no lock.
+    /// Show the power-user surface (Bảng chế độ gõ + Thử Nghiệm tabs). Default ON
+    /// (maintainer decision 2026-08-12 — was OFF under the "cài xong là gõ"
+    /// philosophy, but hiding the mode table / debug log made every support
+    /// round-trip start with "bật advanced lên đã"). Toggle stays for users who
+    /// prefer the minimal surface. Settings-UI only (main thread), no lock.
     var advancedFeatures: Bool {
-        get { defaults.bool(forKey: "advancedFeatures") }
+        get { (defaults.object(forKey: "advancedFeatures") as? Bool) ?? true }
         set { defaults.set(newValue, forKey: "advancedFeatures") }
     }
 
