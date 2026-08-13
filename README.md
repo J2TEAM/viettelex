@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-17233d" alt="macOS 14+">
 </p>
 
-**VietTelex** (ViệtTelex / ViếtTelex) là bộ gõ tiếng Việt **Telex** cho macOS, được xây dựng trên **InputMethodKit** của Apple để tích hợp sâu. Không gạch chân từ đang gõ, con trỏ luôn ở cuối, dấu bỏ trực tiếp vào chữ, và gõ được cả trong **Terminal** mà không phá autocomplete của shell.
+**VietTelex** (ViệtTelex / ViếtTelex) là bộ gõ tiếng Việt **Telex** (và **VNI**) cho macOS, được xây dựng trên **InputMethodKit** của Apple để tích hợp sâu. Không gạch chân từ đang gõ, con trỏ luôn ở cuối, dấu bỏ trực tiếp vào chữ, và gõ được cả trong **Terminal** mà không phá autocomplete của shell.
 
 Triết lý: **tối giản, nhanh, ổn định, mã nguồn mở** — cài xong là gõ, hầu như không phải chỉnh gì thêm.
 
@@ -54,6 +54,8 @@ https://github.com/user-attachments/assets/b07b7321-912f-4d81-a741-bcaa9a43f07d
 Ví dụ: `vieejt` → việt · `truowngf` → trường · `hoas` → hóa.
 
 Tùy chọn (Simple Telex, bỏ dấu tự do, kiểu cũ/mới, kiểm tra chính tả, gõ tắt) ở menu bộ gõ → **Cài đặt…**
+
+**Gõ kiểu VNI:** menu bộ gõ → **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**. Dấu gõ bằng số: `1-5` = sắc/huyền/hỏi/ngã/nặng, `6` = â/ê/ô, `7` = ơ/ư, `8` = ă, `9` = đ, `0` = bỏ dấu (ví dụ `Vie6t5` → Việt). Nên giữ **Kiểm tra chính tả khi gõ** bật để số như `mp3` không bị biến thành dấu.
 
 ## Khắc phục sự cố
 
