@@ -93,6 +93,10 @@ com.apple.MobileSMS: inPlace
 # Spark Classic — composer là WebView, WebKit macOS 26 nuốt synthetic burst của
 # tap (issue #47, cùng gốc #44); reporter field-verify in-place OK 13/08/2026.
 com.readdle.smartemail-Mac: inPlace
+# Outlook — compose là web editor trong WKWebView, cùng lớp #44/#47 (field
+# report Facebook 14/08: từ có dấu "cũng/được/làm" không gõ được vì burst bị
+# nuốt, từ không dấu vẫn ăn). Word/PowerPoint đã inPlace sẵn; Outlook bị thiếu.
+com.microsoft.Outlook: inPlace
 # Browsers — tự dò theo ô (address bar vs nội dung trang)
 com.apple.Safari: axDetect
 com.apple.SafariTechnologyPreview: axDetect

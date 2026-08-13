@@ -44,6 +44,10 @@ final class GonhanhHardeningTests: XCTestCase {
         // Spark Classic (issue #47): WebView composer — WebKit macOS 26 swallows the
         // tap's synthetic burst (the #44 class); reporter field-verified in-place.
         XCTAssertEqual(dict["com.readdle.smartemail-Mac"], "inPlace")
+        // Outlook (Facebook field report 14/08): same WKWebView-compose class —
+        // diacritic words died on the tap channel; Word/PowerPoint were already
+        // inPlace, Outlook was simply missing from the table.
+        XCTAssertEqual(dict["com.microsoft.Outlook"], "inPlace")
     }
 
     /// Messenger desktop (unofficial Electron wrapper) — field report 2026-08-11:
