@@ -24,6 +24,31 @@ import Carbon.HIToolbox
 import ApplicationServices
 import TelexCore
 
+/// THIS build's bundle id — never the ship constant hardcoded at a call site.
+/// `Scripts/dev-register.sh` installs the same code under a SEPARATE id
+/// (`com.tuanhm.inputmethod.telexdev` by default; it must be separate, see rule #4 in
+/// docs/MACOS_IME_NOTES.md), remapping CFBundleIdentifier and every TISInputSourceID.
+/// A hardcoded ship prefix therefore made `isVietTelexSelected()` answer FALSE for the
+/// dev build's own input source — so the TIS notification, the `deactivateServer`
+/// hint and the per-key reconcile all declared VietTelex unselected and put the tap
+/// DORMANT mid-word, one key at a time (tester log 2026-08-13: "biết" typed in
+/// Terminal came out "biêts" — the tone key passed through raw while the tap was
+/// dormant, and the reset that comes with dormancy also dropped the buffer, so a ⌫
+/// back to "bi" then `s` gave "bis" instead of "bí").
+///
+/// EMPTY is treated as missing, not just nil: `Bundle.bundleIdentifier` hands back
+/// whatever CFBundleIdentifier holds, and an empty prefix would make `hasPrefix`
+/// match EVERY input source — `isVietTelexSelected()` would answer true with ABC
+/// selected and the tap would compose Vietnamese over English typing, the exact
+/// failure the per-key reconcile exists to prevent. The ship id is the fallback
+/// (both states are unreachable for a correctly built bundle).
+enum OwnBundle {
+    static let id: String = {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        return id.isEmpty ? "com.viettelex.inputmethod.telex" : id
+    }()
+}
+
 enum Accessibility {
     // AXIsProcessTrusted() is an out-of-process TCC check (~10-15ms when it misses
     // the kernel-side fast path); in Chromium apps it was hit up to twice per
@@ -212,7 +237,7 @@ enum Accessibility {
     /// Returns true when the reset command succeeded.
     @discardableResult
     static func resetOwnGrant() -> Bool {
-        let id = Bundle.main.bundleIdentifier ?? "com.viettelex.inputmethod.telex"
+        let id = OwnBundle.id
         var ok = false
         // Accessibility covers the tap; ListenEvent (Input Monitoring) can hold a stale
         // row of its own, and resetting a service we never used is a no-op.
@@ -287,7 +312,7 @@ final class FrontmostApp {
     /// itself — so Settings can offer "recent apps" to pin without typing a bundle id.
     /// MAIN-thread only (observer writes, Settings UI reads) — no lock needed.
     private(set) var recent: [(id: String, name: String)] = []
-    private static let selfID = "com.viettelex.inputmethod.telex"
+    private static let selfID = OwnBundle.id
 
     private init() {
         _bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
