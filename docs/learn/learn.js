@@ -1012,7 +1012,7 @@ fetch('lessons.json').then(function (r) { return r.json(); }).then(function (d) 
   });
 }).catch(function () {
   mapEl.innerHTML = '<p style="color:var(--ink-soft)">' + T().loadFail +
-    ' <a href="https://ptrinh.github.io/viettelex/learn/">ptrinh.github.io/viettelex/learn</a>.</p>';
+    ' <a href="https://viettelex.com/learn/">viettelex.com/learn</a>.</p>';
 });
 
 // ── misc ────────────────────────────────────────────────────────────────────

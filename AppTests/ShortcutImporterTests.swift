@@ -49,8 +49,8 @@ final class ShortcutImporterTests: XCTestCase {
 
     func testValueWithColonsAndJunk() {
         // only the FIRST colon splits — URLs in values survive
-        let d = parse("web:https://ptrinh.github.io/viettelex\n:no-key\nnovalue:\nplain line")
-        XCTAssertEqual(d?["web"], "https://ptrinh.github.io/viettelex")
+        let d = parse("web:https://viettelex.com/learn\n:no-key\nnovalue:\nplain line")
+        XCTAssertEqual(d?["web"], "https://viettelex.com/learn")
         XCTAssertEqual(d?.count, 1)
     }
 

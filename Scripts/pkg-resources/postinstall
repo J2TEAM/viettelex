@@ -71,6 +71,6 @@ run_as_user "$DIR/register-source" "$APP" 2>/dev/null
 # conclusion screen — the guide IS the visual walkthrough now). Settings first so
 # the browser ends up frontmost with the instructions.
 run_as_user open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" 2>/dev/null
-run_as_user open "https://ptrinh.github.io/viettelex/#install" 2>/dev/null
+run_as_user open "https://viettelex.com/#install" 2>/dev/null
 
 exit 0

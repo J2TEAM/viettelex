@@ -970,9 +970,9 @@ struct AboutTab: View {
             Text("VietTelex").font(.title2).bold()
             Text(String(format: model.loc("Version %@ · %@"), appVersion, buildDate))
                 .foregroundStyle(.secondary)
-            Link("Website", destination: URL(string: "https://ptrinh.github.io/viettelex/")!)
+            Link("Website", destination: URL(string: "https://viettelex.com/")!)
             Link(model.loc("Learn Telex typing"),
-                 destination: URL(string: "https://ptrinh.github.io/viettelex/learn")!)
+                 destination: URL(string: "https://viettelex.com/learn")!)
             Link(model.loc("How to report a bug"),
                  destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md")!)
 

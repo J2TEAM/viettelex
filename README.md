@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/b07b7321-912f-4d81-a741-bcaa9a43f07d
 
 ## Cài đặt
 
-**Website:** [ptrinh.github.io/viettelex](https://ptrinh.github.io/viettelex/) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
+**Website:** [viettelex.com](https://viettelex.com/) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
 
 1. Tải **`VietTelex-x.y.z.pkg`** từ [Releases](https://github.com/ptrinh/viettelex/releases) (đã ký + notarized).
 2. Double-click → làm theo hướng dẫn (tự cài, đăng ký bộ gõ, mở sẵn System Settings → Keyboard).

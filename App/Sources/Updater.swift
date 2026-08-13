@@ -69,7 +69,7 @@ enum UpdateCheck {
     /// one-line edit of this file.
     static func checkStable() async -> Outcome {
         let current = currentVersion()
-        guard let api = URL(string: "https://ptrinh.github.io/viettelex/stable.json") else {
+        guard let api = URL(string: "https://viettelex.com/stable.json") else {
             return .failed("URL")
         }
         var req = URLRequest(url: api, timeoutInterval: 12)
