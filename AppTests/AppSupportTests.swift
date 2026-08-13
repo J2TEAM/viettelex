@@ -581,6 +581,17 @@ final class TrackedWindowFreshnessTests: XCTestCase {
         // Start of a field is a normal, fresh state.
         XCTAssertTrue(TelexInputController.trackedWindowIsFresh(caret: 0, selectionLength: 0, expected: 0))
     }
+
+    /// Issue #37 (Google Docs on Safari): the guard exists for the IN-PLACE
+    /// insertText(range) rewrite; marked mode never performs one — its ⌫ goes
+    /// engine.backspace() → setMarkedText, correct by the composition session.
+    /// Running the guard there dropped the composition on the first mid-word ⌫
+    /// (`onLen` never advances in marked mode, so `expected` stayed at the anchor)
+    /// and orphaned the underlined word — every later ⌫/space dead until a click.
+    func testFreshnessGuardIsInPlaceOnly() {
+        XCTAssertTrue(TelexInputController.backspaceFreshnessGuardApplies(marked: false))
+        XCTAssertFalse(TelexInputController.backspaceFreshnessGuardApplies(marked: true))
+    }
 }
 
 // The engine answers `.passthrough` once a word passes its 32-key capacity: from then on

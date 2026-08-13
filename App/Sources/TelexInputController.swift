@@ -437,7 +437,17 @@ final class TelexInputController: IMKInputController {
             // box: "lần đầu xóa liền 2 ký tự, sau đó gõ không hiện gì nữa"). On any
             // disagreement, hand the key to the app and forget the composition: the user
             // loses a diacritic re-placement on that ⌫, never text.
-            if tracking {
+            //
+            // IN-PLACE ONLY (issue #37, 2026-08-13): this window arithmetic guards the
+            // insertText(range) rewrite that marked mode never performs — a marked ⌫
+            // goes engine.backspace() → setMarkedText, correct by the composition
+            // session itself. `tracking` is still set at word-start in marked mode
+            // while `onLen` never advances there, so `expected` stayed at the anchor
+            // and Safari+Google-Docs (caret reported at the marked text's END) tripped
+            // the guard on the FIRST mid-word ⌫: composition dropped, the underlined
+            // text orphaned on screen, every later ⌫/space dead until a click —
+            // reporter's "không thể xoá cũng như bấm space để thoát khỏi từ".
+            if tracking, Self.backspaceFreshnessGuardApplies(marked: usesMarkedNow(id)) {
                 let sel = client.selectedRange()
                 let expected = anchor + onLen
                 if !Self.trackedWindowIsFresh(caret: sel.location == NSNotFound ? nil : sel.location,
@@ -724,6 +734,14 @@ final class TelexInputController: IMKInputController {
         }
     }
 
+
+    /// The ⌫ freshness guard protects the IN-PLACE rewrite only — marked mode edits
+    /// through its composition session (engine.backspace → setMarkedText) and needs no
+    /// window arithmetic; running the guard there is what orphaned Google-Docs-in-
+    /// Safari compositions (issue #37: `onLen` never advances in marked mode, so the
+    /// guard compared the caret against the ANCHOR and dropped the word on the first
+    /// mid-word ⌫). Pure so the polarity is pinned by tests.
+    static func backspaceFreshnessGuardApplies(marked: Bool) -> Bool { !marked }
 
     /// Does the app's caret still agree with our tracked composition window? Only then
     /// may a ⌫ rewrite the window blind. Three ways it can lie, all fatal to the
