@@ -85,6 +85,20 @@ final class SettingsModel: ObservableObject {
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
+    @Published var physicalLayoutID: String { didSet { AppState.shared.physicalLayoutID = physicalLayoutID } }
+    /// Curated ANSI/ISO layouts for the physical-layout override. IDs verified to
+    /// resolve via TISCreateInputSourceList on a stock system (pinned by test).
+    static let physicalLayouts: [(name: String, id: String)] = [
+        ("System default", ""),
+        ("U.S. (QWERTY)", "com.apple.keylayout.US"),
+        ("ABC", "com.apple.keylayout.ABC"),
+        ("Dvorak", "com.apple.keylayout.Dvorak"),
+        ("Colemak", "com.apple.keylayout.Colemak"),
+        ("French (AZERTY)", "com.apple.keylayout.French"),
+        ("German (QWERTZ)", "com.apple.keylayout.German"),
+        ("Spanish (ISO)", "com.apple.keylayout.Spanish-ISO"),
+        ("Italian", "com.apple.keylayout.Italian"),
+    ]
     @Published var safeUnknownApps: Bool { didSet { AppState.shared.safeUnknownApps = safeUnknownApps } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
     @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
@@ -139,6 +153,7 @@ final class SettingsModel: ObservableObject {
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
+        physicalLayoutID = AppState.shared.physicalLayoutID
         safeUnknownApps = AppState.shared.safeUnknownApps
         tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
@@ -800,6 +815,13 @@ struct ExperimentalTab: View {
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
                 Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker(model.loc("Physical keyboard layout (experimental)"), selection: $model.physicalLayoutID) {
+                    ForEach(SettingsModel.physicalLayouts, id: \.id) { layout in
+                        Text(layout.id.isEmpty ? model.loc("System default") : layout.name).tag(layout.id)
+                    }
+                }
+                Text(model.loc("Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Unknown apps")) {

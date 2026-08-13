@@ -1502,10 +1502,48 @@ final class TelexInputController: IMKInputController {
         return false
     }
 
+    // MARK: - Physical keyboard layout override (experimental)
+
+    /// The layout ID last APPLIED via TIS this session — apply is idempotent per
+    /// value, so the (cheap but cross-process) TIS call runs only when the setting
+    /// changes, not on every activateServer. Process-wide: the override is per input
+    /// method, not per controller instance.
+    private static var appliedLayoutOverride: String?
+
+    /// Resolve a TIS keyboard-layout ID to its input source (installed system
+    /// layouts included — the user does NOT need it in their input-source list).
+    static func keyboardLayoutSource(id: String) -> TISInputSource? {
+        let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+        let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource]
+        return list?.first
+    }
+
+    /// Ask macOS to translate keycodes with the user-chosen layout while VietTelex
+    /// is selected (Dvorak/AZERTY/QWERTZ… — the engine itself is layout-agnostic, it
+    /// only ever sees the translated characters). Empty setting = leave macOS's own
+    /// choice alone; switching BACK to empty clears the override.
+    private static func applyPhysicalLayoutOverride() {
+        let want = AppState.shared.physicalLayoutID
+        guard want != appliedLayoutOverride else { return }
+        let status: OSStatus
+        if want.isEmpty {
+            status = TISSetInputMethodKeyboardLayoutOverride(nil)
+        } else if let src = keyboardLayoutSource(id: want) {
+            status = TISSetInputMethodKeyboardLayoutOverride(src)
+        } else {
+            DebugLog.log("layout override: id not found (\(want)) — keeping system default")
+            appliedLayoutOverride = want   // don't retry a bad id every activate
+            return
+        }
+        DebugLog.log("layout override → \(want.isEmpty ? "(system)" : want) status=\(status)")
+        appliedLayoutOverride = want
+    }
+
     // MARK: - IMK lifecycle
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
+        Self.applyPhysicalLayoutOverride()
         // New field: both AX verdicts (is it a password field? does it want selection-
         // replace?) describe the PREVIOUS one until their scans re-run.
         SecureFieldDetector.invalidate()

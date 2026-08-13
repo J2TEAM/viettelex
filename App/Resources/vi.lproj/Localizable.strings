@@ -212,3 +212,6 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Clear filter" = "Xoá bộ lọc";
 "Delete this shortcut" = "Xoá gõ tắt này";
 "Open Settings → About to install it." = "Mở Cài đặt → Giới thiệu để cài bản mới.";
+"Physical keyboard layout (experimental)" = "Layout bàn phím vật lý (thử nghiệm)";
+"System default" = "Theo hệ thống";
+"Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch." = "Layout macOS dùng để dịch phím khi ViệtTelex đang chọn — chọn Dvorak/AZERTY/QWERTZ… mà không cần giữ layout đó trong danh sách input source. Có hiệu lực từ lần chuyển app/bộ gõ kế tiếp.";

@@ -228,6 +228,18 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
+    /// Physical keyboard layout override (experimental): the TIS keyboard-layout ID
+    /// macOS should translate keycodes with while VietTelex is selected
+    /// (`TISSetInputMethodKeyboardLayoutOverride`, applied in activateServer). Empty =
+    /// system default — macOS then uses the user's most recent ASCII-capable layout,
+    /// which already makes Dvorak/AZERTY/QWERTZ work IF that layout sits in the
+    /// user's input-source list; the override frees them from keeping it there.
+    /// Settings-UI + lifecycle only (main thread), never the keystroke path.
+    var physicalLayoutID: String {
+        get { defaults.string(forKey: "physicalLayoutID") ?? "" }
+        set { defaults.set(newValue, forKey: "physicalLayoutID") }
+    }
+
     /// POLICY 06/08/2026 "app lạ đi kênh an toàn": an app with NO rule anywhere
     /// (no manual pin, no built-in entry, no learned fallback) routes TAP when
     /// Accessibility is granted, MARKED when not — never probe-and-learn in-place.
