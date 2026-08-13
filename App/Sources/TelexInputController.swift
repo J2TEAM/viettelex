@@ -888,6 +888,11 @@ final class TelexInputController: IMKInputController {
     /// Returns true iff the buffer now holds the word; the ⌫ itself always passes
     /// through and deletes the boundary character.
     private func tryReopenLastCommit(_ client: IMKTextInput, id: String?) -> Bool {
+        // Gated behind the SAME experimental toggle as re-edit (maintainer decision
+        // 13/08/2026): both features answer "may an empty-engine key reach back into
+        // the word before the caret?", so one opt-in covers the pair. Default OFF —
+        // the reEdit 1.4.28 default-ON revert is the standing lesson.
+        guard AppState.shared.reEditWord else { return false }
         // Marked-text apps commit through setMarkedText/insertText, so the word on
         // screen is finalized text no composition can reclaim.
         guard engine.canReopenLastCommit, !usesMarkedNow(id) else { return false }

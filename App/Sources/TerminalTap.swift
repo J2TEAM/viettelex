@@ -2542,6 +2542,10 @@ final class TerminalTapController {
     /// `.selection`/`.emptyReset` fields are excluded for the same reason re-edit
     /// excludes them: inline autocomplete rewrites text underneath us.
     private func tryReopenLastCommitTap(id: String?) -> Bool {
+        // Same experimental gate as the IMKit side (and as re-edit): one opt-in for
+        // every "reach back into the previous word" behavior. Checked before the
+        // canReopen Int compare so an opted-out machine pays nothing extra.
+        guard AppState.shared.reEditWord else { return false }
         guard engine.canReopenLastCommit else { return false }
         guard emitMode == .backspace, let caret = AXTextEdit.readCaret() else {
             engine.forgetLastCommit()

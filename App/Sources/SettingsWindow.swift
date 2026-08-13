@@ -799,7 +799,7 @@ struct ExperimentalTab: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
-                Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word."))
+                Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Unknown apps")) {

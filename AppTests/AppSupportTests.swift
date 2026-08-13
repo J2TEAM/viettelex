@@ -381,6 +381,23 @@ extension AppSupportTests {
         s.advancedFeatures = false
         XCTAssertFalse(s.advancedFeatures, "explicit OFF must survive the ON default")
     }
+
+    /// reEditWord now gates TWO reach-back behaviors — re-edit ("toan"+s→toán) AND
+    /// the ⌫ re-open of PR #42 ("tháy ␣"+⌫+a→thấy, issue #40) — so its default-OFF
+    /// contract (the 1.4.28 default-ON revert) is worth pinning explicitly: a fresh
+    /// install must do neither until the user opts in.
+    func testReEditGateDefaultsOff() {
+        let s = AppState.shared
+        let saved = s.defaults.object(forKey: "reEditWord") as? Bool
+        defer {
+            if let saved { s.defaults.set(saved, forKey: "reEditWord") }
+            else { s.defaults.removeObject(forKey: "reEditWord") }
+        }
+        s.defaults.removeObject(forKey: "reEditWord")
+        XCTAssertFalse(s.reEditWord, "fresh install: no reach-back behavior until opted in")
+        s.reEditWord = true
+        XCTAssertTrue(s.reEditWord, "explicit opt-in sticks")
+    }
 }
 
 // The key-ROUTING predicate shared by the IMKit controller and the terminal tap:
