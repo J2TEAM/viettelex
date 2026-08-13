@@ -1629,12 +1629,24 @@ final class TelexInputController: IMKInputController {
     /// source of truth the flaky activate/deactivate ordering must defer to. Called
     /// only on lifecycle transitions / TIS notifications, never on the keystroke hot
     /// path, so the Carbon TIS copy is fine here. Matches both the input source and its
-    /// `.vi` input mode by bundle-id prefix.
+    /// `.vi` input mode by bundle-id prefix — THIS build's own id (see `OwnBundle`), so
+    /// a dev build registered under a separate id still recognizes itself.
     static func isVietTelexSelected() -> Bool {
         guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
               let ptr = TISGetInputSourceProperty(src, kTISPropertyInputSourceID) else { return false }
         let id = Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
-        return id.hasPrefix("com.viettelex.inputmethod.telex")
+        return inputSourceIsOurs(id)
+    }
+
+    /// Does this input-source id belong to the RUNNING build? Split out of
+    /// `isVietTelexSelected` so the prefix rule is testable without a live TIS —
+    /// `own` is the seam a test uses to replay the dev-build id mismatch that put the
+    /// tap dormant mid-word (see `OwnBundle`). An EMPTY `own` matches nothing: bare
+    /// `hasPrefix("")` is true for every id, which would claim VietTelex is selected
+    /// while the user types in ABC. `OwnBundle` already refuses to produce one — this
+    /// is the guard at the comparison itself, where the hazard actually lives.
+    static func inputSourceIsOurs(_ id: String, own: String = OwnBundle.id) -> Bool {
+        !own.isEmpty && id.hasPrefix(own)
     }
 
     // MARK: - Input-method menu (IMK-provided, no NSStatusItem)
