@@ -1,0 +1,16 @@
+# Tắt issue trắng: mẫu 🐞 Báo lỗi ép điền đúng những field mà BAO-LOI.md yêu cầu
+# (app/website, chuỗi phím, mong đợi/thực tế, nhật ký) — thiếu chúng thì mỗi report
+# mất thêm một vòng hỏi lại. Mẫu ❓ Câu hỏi là cửa cho mọi thứ không vừa 2 mẫu kia
+# (repo không bật Discussions), nên không ai bị chặn khi cần hỏi.
+blank_issues_enabled: false
+
+contact_links:
+  - name: 📋 Hướng dẫn báo lỗi + cách lấy nhật ký gỡ lỗi
+    url: https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md
+    about: Đọc trước khi mở issue lỗi — kèm nhật ký thì lỗi thường fix được ngay vòng đầu.
+  - name: 🛠 Khắc phục sự cố thường gặp
+    url: https://github.com/ptrinh/viettelex#khắc-phục-sự-cố
+    about: Không thấy trong Input Sources, không gõ được trong Terminal/Chrome, gõ bị lặp chữ…
+  - name: ⌨️ App gõ sai cơ chế? Mở PR thêm một dòng rule
+    url: https://github.com/ptrinh/viettelex/blob/main/typing-modes.yml
+    about: "Thêm `bundle-id: mode` vào typing-modes.yml — cách đóng góp không cần sửa Swift."

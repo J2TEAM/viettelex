@@ -1,10 +1,10 @@
 # Báo lỗi VietTelex
 
-Gửi issue tại **https://github.com/ptrinh/viettelex/issues/new**. Trước khi báo: cập nhật bản mới nhất (tab **Giới thiệu** → *Kiểm tra cập nhật*) và thử lại.
+Gửi issue tại **https://github.com/ptrinh/viettelex/issues/new/choose** → chọn **🐞 Báo lỗi**. Trước khi báo: cập nhật bản mới nhất (tab **Giới thiệu** → *Kiểm tra cập nhật*) và thử lại.
 
 ## Mẫu issue
 
-Phiên bản, macOS, chế độ gõ… đã nằm sẵn trong nhật ký — chỉ cần điền:
+Form sẽ hỏi đúng những field dưới đây — xem trước cho nhanh. Phiên bản, macOS, chế độ gõ… đã nằm sẵn trong nhật ký:
 
 ```markdown
 **App / website bị lỗi:** Chrome — docs.google.com

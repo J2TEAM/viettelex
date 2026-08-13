@@ -1,0 +1,34 @@
+name: ❓ Câu hỏi / góp ý khác
+description: Không chắc là lỗi, hỏi cách dùng, hoặc góp ý chung
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Nếu app gõ ra chữ sai thì dùng mẫu **🐞 Báo lỗi** — sẽ được xử lý nhanh hơn nhiều.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Trước khi gửi
+      options:
+        - label: Đã đọc [Khắc phục sự cố](https://github.com/ptrinh/viettelex#khắc-phục-sự-cố) trong README
+          required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Câu hỏi
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Phiên bản VietTelex + macOS
+      placeholder: 1.5.10 — macOS 26.1
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: Bạn đã thử những gì
