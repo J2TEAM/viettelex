@@ -41,6 +41,9 @@ final class GonhanhHardeningTests: XCTestCase {
         XCTAssertEqual(dict["com.apple.ScreenContinuity"], "inPlace")
         XCTAssertEqual(dict["ru.keepcoder.Telegram"], "tap")
         XCTAssertEqual(dict["com.facebook.archon.developerID"], "tap")
+        // Spark Classic (issue #47): WebView composer — WebKit macOS 26 swallows the
+        // tap's synthetic burst (the #44 class); reporter field-verified in-place.
+        XCTAssertEqual(dict["com.readdle.smartemail-Mac"], "inPlace")
     }
 
     /// Messenger desktop (unofficial Electron wrapper) — field report 2026-08-11:

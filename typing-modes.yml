@@ -90,6 +90,9 @@ com.apple.iWork.Numbers: inPlace
 com.apple.iWork.Keynote: inPlace
 com.apple.dt.Xcode: inPlace
 com.apple.MobileSMS: inPlace
+# Spark Classic — composer là WebView, WebKit macOS 26 nuốt synthetic burst của
+# tap (issue #47, cùng gốc #44); reporter field-verify in-place OK 13/08/2026.
+com.readdle.smartemail-Mac: inPlace
 # Browsers — tự dò theo ô (address bar vs nội dung trang)
 com.apple.Safari: axDetect
 com.apple.SafariTechnologyPreview: axDetect
