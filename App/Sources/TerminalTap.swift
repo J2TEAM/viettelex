@@ -744,11 +744,32 @@ enum FocusedFieldDetector {
     private static func pokeChromiumAX() {
         guard let app = NSWorkspace.shared.frontmostApplication,
               AppState.shared.usesAxDetect(app.bundleIdentifier) else { return }
+        pokeFrontmostLazyAX()
+    }
+
+    /// Once-per-pid AXManualAccessibility poke for the FRONTMOST app, whatever its
+    /// routing. Tap-routed Electron apps need it too: Discord never gets field scans
+    /// (those run for axDetect browsers only), so its lazy AX tree stayed OFF and
+    /// `AXTextEdit.readCaret()` returned nil — the ⌫ re-open of issue #40 died on
+    /// "no AX caret" while the same feature worked in iTerm (real AX) and Chrome
+    /// (poked by every field scan). Called from markActive via a background queue
+    /// when the re-edit gate is on — never the keystroke path. Apps that don't know
+    /// the attribute just return an error; the tree takes a beat to build, so the
+    /// FIRST attempt after activation may still miss — the next one sees it.
+    static func pokeFrontmostLazyAX() {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return }
         let pid = app.processIdentifier
         guard lock.withLock({ pokedPids.insert(pid).inserted }) else { return }
         let el = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(el, 0.05)
         AXUIElementSetAttributeValue(el, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    }
+
+    /// Pure gate for the markActive poke: only when a reach-back feature (re-edit /
+    /// ⌫ re-open — one toggle) can actually use the tree, and only for apps whose
+    /// keys the tap composes (axDetect browsers are already poked by field scans).
+    static func lazyAXPokeWanted(reEditEnabled: Bool, routesTap: Bool) -> Bool {
+        reEditEnabled && routesTap
     }
 
     // MARK: is the focused element a REAL text input? (remote-desktop per-field)
@@ -1597,6 +1618,14 @@ final class TerminalTapController {
     func markActive() {
         let active = activationLock.withLock { activation.activate(); return activation.isActive }
         DebugLog.log("markActive → imeActive=\(active)")
+        // Issue #40 (Discord): tap-routed Electron apps never get the field scans
+        // that poke a lazily-built AX tree on, so the reach-back reads (⌫ re-open /
+        // re-edit) found no caret there. Poke once per pid, off the main thread.
+        if FocusedFieldDetector.lazyAXPokeWanted(
+                reEditEnabled: AppState.shared.reEditWord,
+                routesTap: AppState.shared.tapRouting(FrontmostApp.shared.bundleID).tap) {
+            DispatchQueue.global(qos: .utility).async { FocusedFieldDetector.pokeFrontmostLazyAX() }
+        }
     }
 
     /// deactivateServer: `stillSelected` = is VietTelex still the OS-selected source

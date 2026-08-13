@@ -382,6 +382,17 @@ extension AppSupportTests {
         XCTAssertFalse(s.advancedFeatures, "explicit OFF must survive the ON default")
     }
 
+    /// Issue #40 (Discord): the markActive AX poke fires only when a reach-back
+    /// feature can use the tree AND the app's keys go through the tap — axDetect
+    /// browsers are poked by field scans already, and an opted-out machine must not
+    /// touch other processes' AX at all.
+    func testLazyAXPokeGate() {
+        XCTAssertTrue(FocusedFieldDetector.lazyAXPokeWanted(reEditEnabled: true, routesTap: true))
+        XCTAssertFalse(FocusedFieldDetector.lazyAXPokeWanted(reEditEnabled: false, routesTap: true))
+        XCTAssertFalse(FocusedFieldDetector.lazyAXPokeWanted(reEditEnabled: true, routesTap: false))
+        XCTAssertFalse(FocusedFieldDetector.lazyAXPokeWanted(reEditEnabled: false, routesTap: false))
+    }
+
     /// reEditWord now gates TWO reach-back behaviors — re-edit ("toan"+s→toán) AND
     /// the ⌫ re-open of PR #42 ("tháy ␣"+⌫+a→thấy, issue #40) — so its default-OFF
     /// contract (the 1.4.28 default-ON revert) is worth pinning explicitly: a fresh
