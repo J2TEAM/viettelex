@@ -1,0 +1,17 @@
+[
+  {
+    "name": "baseline",
+    "keys": "ddaay laf tieengs vieejt raats hay",
+    "expected": "đây là tiếng việt rất hay"
+  },
+  {
+    "name": "issue-33-huynh-van-bach",
+    "keys": "huynhf vawn bachs",
+    "expected": "huỳnh văn bách"
+  },
+  {
+    "name": "issue-33-final-tone-keys",
+    "keys": "phari gox mowsi ra",
+    "expected": "phải gõ mới ra"
+  }
+]
