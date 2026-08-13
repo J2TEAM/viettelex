@@ -24,6 +24,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: swift test
         run: cd TelexCore && swift test
+      - name: Terminal harness unit tests
+        run: |
+          python3 -m unittest Scripts/test_pty_reader.py
+          python3 -m json.tool Scripts/terminal-regression-cases.json >/dev/null
+          swiftc -typecheck Scripts/stress-typing.swift
       - name: Benchmarks + zero-alloc (release)
         run: cd TelexCore && swift test -c release --filter 'Benchmark|ZeroAllocation'
 

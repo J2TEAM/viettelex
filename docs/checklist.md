@@ -75,6 +75,28 @@ Ma trận test tay theo app. Trạng thái: ☐ chưa test / ✅ pass / ❌ fail
 
 1. **`insertText(replacementRange:)` né được lớp lỗi lớn nhất** ("dđ" trong omnibox/Excel — race giữa backspace và inline autocomplete), nhưng phải test theo version Chromium.
 2. **Fallback tap-mode là bắt buộc**: Terminal/TUI và app bỏ qua replacementRange. Probe read-back tự phát hiện, không bắt user cấu hình.
+
+### Terminal/TUI regression tự động
+
+Issue #33 có lỗi dấu cuối từ không ổn định trong Claude/Kiro CLI ở tốc độ gõ
+bình thường. Chạy reader ở terminal thứ nhất:
+
+```bash
+python3 Scripts/pty-reader.py /tmp/viettelex-terminal.log \
+  --corpus Scripts/terminal-regression-cases.json --repeats 10
+```
+
+Ở terminal thứ hai, chạy poster rồi focus lại terminal reader trong 3 giây:
+
+```bash
+swift Scripts/stress-typing.swift \
+  --corpus Scripts/terminal-regression-cases.json --rate 7 --repeats 10
+```
+
+Reader tự áp dụng byte Backspace/DEL và decode UTF-8 để dựng text mà TUI thật
+nhận được, sau đó so sánh từng dòng. Kết quả phải là `30/30 passed`. Chạy lại
+với `--rate 500` để giữ stress coverage cũ. Corpus gồm baseline và hai chuỗi
+tái hiện từ issue #33; thêm case mới vào JSON, không hardcode thêm trong script.
 3. **Electron hỏng Ở BIÊN TỪ** dù giữa dòng trông ổn — mọi test in-place cho app Electron phải gõ đầu-dòng/đầu-message trước khi kết luận.
 4. **Secure input**: check `IsSecureEventInputEnabled`, bypass sạch.
 5. **VS Code EditContext** là chiến trường mới — theo dõi khi nó thành default upstream (hiện VietTelex đi tap nên không blocker).

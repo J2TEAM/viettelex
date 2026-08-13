@@ -7,6 +7,8 @@
 //
 // Usage:
 //   swift Scripts/stress-typing.swift [keys_per_sec=500] [repeats=20]
+//   swift Scripts/stress-typing.swift --corpus Scripts/terminal-regression-cases.json \
+//       [--rate 7] [--repeats 10]
 //   → focus vào ô text đích trong 3s countdown; script gõ câu Telex chuẩn
 //     lặp lại, in ra văn bản KỲ VỌNG để so sánh mắt thường / diff.
 //
@@ -15,12 +17,50 @@
 import Cocoa
 
 let args = CommandLine.arguments
-let rate = args.count > 1 ? Double(args[1]) ?? 500 : 500
-let repeats = args.count > 2 ? Int(args[2]) ?? 20 : 20
+
+struct TerminalCase: Codable {
+    let name: String
+    let keys: String
+    let expected: String
+}
+
+func value(after flag: String) -> String? {
+    guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return nil }
+    return args[index + 1]
+}
+
+let corpusPath = value(after: "--corpus")
+let rate = value(after: "--rate").flatMap(Double.init)
+    ?? (corpusPath == nil && args.count > 1 ? Double(args[1]) : nil)
+    ?? 500
+let repeats = value(after: "--repeats").flatMap(Int.init)
+    ?? (corpusPath == nil && args.count > 2 ? Int(args[2]) : nil)
+    ?? 20
+
+guard rate > 0, repeats > 0 else {
+    fputs("rate and repeats must be greater than zero\n", stderr)
+    exit(2)
+}
 
 // Câu test chuẩn của checklist + kỳ vọng sau khi engine xử lý.
 let telexKeys = "ddaay laf tieengs vieejt raats hay "
 let expected  = "đây là tiếng việt rất hay "
+let cases: [TerminalCase]
+if let corpusPath {
+    do {
+        let data = try Data(contentsOf: URL(fileURLWithPath: corpusPath))
+        cases = try JSONDecoder().decode([TerminalCase].self, from: data)
+    } catch {
+        fputs("cannot load corpus \(corpusPath): \(error)\n", stderr)
+        exit(2)
+    }
+    guard !cases.isEmpty, cases.allSatisfy({ !$0.name.isEmpty && !$0.keys.isEmpty }) else {
+        fputs("corpus must contain named, non-empty cases\n", stderr)
+        exit(2)
+    }
+} else {
+    cases = [TerminalCase(name: "legacy-stress", keys: telexKeys, expected: expected)]
+}
 
 // US-layout virtual keycodes cho a-z + space.
 let keycode: [Character: CGKeyCode] = [
@@ -37,22 +77,41 @@ func post(_ ch: Character) {
     CGEvent(keyboardEventSource: src, virtualKey: k, keyDown: false)?.post(tap: .cghidEventTap)
 }
 
+func postEnter() {
+    let enter: CGKeyCode = 36
+    CGEvent(keyboardEventSource: src, virtualKey: enter, keyDown: true)?.post(tap: .cghidEventTap)
+    CGEvent(keyboardEventSource: src, virtualKey: enter, keyDown: false)?.post(tap: .cghidEventTap)
+}
+
 let gap = 1.0 / rate
-print("Sẽ gõ \(repeats) lần @ \(Int(rate)) phím/s (\(telexKeys.count * repeats) phím).")
+let keysPerPass = cases.reduce(0) { $0 + $1.keys.count }
+let boundaryKeys = corpusPath == nil ? 0 : cases.count
+let totalKeys = (keysPerPass + boundaryKeys) * repeats
+print("Sẽ gõ \(repeats) vòng × \(cases.count) ca @ \(rate) phím/s (\(totalKeys) phím).")
 print("Focus vào ô text đích... 3s")
 Thread.sleep(forTimeInterval: 3)
 
 let t0 = DispatchTime.now().uptimeNanoseconds
 for _ in 0..<repeats {
-    for ch in telexKeys {
-        post(ch)
-        Thread.sleep(forTimeInterval: gap)
+    for testCase in cases {
+        for ch in testCase.keys {
+            post(ch)
+            Thread.sleep(forTimeInterval: gap)
+        }
+        if corpusPath != nil {
+            postEnter()
+            Thread.sleep(forTimeInterval: gap)
+        }
     }
 }
 let secs = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000_000
 
 print(String(format: "\nXong: %d phím trong %.1fs (%.0f phím/s thực tế).",
-             telexKeys.count * repeats, secs, Double(telexKeys.count * repeats) / secs))
-print("\nVăn bản KỲ VỌNG (lặp \(repeats) lần):")
-print(String(repeating: expected, count: repeats))
-print("\nSo với văn bản thực tế trong app: không được mất/lặp/sai dấu ký tự nào.")
+             totalKeys, secs, Double(totalKeys) / secs))
+if corpusPath == nil {
+    print("\nVăn bản KỲ VỌNG (lặp \(repeats) lần):")
+    print(String(repeating: expected, count: repeats))
+    print("\nSo với văn bản thực tế trong app: không được mất/lặp/sai dấu ký tự nào.")
+} else {
+    print("\nReader sẽ tự đối chiếu \(cases.count * repeats) dòng với corpus.")
+}
