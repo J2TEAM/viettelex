@@ -2106,6 +2106,20 @@ final class TerminalTapController {
         DebugLog.log("EMERGENCY STOP — cascade breaker tripped, tap disabled, keys native")
     }
 
+    /// Rewrite a ⌘/⌃/⌥ chord's keycode so the app resolves it on the PINNED layout.
+    ///
+    /// Costs one lock-guarded read and two array reads, and only for chords — a plain
+    /// keystroke never gets here. Nothing happens at all unless a layout is pinned AND
+    /// macOS is on a different one, the same fence the typing path uses.
+    ///
+    /// TAP THREAD. `KeyboardLayoutOverride.chordRemap` is lock-guarded for exactly this.
+    private func remapChordKeyCode(_ event: CGEvent, shift: Bool) {
+        guard let remap = KeyboardLayoutOverride.chordRemap else { return }
+        let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+        guard let substitute = remap.substitute(for: code, shift: shift) else { return }
+        event.setIntegerValueField(.keyboardEventKeycode, value: Int64(substitute))
+    }
+
     // Returning nil suppresses the key; returning the event passes it through.
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
@@ -2259,6 +2273,11 @@ final class TerminalTapController {
             // ALWAYS notify: the IMKit controller's engine state is invisible from here,
             // so we cannot gate this on our own emptiness.
             NotificationCenter.default.post(name: .telexResetComposition, object: nil)
+            // The chord itself is resolved by the APP, through macOS's live layout —
+            // never by us, so pinning a layout could not reach it and ⌘R on a pinned
+            // QWERTY fired ⌘P while macOS sat on Colemak (VTX fork's measurement).
+            // Re-address the event here, the one place that sees every chord.
+            remapChordKeyCode(event, shift: flags.contains(.maskShift))
             return pass
         }
 
@@ -2439,7 +2458,18 @@ final class TerminalTapController {
             engine.forgetLastCommit()      // navigation: the caret left the word behind
             return pass
         }
-        let ch = Character(scalar)
+        // Layout remap: the tap is handed the character macOS produced with ITS
+        // layout, which is the one the user overrode — re-derive it from the keycode.
+        // Modifier combos are excluded (they are shortcuts, not text) and an
+        // unmappable key keeps the OS's character, so this can only ever narrow to
+        // plain ASCII the pinned layout actually defines.
+        var ch = Character(scalar)
+        if let translator = KeyboardLayoutOverride.translator,
+           flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty,
+           let remapped = translator.character(keyCode: UInt16(keyCode),
+                                               shift: flags.contains(.maskShift)) {
+            ch = remapped
+        }
         // VNI: digits carry the diacritics, so they belong to the WORD, not the boundary
         // (same fix as the IMKit path — issue #28, 2026-07-27).
         guard let ascii = ch.asciiValue,
@@ -2455,13 +2485,16 @@ final class TerminalTapController {
             // tapNativeFastPath like the letter fast-path below. (modifyInPlace adds
             // nothing here: with no rewrite pending the untouched event is already
             // exactly what should land, in every emit mode.)
-            let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(buf[0]))
+            let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(ch.utf16.first ?? buf[0]))
             // A plain ascii boundary (space, punctuation, digit) leaves exactly ONE
             // character after the word, which is what makes the next ⌫ re-openable
             // (issue #40). Anything else — an option-key symbol, a multi-scalar
             // sequence — is not worth reasoning about: forget the word.
             if !ch.isASCII { engine.forgetLastCommit() }
-            if !rewrote, AppState.shared.tapNativeFastPath, SyntheticKeyboard.queueDrained() {
+            // Layout pinned → the native pass-through would type the OS layout's
+            // character, not ours: fall through to reemit, which carries String(ch).
+            if !rewrote, AppState.shared.tapNativeFastPath, SyntheticKeyboard.queueDrained(),
+               KeyboardLayoutOverride.translator == nil {
                 return pass
             }
             reemit(keyCode: keyCode, string: String(ch))
@@ -2490,7 +2523,8 @@ final class TerminalTapController {
         // tap callback is serial, so the decision itself cannot race.
         switch engine.feed(ch) {
         case .passthrough:
-            if AppState.shared.tapNativeFastPath, SyntheticKeyboard.queueDrained() {
+            if AppState.shared.tapNativeFastPath, SyntheticKeyboard.queueDrained(),
+               KeyboardLayoutOverride.translator == nil {
                 return pass                               // native: zero synthetic events
             }
             SyntheticKeyboard.apply(backspaces: 0, insert: String(ch), mode: emitMode)

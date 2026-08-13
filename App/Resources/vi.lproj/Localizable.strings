@@ -212,6 +212,9 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Clear filter" = "Xoá bộ lọc";
 "Delete this shortcut" = "Xoá gõ tắt này";
 "Open Settings → About to install it." = "Mở Cài đặt → Giới thiệu để cài bản mới.";
-"Physical keyboard layout (experimental)" = "Layout bàn phím vật lý (thử nghiệm)";
-"System default" = "Theo hệ thống";
-"Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch." = "Layout macOS dùng để dịch phím khi ViệtTelex đang chọn — chọn Dvorak/AZERTY/QWERTZ… mà không cần giữ layout đó trong danh sách input source. Có hiệu lực từ lần chuyển app/bộ gõ kế tiếp.";
+
+/* Keyboard layout (bố cục bàn phím Telex đọc) */
+"Keyboard layout" = "Bố cục bàn phím";
+"Compose on" = "Gõ theo";
+"Follow the previous input source" = "Theo nguồn nhập trước đó";
+"Which physical keyboard Telex reads. Pick Colemak, Dvorak… to type Vietnamese with that layout. Left on “follow”, the layout is inherited from whichever input source you switched from — so the same keys give different letters depending on where you came from." = "Bố cục bàn phím vật lý mà Telex đọc. Chọn Colemak, Dvorak… để gõ tiếng Việt bằng bố cục đó. Nếu để “theo nguồn nhập trước đó”, bố cục bị thừa hưởng từ nguồn nhập bạn vừa rời khỏi — cùng một phím sẽ ra chữ khác nhau tuỳ bạn chuyển từ đâu sang.";

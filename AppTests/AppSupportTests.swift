@@ -363,31 +363,6 @@ extension AppSupportTests {
         s.lastNotifiedUpdateVersion = v
         XCTAssertFalse(VTLocalized("Close").isEmpty)   // localization lookup path
         _ = s.tapNativeFastPath
-        let layout = s.physicalLayoutID
-        s.physicalLayoutID = "com.apple.keylayout.Dvorak"
-        XCTAssertEqual(s.physicalLayoutID, "com.apple.keylayout.Dvorak")
-        s.physicalLayoutID = layout
-    }
-
-    /// The physical-layout override: every curated ID must resolve through TIS on a
-    /// stock system (a typo here would silently keep the system default — the apply
-    /// path logs-and-gives-up on an unknown id by design), and a fresh install must
-    /// have NO override (empty = macOS's own base-layout choice).
-    func testPhysicalLayoutCuratedIDsResolve() {
-        for layout in SettingsModel.physicalLayouts where !layout.id.isEmpty {
-            XCTAssertNotNil(TelexInputController.keyboardLayoutSource(id: layout.id),
-                            "\(layout.name) (\(layout.id)) must resolve via TIS")
-        }
-        XCTAssertEqual(SettingsModel.physicalLayouts.first?.id, "",
-                       "first entry is the System-default sentinel")
-        let s = AppState.shared
-        let saved = s.defaults.string(forKey: "physicalLayoutID")
-        defer {
-            if let saved { s.defaults.set(saved, forKey: "physicalLayoutID") }
-            else { s.defaults.removeObject(forKey: "physicalLayoutID") }
-        }
-        s.defaults.removeObject(forKey: "physicalLayoutID")
-        XCTAssertEqual(s.physicalLayoutID, "", "fresh install: no override")
     }
 
     /// Maintainer decision 2026-08-12: the power-user surface (Bảng chế độ gõ +

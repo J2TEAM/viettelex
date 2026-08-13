@@ -85,20 +85,15 @@ final class SettingsModel: ObservableObject {
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
-    @Published var physicalLayoutID: String { didSet { AppState.shared.physicalLayoutID = physicalLayoutID } }
-    /// Curated ANSI/ISO layouts for the physical-layout override. IDs verified to
-    /// resolve via TISCreateInputSourceList on a stock system (pinned by test).
-    static let physicalLayouts: [(name: String, id: String)] = [
-        ("System default", ""),
-        ("U.S. (QWERTY)", "com.apple.keylayout.US"),
-        ("ABC", "com.apple.keylayout.ABC"),
-        ("Dvorak", "com.apple.keylayout.Dvorak"),
-        ("Colemak", "com.apple.keylayout.Colemak"),
-        ("French (AZERTY)", "com.apple.keylayout.French"),
-        ("German (QWERTZ)", "com.apple.keylayout.German"),
-        ("Spanish (ISO)", "com.apple.keylayout.Spanish-ISO"),
-        ("Italian", "com.apple.keylayout.Italian"),
-    ]
+    /// ASCII keyboard layout Telex composes on ("" = inherit macOS's). Applied
+    /// immediately as well as persisted: waiting for the next activateServer would
+    /// leave the user's very next keystroke on the old layout.
+    @Published var keyboardLayoutID: String {
+        didSet {
+            AppState.shared.keyboardLayoutID = keyboardLayoutID
+            KeyboardLayoutOverride.apply(keyboardLayoutID)
+        }
+    }
     @Published var safeUnknownApps: Bool { didSet { AppState.shared.safeUnknownApps = safeUnknownApps } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
     @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
@@ -153,7 +148,12 @@ final class SettingsModel: ObservableObject {
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
-        physicalLayoutID = AppState.shared.physicalLayoutID
+        // A layout uninstalled since it was chosen (system update, removed third-party
+        // bundle) would leave the Picker with no matching tag and render blank — fall
+        // back to "system default" so the control always shows a real selection.
+        let savedLayout = AppState.shared.keyboardLayoutID
+        keyboardLayoutID = KeyboardLayoutOverride.isInstalled(savedLayout)
+            ? savedLayout : KeyboardLayoutOverride.systemDefault
         safeUnknownApps = AppState.shared.safeUnknownApps
         tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
@@ -168,6 +168,13 @@ final class SettingsModel: ObservableObject {
     }
 
     /// Localized string for the user's chosen UI language (see `VTLocalized`).
+    /// Installed ASCII-capable layouts for the Keyboard layout picker. Resolved once
+    /// per Settings window — TISCreateInputSourceList walks every installed layout
+    /// bundle (~112 on a stock Mac), which is far too much for a view body that
+    /// SwiftUI re-evaluates on each toggle. The set can't change while the window is
+    /// open without installing software.
+    lazy var keyboardLayouts: [KeyboardLayoutOption] = KeyboardLayoutOverride.installed()
+
     func loc(_ key: String) -> String { VTLocalized(key) }
 
     /// Re-read the Accessibility trust snapshot (see `accessibilityTrusted`).
@@ -816,12 +823,17 @@ struct ExperimentalTab: View {
                        isOn: $model.reEditWord)
                 Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
                     .font(.caption).foregroundStyle(.secondary)
-                Picker(model.loc("Physical keyboard layout (experimental)"), selection: $model.physicalLayoutID) {
-                    ForEach(SettingsModel.physicalLayouts, id: \.id) { layout in
-                        Text(layout.id.isEmpty ? model.loc("System default") : layout.name).tag(layout.id)
+            }
+            Section(model.loc("Keyboard layout")) {
+                Picker(model.loc("Compose on"), selection: $model.keyboardLayoutID) {
+                    Text(model.loc("Follow the previous input source"))
+                        .tag(KeyboardLayoutOverride.systemDefault)
+                    Divider()
+                    ForEach(model.keyboardLayouts) { layout in
+                        Text(layout.name).tag(layout.id)
                     }
                 }
-                Text(model.loc("Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch."))
+                Text(model.loc("Which physical keyboard Telex reads. Pick Colemak, Dvorak… to type Vietnamese with that layout. Left on “follow”, the layout is inherited from whichever input source you switched from — so the same keys give different letters depending on where you came from."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Unknown apps")) {

@@ -51,6 +51,7 @@ final class AppState: @unchecked Sendable {
         static let fallbackApps = "fallbackApps"      // learned: ignore replacementRange
         static let probedApps = "probedApps"          // learned: verified good
         static let manualModes = "manualAppModes"     // user override: bundleID -> AppMode
+        static let keyboardLayout = "keyboardLayoutID" // ASCII layout Telex composes on
     }
 
     /// A user-forced per-app handling strategy (Settings → Bảng chế độ gõ). Overrides
@@ -107,6 +108,7 @@ final class AppState: @unchecked Sendable {
         _tapCascadeBreaker = (defaults.object(forKey: "tapCascadeBreaker") as? Bool) ?? true
         _debugLogging = (defaults.object(forKey: "debugLogging") as? Bool) ?? false
         _safeUnknownApps = (defaults.object(forKey: "safeUnknownApps") as? Bool) ?? true
+        _keyboardLayoutID = (defaults.object(forKey: Key.keyboardLayout) as? String) ?? ""
         shortcutsCache = (defaults.dictionary(forKey: Key.shortcuts) as? [String: String]) ?? [:]
         fallbackAppsCache = Set(defaults.stringArray(forKey: Key.fallbackApps) ?? [])
         probedAppsCache = Set(defaults.stringArray(forKey: Key.probedApps) ?? [])
@@ -228,16 +230,19 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
-    /// Physical keyboard layout override (experimental): the TIS keyboard-layout ID
-    /// macOS should translate keycodes with while VietTelex is selected
-    /// (`TISSetInputMethodKeyboardLayoutOverride`, applied in activateServer). Empty =
-    /// system default — macOS then uses the user's most recent ASCII-capable layout,
-    /// which already makes Dvorak/AZERTY/QWERTZ work IF that layout sits in the
-    /// user's input-source list; the override frees them from keeping it there.
-    /// Settings-UI + lifecycle only (main thread), never the keystroke path.
-    var physicalLayoutID: String {
-        get { defaults.string(forKey: "physicalLayoutID") ?? "" }
-        set { defaults.set(newValue, forKey: "physicalLayoutID") }
+    /// Which ASCII keyboard layout Telex composes on — a kTISPropertyInputSourceID
+    /// such as "com.apple.keylayout.Colemak". Empty = inherit whatever layout macOS
+    /// carried over from the previously selected input source, the behaviour of every
+    /// build up to 1.5.11. See KeyboardLayoutOverride for why inheriting is a coin
+    /// flip and why the fix is our own keycode translation (both documented OS routes
+    /// are inert on macOS 26 — measured by the VTX fork, ported with credit).
+    ///
+    /// Read on activateServer (focus changes), never on the keystroke path.
+    private var _keyboardLayoutID: String = ""
+    var keyboardLayoutID: String {
+        get { lock.withLock { _keyboardLayoutID } }
+        set { lock.withLock { _keyboardLayoutID = newValue }
+              defaults.set(newValue, forKey: Key.keyboardLayout) }
     }
 
     /// POLICY 06/08/2026 "app lạ đi kênh an toàn": an app with NO rule anywhere

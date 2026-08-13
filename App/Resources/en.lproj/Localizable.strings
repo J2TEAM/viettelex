@@ -60,6 +60,3 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 "Clear filter" = "Clear filter";
 "Delete this shortcut" = "Delete this shortcut";
 "Open Settings → About to install it." = "Open Settings → About to install it.";
-"Physical keyboard layout (experimental)" = "Physical keyboard layout (experimental)";
-"System default" = "System default";
-"Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch." = "Layout macOS uses to translate keys while ViệtTelex is selected — pick Dvorak/AZERTY/QWERTZ… without keeping that layout in your input-source list. Takes effect on the next app/input-source switch.";

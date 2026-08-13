@@ -42,4 +42,4 @@ killall TextInputMenuAgent 2>/dev/null || true
 echo "Installed to $DEST. Type anywhere (or switch input source away and back) to relaunch."
 echo "NOTE: apps hold their own IMK connection — an app that stopped responding to"
 echo "      the IME needs an input-source flip; Chrome/iTerm need a full app relaunch."
-echo "Live logs: log stream --predicate 'process == \"VietTelex\"'"
+echo "Live logs: /usr/bin/log stream --predicate 'process == \"VietTelex\"'"
