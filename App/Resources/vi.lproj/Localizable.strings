@@ -95,9 +95,11 @@
 "Keep this ON. Stops the terminal tap if it ever floods the keyboard with synthetic events, so a bug can’t freeze typing." = "Nên để BẬT. Tự ngắt tap terminal nếu nó phát quá nhiều sự kiện phím, để lỗi không thể làm treo bàn phím.";
 "Diagnostics" = "Chẩn đoán";
 "Record debug log" = "Ghi nhật ký gỡ lỗi";
-"Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Save debug log and send us the file." = "Ghi lại các sự kiện của tap trong bộ nhớ (không ghi nội dung bạn gõ). Bật lên, tái hiện lỗi, rồi Lưu nhật ký và gửi file cho bọn mình.";
+"Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Copy debug log and paste it into your report — or save it as a file." = "Ghi lại các sự kiện của tap trong bộ nhớ (không ghi nội dung bạn gõ). Bật lên, tái hiện lỗi, rồi bấm Chép nhật ký và dán vào báo cáo — hoặc lưu thành file.";
+"Copy debug log" = "Chép nhật ký gỡ lỗi";
 "Save debug log…" = "Lưu nhật ký gỡ lỗi…";
 "Clear" = "Xoá";
+"Copied — paste it into your bug report." = "Đã chép — dán vào phần báo lỗi.";
 "Saved to %@" = "Đã lưu vào %@";
 "Couldn’t save the file." = "Không lưu được file.";
 "Apply tone edits in Chrome and Spotlight with one Accessibility edit instead of a burst of Shift+Left key events." = "Bỏ dấu trong Chrome và Spotlight bằng một thao tác Accessibility thay vì một loạt phím Shift+Trái.";

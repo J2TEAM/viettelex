@@ -826,9 +826,10 @@ struct ExperimentalTab: View {
             }
             Section(model.loc("Diagnostics")) {
                 Toggle(model.loc("Record debug log"), isOn: $model.debugLogging)
-                Text(model.loc("Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Save debug log and send us the file."))
+                Text(model.loc("Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Copy debug log and paste it into your report — or save it as a file."))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
+                    Button(model.loc("Copy debug log")) { copyLog() }
                     Button(model.loc("Save debug log…")) { saveLog() }
                     Button(model.loc("Clear")) { DebugLog.clear(); saveResult = nil }
                 }
@@ -838,6 +839,17 @@ struct ExperimentalTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Clipboard, not a file. The report flow (BAO-LOI.md) ends with the log pasted
+    /// into a GitHub issue or a chat message, and save → find the file → attach it was
+    /// the slowest step of it — for a user who is, by definition, already annoyed.
+    /// Same snapshot as saveLog(), so a pasted log and a saved one are identical.
+    private func copyLog() {
+        let text = DebugLog.snapshot(header: debugHeader())
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        saveResult = model.loc("Copied — paste it into your bug report.")
     }
 
     private func saveLog() {
