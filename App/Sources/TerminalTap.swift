@@ -2572,11 +2572,24 @@ final class TerminalTapController {
         // canReopen Int compare so an opted-out machine pays nothing extra.
         guard AppState.shared.reEditWord else { return false }
         guard engine.canReopenLastCommit else { return false }
-        guard emitMode == .backspace, let caret = AXTextEdit.readCaret() else {
+        // The silent-exit reasons below each get a debug line (reason only, never
+        // text): the Discord field report on #40 died in one of them with nothing in
+        // the log to say which — every plain ⌫ passes the canReopen guard above at
+        // most once per commit, so these cannot spam.
+        guard emitMode == .backspace else {
             engine.forgetLastCommit()
+            DebugLog.log("⌫ re-open(tap) \(id ?? "?"): skipped (emitMode not backspace)")
             return false
         }
-        guard let word = engine.reopenLastCommit() else { return false }
+        guard let caret = AXTextEdit.readCaret() else {
+            engine.forgetLastCommit()
+            DebugLog.log("⌫ re-open(tap) \(id ?? "?"): skipped (no AX caret)")
+            return false
+        }
+        guard let word = engine.reopenLastCommit() else {
+            DebugLog.log("⌫ re-open(tap) \(id ?? "?"): skipped (replay mismatch)")
+            return false
+        }
         let wordLen = (word as NSString).length
         let start = caret - 1 - wordLen                 // this ⌫ removes the boundary char
         guard start >= 0,
