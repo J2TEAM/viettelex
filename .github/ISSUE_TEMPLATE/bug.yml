@@ -1,0 +1,77 @@
+name: 🐞 Báo lỗi
+description: Gõ ra chữ sai, mất chữ, chữ nhảy, không gõ được trong một app cụ thể…
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Điền đủ 4 dòng đầu **+ nhật ký gỡ lỗi** là hầu hết lỗi fix được ngay vòng đầu — thiếu nhật ký thì gần như luôn phải hỏi lại thêm một vòng.
+
+        Cách lấy nhật ký: [BAO-LOI.md](https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md#lấy-nhật-ký-gỡ-lỗi)
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Trước khi gửi
+      options:
+        - label: Đã cập nhật bản mới nhất (tab **Giới thiệu** → *Kiểm tra cập nhật*) và lỗi vẫn còn
+          required: true
+        - label: Đã tìm trong [các issue đang mở](https://github.com/ptrinh/viettelex/issues) và không thấy trùng
+          required: true
+
+  - type: input
+    id: app
+    attributes:
+      label: App / website bị lỗi
+      description: Nếu là browser, ghi cả tên website — cơ chế gõ khác nhau giữa address bar và nội dung trang.
+      placeholder: Chrome — docs.google.com
+    validations:
+      required: true
+
+  - type: input
+    id: keys
+    attributes:
+      label: Gõ chuỗi phím
+      description: Ghi đúng **phím bấm**, không phải chữ mong muốn.
+      placeholder: "theme "
+    validations:
+      required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: Mong đợi
+      placeholder: thêm
+    validations:
+      required: true
+
+  - type: input
+    id: actual
+    attributes:
+      label: Thực tế
+      placeholder: themee
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Nhật ký gỡ lỗi
+      description: |
+        Tab **Thử nghiệm** → **Chẩn đoán** → bật **Ghi nhật ký gỡ lỗi** → **Xoá** → tái hiện lỗi → **Chép nhật ký gỡ lỗi** → dán vào đây (log chỉ giữ 2000 dòng gần nhất).
+
+        Nhật ký chỉ ghi sự kiện của bộ gõ, **không ghi nội dung bạn gõ** — và đã có sẵn phiên bản, macOS, cơ chế gõ nên bạn không cần điền tay.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Phiên bản VietTelex + macOS
+      description: Chỉ cần điền nếu **không** kèm nhật ký ở trên.
+      placeholder: 1.5.10 — macOS 26.1
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Thông tin thêm
+      description: Lỗi hiển thị (chữ nhảy, bôi đen, mất chữ…) → kèm video quay màn hình (⌘⇧5) càng tốt. Kéo-thả file vào đây.

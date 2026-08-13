@@ -1,0 +1,40 @@
+name: 💡 Đề xuất tính năng
+description: Ý tưởng cải thiện cách gõ, Cài đặt, hoặc trải nghiệm
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Triết lý của VietTelex: **tối giản, nhanh, ổn định** — cài xong là gõ, hầu như không phải chỉnh gì. Đề xuất giữ được điều đó (không thêm tuỳ chọn cho một trường hợp riêng lẻ) sẽ dễ được nhận hơn.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Trước khi gửi
+      options:
+        - label: Đã xem qua **Cài đặt…** (tab **Tùy chỉnh** và **Thử nghiệm**) — tính năng này chưa có
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vấn đề bạn đang gặp
+      description: Mô tả tình huống gõ thật, không phải giải pháp. Càng cụ thể (app nào, chuỗi phím nào) càng dễ đánh giá.
+      placeholder: |
+        Gõ tên biến code trong Slack thì bị bỏ dấu nhầm, phải tắt bộ gõ mỗi lần.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Đề xuất
+      description: Bạn muốn app hành xử thế nào? Nếu là tuỳ chọn mới, mặc định nên bật hay tắt?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Hiện tại bạn đang xoay xở thế nào
+      description: Cách làm tạm, tuỳ chọn đã thử, hoặc bộ gõ khác làm việc này ra sao.
