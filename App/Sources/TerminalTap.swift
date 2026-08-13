@@ -2181,8 +2181,12 @@ final class TerminalTapController {
             // Went inactive with a word half-composed (e.g. the async reconcile above
             // just corrected a stale flag): abandon it so a later re-activate can't
             // resume a stale composition. `engine` is tap-thread confined — reset here,
-            // never from the main-thread paths that flip the flag.
-            if !engine.isEmpty { engine.reset() }
+            // never from the main-thread paths that flip the flag. An EMPTY engine can
+            // still hold the re-open snapshot of the word it just committed, which must
+            // not survive an inactive stretch either — hence the second test, kept as a
+            // cheap Int compare so an idle machine (VietTelex installed, ABC active)
+            // still pays nothing per key.
+            if !engine.isEmpty || engine.canReopenLastCommit { engine.reset() }
             return pass
         }
 
@@ -2194,7 +2198,10 @@ final class TerminalTapController {
         // Runs for ALL apps, before the tap-mode gate.
         let flags = event.flags
         if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
-            if !engine.isEmpty { engine.reset() }   // skip the no-op reset when nothing composes
+            // An empty engine can still hold the re-open snapshot, and ⌘A + ⌫ deletes a
+            // SELECTION, not the boundary character that snapshot assumes — so the
+            // no-op skip now tests for it too, still without leaving the fast path.
+            if !engine.isEmpty || engine.canReopenLastCommit { engine.reset() }
             // ALWAYS notify: the IMKit controller's engine state is invisible from here,
             // so we cannot gate this on our own emptiness.
             NotificationCenter.default.post(name: .telexResetComposition, object: nil)
@@ -2305,10 +2312,15 @@ final class TerminalTapController {
         if keyCode == kDelete {
             lastTapKeyWasBoundary = false   // ⌫ is word-adjacent editing, not a boundary
             if engine.isEmpty {
-                // Deleting previously-committed text: the "previous word" is now unclear,
-                // so drop the English context (undetermined → Vietnamese). In-word
-                // backspace (buffer non-empty, below) keeps it — prev word unchanged.
-                engine.resetContext()
+                // ⌫ on the boundary character the last word ended with re-opens that
+                // word ("tháy" ␣ ⌫ then `a` → "thấy" — issue #40); the ⌫ still goes
+                // through and deletes the boundary character either way.
+                if !tryReopenLastCommitTap(id: id) {
+                    // Deleting previously-committed text: the "previous word" is now unclear,
+                    // so drop the English context (undetermined → Vietnamese). In-word
+                    // backspace (buffer non-empty, below) keeps it — prev word unchanged.
+                    engine.resetContext()
+                }
                 // Not composing -> real Backspace, unless a synthetic burst is still
                 // draining (it must land first or the delete hits the wrong char).
                 if SyntheticKeyboard.queueDrained() { return pass }
@@ -2335,6 +2347,11 @@ final class TerminalTapController {
             // enough. Only when auto-restore ACTUALLY rewrote the word (emitBoundary →
             // true) do we suppress + re-emit synthetically, so the boundary key lands
             // AFTER the async edit; otherwise the real key passes through untouched.
+            // None of these leaves ONE character after the word the way a space does
+            // (Enter sends the message, Tab moves focus/completes, Esc inserts
+            // nothing), so a following ⌫ is not deleting a boundary character and must
+            // not re-open the word — see tryReopenLastCommitTap.
+            defer { engine.forgetLastCommit() }
             if engine.isEmpty, SyntheticKeyboard.queueDrained() { return pass }
             if emitBoundary(suppressAutoRestore: false) || !SyntheticKeyboard.queueDrained() {
                 reemit(keyCode: keyCode, string: nil, original: event)
@@ -2352,6 +2369,7 @@ final class TerminalTapController {
             // (no shortcut expansion — not an explicit text boundary)
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
+            engine.forgetLastCommit()      // nothing predictable landed after the word
             return pass
         }
         // Navigation / function keys (←↑→↓, Home/End/PageUp/PageDown, forward-delete,
@@ -2364,6 +2382,7 @@ final class TerminalTapController {
         if buf[0] < 0x20 || (buf[0] >= 0xF700 && buf[0] <= 0xF8FF) {
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
+            engine.forgetLastCommit()      // navigation: the caret left the word behind
             return pass
         }
         let ch = Character(scalar)
@@ -2383,6 +2402,11 @@ final class TerminalTapController {
             // nothing here: with no rewrite pending the untouched event is already
             // exactly what should land, in every emit mode.)
             let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(buf[0]))
+            // A plain ascii boundary (space, punctuation, digit) leaves exactly ONE
+            // character after the word, which is what makes the next ⌫ re-openable
+            // (issue #40). Anything else — an option-key symbol, a multi-scalar
+            // sequence — is not worth reasoning about: forget the word.
+            if !ch.isASCII { engine.forgetLastCommit() }
             if !rewrote, AppState.shared.tapNativeFastPath, SyntheticKeyboard.queueDrained() {
                 return pass
             }
@@ -2503,6 +2527,39 @@ final class TerminalTapController {
         guard let word = TelexInputController.trailingWord(text) else { return }
         guard (word as NSString).length <= caret, engine.seed(word) else { return }
         DebugLog.log("re-edit(tap) \(id ?? "?"): seeded \((word as NSString).length) chars before caret")
+    }
+
+    // MARK: - Re-open the last committed word on ⌫ (issue #40)
+
+    /// TAP counterpart of `TelexInputController.tryReopenLastCommit`: the ⌫ being
+    /// handled deletes the boundary character that ended the last word, so put that
+    /// word back in the buffer and keep editing it. No anchor bookkeeping is needed
+    /// here — every tap edit targets the live caret — but the same screen check is:
+    /// the characters the word should occupy are read through Accessibility and
+    /// compared before anything is re-opened, so an app that swallowed the boundary
+    /// key or autocorrected the word just gets the old behavior. No AX text (plain
+    /// terminals) means no verification, hence no re-open.
+    /// `.selection`/`.emptyReset` fields are excluded for the same reason re-edit
+    /// excludes them: inline autocomplete rewrites text underneath us.
+    private func tryReopenLastCommitTap(id: String?) -> Bool {
+        guard engine.canReopenLastCommit else { return false }
+        guard emitMode == .backspace, let caret = AXTextEdit.readCaret() else {
+            engine.forgetLastCommit()
+            return false
+        }
+        guard let word = engine.reopenLastCommit() else { return false }
+        let wordLen = (word as NSString).length
+        let start = caret - 1 - wordLen                 // this ⌫ removes the boundary char
+        guard start >= 0,
+              let text = AXTextEdit.readString(at: start, length: wordLen),
+              text == word
+        else {
+            engine.reset()
+            DebugLog.log("⌫ re-open(tap) \(id ?? "?"): skipped (screen disagrees)")
+            return false
+        }
+        DebugLog.log("⌫ re-open(tap) \(id ?? "?"): \(wordLen) chars back in the buffer")
+        return true
     }
 
     /// Emit a shortcut expansion / auto-restore rewrite for the composed word. Returns

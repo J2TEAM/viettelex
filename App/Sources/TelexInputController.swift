@@ -414,11 +414,19 @@ final class TelexInputController: IMKInputController {
 
         switch event.keyCode {
         case kDelete:
-            // Backspacing with an empty buffer deletes previously-committed text: the
-            // "previous word" relationship is now unclear, so drop the English context
-            // (undetermined → Vietnamese). In-word backspace (buffer non-empty) keeps it —
-            // the preceding word hasn't changed.
-            if engine.isEmpty { engine.resetContext(); return false }
+            if engine.isEmpty {
+                // ⌫ on the boundary character the last word ended with puts the caret
+                // back at that word's end, and the user is going to keep editing it
+                // ("tháy" ␣ ⌫ then `a` → "thấy" — issue #40). Re-open it into the buffer
+                // so the next key modifies the word instead of starting a new one.
+                if tryReopenLastCommit(client, id: id) { return false }
+                // Backspacing with an empty buffer deletes previously-committed text: the
+                // "previous word" relationship is now unclear, so drop the English context
+                // (undetermined → Vietnamese). In-word backspace (buffer non-empty) keeps it —
+                // the preceding word hasn't changed.
+                engine.resetContext()
+                return false
+            }
             // Our tracked window must still MATCH the field before we rewrite it. A
             // ⌫-rewrite is `insertText(composed, range(anchor, onLen))`: if the app has
             // meanwhile moved the caret, re-rendered (React-controlled inputs do), or
@@ -524,6 +532,11 @@ final class TelexInputController: IMKInputController {
             let wasEdge = edgeTapWord
             let rewrote = boundary(client)
             boundaryCommitInFlight = false
+            // Return/Tab/Esc do not put ONE character after the word the way a space
+            // does — Enter sends the message in a chat app, Tab moves focus, Esc
+            // inserts nothing — so a following ⌫ is not deleting a boundary character
+            // and must not re-open the word (see tryReopenLastCommit).
+            engine.forgetLastCommit()
             logDecision("boundary-key code=\(event.keyCode) rewrote=\(rewrote)")
             // When the commit REWROTE the word (gõ tắt "ko"→"không", auto-restore
             // "thooiiii"), web-view editors (WhatsApp) apply that insertText
@@ -581,6 +594,10 @@ final class TelexInputController: IMKInputController {
             let boundaryChar = event.characters?.utf8.first
             let wasEdge = edgeTapWord
             let rewrote = boundary(client, suppressAutoRestore: boundaryChar.map(isBracket) ?? false)
+            // Only a key that leaves exactly ONE character after the word may be
+            // ⌫-ed back into it (issue #40). Arrow/function keys land here too — they
+            // move the caret and insert nothing, so the word is no longer adjacent.
+            if !Self.insertsOneCharacter(event.characters) { engine.forgetLastCommit() }
             // Edge word rewritten at the boundary (shortcut/auto-restore): the
             // rewrite is a synthetic burst still in the session queue — a native
             // boundary key would overtake it. Same cure as Return below: swallow
@@ -773,6 +790,18 @@ final class TelexInputController: IMKInputController {
 
     // MARK: - Re-edit the word before the caret (experimental)
 
+    /// Does this key put exactly ONE printable character on screen after the word it
+    /// just ended? Only then is the next ⌫ deleting a boundary character, which is the
+    /// precondition for re-opening the word (issue #40, see `tryReopenLastCommit`).
+    /// Printable ASCII only: a non-ascii scalar (arrow/function keys arrive as
+    /// U+F700…, option-key symbols as real text) either isn't inserted at all or isn't
+    /// something worth reasoning about. Pure so the rule is pinned by tests.
+    static func insertsOneCharacter(_ characters: String?) -> Bool {
+        guard let characters, characters.count == 1,
+              let ascii = characters.first?.asciiValue else { return false }
+        return ascii >= 0x20 && ascii != 0x7F
+    }
+
     /// Keys that can only ever ADD a diacritic, never a letter: the Telex tone keys
     /// (s f r x j), the tone remover (z) and the horn/breve modifier (w) — or, in VNI,
     /// the digits. The doubler letters (a e o d) are deliberately NOT here: they are
@@ -842,6 +871,66 @@ final class TelexInputController: IMKInputController {
         onLen = wordLen
         anchorVerified = true
         DebugLog.log("re-edit \(id ?? "?"): seeded \(wordLen) chars before caret")
+    }
+
+    // MARK: - Re-open the last committed word on ⌫ (issue #40)
+
+    /// The ⌫ about to be delivered deletes the boundary character that ended the last
+    /// word — so put that word back in the buffer, the way every other Vietnamese IME
+    /// does ("tháy" ␣ ⌫ `a` → "thấy" instead of "tháya").
+    ///
+    /// Unlike `tryReEditWord` this never guesses WHICH word: the engine kept the exact
+    /// keystrokes it committed, and only while nothing else touched it since. What is
+    /// still unknown is whether the SCREEN agrees — the app may have swallowed the
+    /// boundary key, autocorrected the word, or moved the caret — so the characters the
+    /// word should occupy are read back and compared before anything is re-opened. On
+    /// any disagreement the composition is dropped and the ⌫ behaves exactly as before.
+    /// Returns true iff the buffer now holds the word; the ⌫ itself always passes
+    /// through and deletes the boundary character.
+    private func tryReopenLastCommit(_ client: IMKTextInput, id: String?) -> Bool {
+        // Marked-text apps commit through setMarkedText/insertText, so the word on
+        // screen is finalized text no composition can reclaim.
+        guard engine.canReopenLastCommit, !usesMarkedNow(id) else { return false }
+        // Same per-FIELD exclusion as `tryReEditWord`: an omnibox/search bar rewrites
+        // text underneath us via inline autocomplete, so the replace that follows a
+        // re-open would land in a field that is editing itself. (Reachable from here
+        // whenever the tap is not running — no Accessibility — and IMKit handles the
+        // browser in-place.)
+        if AppState.shared.usesAxDetect(id), FocusedFieldDetector.wantsSelection {
+            engine.forgetLastCommit()
+            DebugLog.log("⌫ re-open \(id ?? "?"): skipped (field resolves to selection-replace)")
+            return false
+        }
+        let sel = client.selectedRange()
+        // A live SELECTION means this ⌫ deletes that instead of the boundary character,
+        // and with no caret there is no anchor to re-open at. Either way: forget the
+        // word — the boundary character is gone by the next key, so a later ⌫ must not
+        // resurrect it.
+        guard sel.location != NSNotFound, sel.length == 0 else {
+            engine.forgetLastCommit()
+            return false
+        }
+        guard let word = engine.reopenLastCommit() else { return false }
+        let wordLen = (word as NSString).length
+        let start = sel.location - 1 - wordLen          // this ⌫ removes the boundary char
+        guard start >= 0,
+              let sub = client.attributedSubstring(from: NSRange(location: start, length: wordLen)),
+              sub.string == word                        // NFD field ⇒ mismatch ⇒ skip, as intended
+        else {
+            engine.reset()
+            DebugLog.log("⌫ re-open \(id ?? "?"): skipped (screen disagrees)")
+            return false
+        }
+        // The composition IS that on-screen word now: point the tracking window at it,
+        // exactly like the re-edit path does after a successful seed.
+        anchor = start
+        onLen = wordLen
+        tracking = true
+        anchorVerified = true
+        selToClear = 0
+        edgeTapWord = false
+        DebugLog.log("⌫ re-open \(id ?? "?"): \(wordLen) chars back in the buffer")
+        return true
     }
 
     // MARK: - In-place mode (default: no marked text, caret stays at end)
@@ -1490,6 +1579,10 @@ final class TelexInputController: IMKInputController {
             // mid-word — "t","r" became "trồi". Expansion belongs to EXPLICIT
             // boundaries only (space/punctuation/Return/Tab).
             boundary(client, allowShortcuts: false)
+            // A FORCED commit, not a boundary key: nothing was inserted after the word,
+            // so the next ⌫ is deleting the word's own last letter and must not re-open
+            // it (see tryReopenLastCommit).
+            engine.forgetLastCommit()
         } else {
             engine.reset()
             tracking = false
