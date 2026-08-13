@@ -16,6 +16,10 @@
 #                 nội dung trang → tap backspace-retype (policy 06/08/2026 — web
 #                 editor không có hợp đồng với replacementRange), Google Docs →
 #                 marked; thiếu quyền Trợ năng → marked. Cho browser.
+#                 NGOẠI LỆ Safari/WebKit (issue #44, 13/08): nội dung trang gõ
+#                 IMKit in-place — Safari macOS 26 nuốt synthetic burst của tap,
+#                 còn WebKit honor replacementRange chuẩn (field-proven từ pilot
+#                 21/07). Danh sách WebKit nằm ở AppState.webKitBrowsers.
 #   selection   — chọn-ghi-đè (Shift+←) toàn app. Cho IDE có autocomplete popup.
 #   emptyReset  — chèn U+202F hủy suggestion rồi backspace-retype. Cho grid
 #                 app mà Shift+← chọn Ô KỀ thay vì ký tự (Excel).

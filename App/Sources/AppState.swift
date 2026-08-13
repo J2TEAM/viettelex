@@ -570,7 +570,8 @@ final class AppState: @unchecked Sendable {
     static func gateRouting(_ wants: TapWants,
                             trusted: () -> Bool,
                             wantsSelection: () -> Bool,
-                            wantsMarkedField: () -> Bool) -> TapRouting {
+                            wantsMarkedField: () -> Bool,
+                            pageContentInPlace: Bool = false) -> TapRouting {
         guard wants.any, trusted() else { return TapRouting() }
         // Per-field resolution (browsers, maintainer decision 2026-08-06): PAGE
         // CONTENT defaults to the TAP backspace-retype path — synthetic key events
@@ -584,13 +585,30 @@ final class AppState: @unchecked Sendable {
         // Order: omnibox (toolbar) → selection/emptyReset dance, unchanged; a
         // marked-class field (Google Docs) falls through to IMKit marked text;
         // everything else in the page → tap.
+        //
+        // WEBKIT CARVE-OUT (issue #44, 2026-08-13): every motivating bug above was
+        // Chromium/Electron; Safari page content had run IMKit in-place since the
+        // 21/07 per-field pilot with zero field reports — and on macOS 26 Safari
+        // DROPS the tap's synthetic burst in web content outright (tap-emit fired,
+        // screen unchanged; repro anotepad.com + reporter's bing.com). IMKit is the
+        // one channel Apple's own engine is contractually good at, so WebKit page
+        // content routes back to in-place (`pageContentInPlace`); the marked-class
+        // fallthrough (Google Docs in Safari) stays.
         let perField = wants.sel == .perField
         let pageContent = perField && !wantsSelection()
         return TapRouting(
-            tap: wants.tap || (pageContent && !wantsMarkedField()),
+            tap: wants.tap || (pageContent && !wantsMarkedField() && !pageContentInPlace),
             selection: wants.sel == .yes || (perField && !pageContent),
             emptyReset: wants.empty)
     }
+
+    /// WebKit-family browsers whose PAGE CONTENT types via IMKit in-place instead of
+    /// the tap (see the WebKit carve-out in `gateRouting`). Omnibox/marked-class
+    /// routing is identical to the Chromium browsers.
+    static let webKitBrowsers: Set<String> = [
+        "com.apple.Safari",
+        "com.apple.SafariTechnologyPreview",
+    ]
 
     /// ONE lock acquisition + at most one trusted read + at most one detector read
     /// for the whole per-key routing decision. Replaces the 6-8 separate
@@ -618,7 +636,10 @@ final class AppState: @unchecked Sendable {
         return Self.gateRouting(wants,
                                 trusted: { Accessibility.isTrusted },
                                 wantsSelection: { FocusedFieldDetector.wantsSelection },
-                                wantsMarkedField: { FocusedFieldDetector.wantsMarkedField })
+                                wantsMarkedField: { FocusedFieldDetector.wantsMarkedField },
+                                // The per-field verdict belongs to the focused CLIENT —
+                                // a cheap Set lookup, no laziness needed.
+                                pageContentInPlace: Self.webKitBrowsers.contains(bundleID ?? front ?? ""))
     }
 
     // MARK: - Built-in typing-mode rules (typing-modes.yml)

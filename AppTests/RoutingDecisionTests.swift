@@ -125,6 +125,54 @@ final class RoutingDecisionTests: XCTestCase {
                                      wantsMarkedField: { XCTFail("omnibox settled before the marked verdict"); return false })
         XCTAssertEqual(r, R(tap: false, selection: true, emptyReset: false))
     }
+
+    // WEBKIT CARVE-OUT (issue #44, 13/08/2026): Safari on macOS 26 DROPS the tap's
+    // synthetic burst in web content (tap-emit fired, screen unchanged — repro
+    // anotepad.com + reporter's bing.com), and every bug that motivated the 06/08
+    // page-content-to-tap policy was Chromium/Electron. Safari page content routes
+    // back to IMKit in-place — the field-proven pre-06/08 behavior; omnibox and the
+    // Google-Docs marked class are untouched.
+    func testWebKitPageContentRoutesInPlaceNotTap() {
+        let w = W(tap: false, sel: .perField, empty: false)
+        let r = AppState.gateRouting(w, trusted: { true },
+                                     wantsSelection: { false },      // page content
+                                     wantsMarkedField: { false },
+                                     pageContentInPlace: true)       // Safari-family
+        XCTAssertEqual(r, R(tap: false, selection: false, emptyReset: false),
+                       "no tap-defer → IMKit composes in-place")
+    }
+
+    func testWebKitOmniboxAndMarkedClassUnchanged() {
+        let w = W(tap: false, sel: .perField, empty: false)
+        // Omnibox: still selection-replace.
+        XCTAssertEqual(AppState.gateRouting(w, trusted: { true },
+                                            wantsSelection: { true },
+                                            wantsMarkedField: { false },
+                                            pageContentInPlace: true),
+                       R(tap: false, selection: true, emptyReset: false))
+        // Docs-class canvas: still falls through to IMKit marked text.
+        XCTAssertEqual(AppState.gateRouting(w, trusted: { true },
+                                            wantsSelection: { false },
+                                            wantsMarkedField: { true },
+                                            pageContentInPlace: true),
+                       R(tap: false, selection: false, emptyReset: false))
+    }
+
+    func testEndToEndSafariPageContentSkipsTap() {
+        Accessibility.testTrustOverride = true
+        defer {
+            Accessibility.testTrustOverride = nil
+            FocusedFieldDetector.invalidate()
+        }
+        // Page-content verdict: not selection, not marked (invalidate() leaves both
+        // false and stamps nothing — set explicitly for determinism).
+        FocusedFieldDetector._testSetCached(false)
+        FocusedFieldDetector._testSetMarked(false)
+        XCTAssertFalse(AppState.shared.tapRouting("com.apple.Safari").tapDefer,
+                       "Safari page content must reach IMKit in-place")
+        XCTAssertTrue(AppState.shared.tapRouting("com.google.Chrome").tapDefer,
+                      "Chromium page content stays on the tap")
+    }
 }
 
 // Spotlight overlay vs tap-family routing: FrontmostApp stays the app BEHIND the
