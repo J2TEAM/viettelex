@@ -30,7 +30,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let win = NSWindow(contentViewController: hosting)
             win.title = VTLocalized("VietTelex — Settings")
             win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            win.setContentSize(NSSize(width: 680, height: 560))
+            // 660, not the old 560: the About tab has no scroll container, and at 560 its
+            // fixed content (icon + links + update block + copyright) already consumed the
+            // full height once padding and the tab bar came out. The changelog box added
+            // there is the only compressible child, so it absorbed the whole deficit and
+            // collapsed to a sliver. Height is a first-creation default — users who resized
+            // keep their own frame.
+            win.setContentSize(NSSize(width: 680, height: 660))
             win.contentMinSize = NSSize(width: 640, height: 500)
             win.delegate = self
             win.isReleasedWhenClosed = false
@@ -998,6 +1004,12 @@ struct AboutTab: View {
     /// Set only when a newer release exists — the version the button will install.
     /// (No URL state: SelfUpdater's own failure alert offers the releases page.)
     @State private var updateVersion: String?
+    /// Changelog for `updateVersion`, PARSED once at assignment rather than held as raw
+    /// Markdown: `body` re-runs on every `model` publish and on each checking/installing/
+    /// status flip, and re-splitting a 4000-character release body inside `ForEach` on
+    /// every one of those is work with no reason to repeat. Empty = no notes to show
+    /// (release had no body, or GitHub couldn't be reached for it).
+    @State private var noteBlocks: [UpdateCheck.NoteBlock] = []
     @State private var installing = false
 
     var body: some View {
@@ -1047,6 +1059,12 @@ struct AboutTab: View {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                         .lineLimit(2).multilineTextAlignment(.center)
                 }
+                // "Update available: 1.6.3" alone asks the user to install on faith. The
+                // release body answers what changed — same box for both channels, since
+                // the weekly check now stores its notes too (Updater.swift).
+                if !noteBlocks.isEmpty {
+                    releaseNotesBox()
+                }
                 // Opt-in weekly auto-check (default OFF): the toggle IS the user's
                 // consent, so the "no network unless you ask" stance holds.
                 Toggle(model.loc("Check weekly and notify me"), isOn: $model.autoUpdateCheck)
@@ -1073,14 +1091,70 @@ struct AboutTab: View {
             if status == nil, updateVersion == nil,
                let pending = UpdateCheck.pendingUpdateVersion {
                 updateVersion = pending
+                noteBlocks = UpdateCheck.pendingUpdateNotes.map(UpdateCheck.noteBlocks) ?? []
                 status = String(format: model.loc("Update available: %@"), pending)
             }
         }
     }
 
+    /// The changelog, rendered from the release body's Markdown. Scrolls rather than
+    /// stretching the window: a release can have three bullets or thirty, and the About
+    /// tab keeps its shape either way.
+    @ViewBuilder
+    private func releaseNotesBox() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(model.loc("What’s new")).font(.caption).bold()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(noteBlocks) { block in
+                        switch block.kind {
+                        case .heading:
+                            Text(inlineMarkdown(block.text)).font(.caption).bold()
+                        case .bullet:
+                            // Hanging indent: the marker sits outside the text column so
+                            // wrapped lines line up under the first word, not the bullet.
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text("•").font(.caption).foregroundStyle(.secondary)
+                                Text(inlineMarkdown(block.text)).font(.caption)
+                            }
+                        case .paragraph:
+                            Text(inlineMarkdown(block.text)).font(.caption)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(6)
+            }
+            .frame(maxHeight: 140)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+            // Long bodies are cut at notesCharacterCap, and a body can also out-scroll the
+            // box — either way the release page is where the rest lives. Derived from the
+            // version, so the weekly channel (which persists no URL) gets the link too.
+            if let updateVersion, let full = UpdateCheck.releasePageURL(forVersion: updateVersion) {
+                Link(model.loc("Full changelog"), destination: full).font(.caption2)
+            }
+        }
+        .frame(maxWidth: 380)
+        .padding(.top, 2)
+        // The About tab has no scroll container: without this the box is the only
+        // compressible child and takes the whole squeeze when the window is short.
+        .layoutPriority(1)
+    }
+
+    /// `Text` interprets inline Markdown only, and only via AttributedString — bold, code
+    /// spans and links survive; anything it can't parse falls back to the raw line rather
+    /// than disappearing.
+    private func inlineMarkdown(_ s: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: s,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(s)
+    }
+
     private func runCheck() {
-        checking = true; status = nil; updateVersion = nil
+        checking = true; status = nil; updateVersion = nil; noteBlocks = []
         UpdateCheck.pendingUpdateVersion = nil   // the user is looking; this is now live state
+        UpdateCheck.pendingUpdateNotes = nil
         Task {
             let outcome = await UpdateCheck.check()
             await MainActor.run {
@@ -1088,9 +1162,10 @@ struct AboutTab: View {
                 switch outcome {
                 case .upToDate(let v):
                     status = String(format: model.loc("You’re up to date (%@)."), v)
-                case .update(let latest, _):
+                case .update(let latest, _, let notes):
                     status = String(format: model.loc("Update available: %@"), latest)
                     updateVersion = latest
+                    noteBlocks = notes.map(UpdateCheck.noteBlocks) ?? []
                 case .failed(let e):
                     status = String(format: model.loc("Couldn’t check — %@."), e)
                 }
