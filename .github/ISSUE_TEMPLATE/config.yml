@@ -8,8 +8,8 @@ contact_links:
   - name: 📋 Hướng dẫn báo lỗi + cách lấy nhật ký gỡ lỗi
     url: https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md
     about: Đọc trước khi mở issue lỗi — kèm nhật ký thì lỗi thường fix được ngay vòng đầu.
-  - name: 🛠 Khắc phục sự cố thường gặp
-    url: https://github.com/ptrinh/viettelex#khắc-phục-sự-cố
+  - name: 🛠 Câu hỏi thường gặp (FAQ)
+    url: https://ptrinh.github.io/viettelex/#faq
     about: Không thấy trong Input Sources, không gõ được trong Terminal/Chrome, gõ bị lặp chữ…
   - name: ⌨️ App gõ sai cơ chế? Mở PR thêm một dòng rule
     url: https://github.com/ptrinh/viettelex/blob/main/typing-modes.yml

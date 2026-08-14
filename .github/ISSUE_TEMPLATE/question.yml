@@ -12,7 +12,7 @@ body:
     attributes:
       label: Trước khi gửi
       options:
-        - label: Đã đọc [Khắc phục sự cố](https://github.com/ptrinh/viettelex#khắc-phục-sự-cố) trong README
+        - label: Đã đọc [Câu hỏi thường gặp (FAQ)](https://ptrinh.github.io/viettelex/#faq)
           required: true
 
   - type: textarea
