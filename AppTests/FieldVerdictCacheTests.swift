@@ -133,6 +133,38 @@ final class FieldWalkClassifierTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(FocusedFieldDetector.maxAncestorHops, 20,
                                     "deep web hierarchies need real headroom past 13")
     }
+
+    /// Field report 2026-08-14: facebook.com's comment box — the SAME failure as the
+    /// 2026-07-30 React composer, one budget later. Its chain is exactly 24 deep
+    /// (AXTextArea → 6×AXGroup → AXTable → 16×AXGroup), so the 24-hop budget died one
+    /// hop short of AXWebArea and the page inherited the omnibox strategy: typing went
+    /// through the emptyReset dance and the ⌫ re-open of issue #40 refused outright.
+    func testFacebookCommentBoxDepthReachesWebArea() {
+        let chain = ["AXTextArea"] + Array(repeating: "AXGroup", count: 6) + ["AXTable"]
+            + Array(repeating: "AXGroup", count: 16) + ["AXWebArea"]
+        XCTAssertEqual(chain.count, 25, "the observed chain plus the web area above it")
+        XCTAssertTrue(FocusedFieldDetector.chainDecision(chain.prefix(24)),
+                      "24 hops reproduces the reported misclassification (test realism)")
+        XCTAssertFalse(FocusedFieldDetector.chainDecision(chain),
+                       "the current budget must reach AXWebArea → page content")
+    }
+
+    /// The rule that keeps this class of bug from returning a third time: a walk that
+    /// EXHAUSTS the budget is page content (only a document nests that deep — an
+    /// omnibox is 2-3 hops), while a chain that ENDS undecided is genuinely unknown and
+    /// keeps the historical selection default.
+    func testExhaustedBudgetMeansPageContentNotOmnibox() {
+        XCTAssertTrue(FocusedFieldDetector.exhaustedMeansPageContent(
+            hops: FocusedFieldDetector.maxAncestorHops))
+        XCTAssertFalse(FocusedFieldDetector.exhaustedMeansPageContent(hops: 3))
+
+        // A chain deeper than any budget, with no decisive role at all → page content.
+        let bottomless = Array(repeating: "AXGroup", count: FocusedFieldDetector.maxAncestorHops + 10)
+        XCTAssertFalse(FocusedFieldDetector.chainDecision(bottomless),
+                       "budget exhausted → page content, never the omnibox strategy")
+        // A SHORT undecided chain (native-ish field, top of tree) keeps selection.
+        XCTAssertTrue(FocusedFieldDetector.chainDecision(["AXTextField", "AXGroup", "AXWindow"]))
+    }
 }
 
 // Canvas editors (Google Docs) ignore replacementRange: in-place inserts APPEND

@@ -904,7 +904,12 @@ enum FocusedFieldDetector {
         // inside (every self-report said honored while the visible text appended).
         // Only the marked-class exception (Google Docs) remains URL-based.
         var host: String?
+        // Did the walk STOP because it ran out of hops, rather than because it reached
+        // the top of the tree? See `exhaustedMeansPageContent` — that distinction is
+        // what keeps a deep page from being mistaken for the omnibox.
+        var hops = 0
         for _ in 0..<Self.maxAncestorHops {
+            hops += 1
             AXUIElementSetMessagingTimeout(element, 0.05)
             roleRef = nil
             if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
@@ -932,8 +937,12 @@ enum FocusedFieldDetector {
             else { break }
             element = parent as! AXUIElement
         }
-        return sawWebArea ? (selection: false, marked: marked, host: host)
-                          : (selection: true, marked: false, host: nil)
+        if sawWebArea { return (selection: false, marked: marked, host: host) }
+        // No decisive ancestor. A walk that DIED ON THE HOP BUDGET is page content, not
+        // chrome (see exhaustedMeansPageContent); one that reached the top without a
+        // web area is genuinely unknown → selection, the historical safe default.
+        return (selection: !Self.exhaustedMeansPageContent(hops: hops),
+                marked: false, host: nil)
     }
 
     /// Pure: does this web-area URL host a canvas editor that must be typed with
@@ -944,14 +953,33 @@ enum FocusedFieldDetector {
         return host == "docs.google.com" && url.path.hasPrefix("/document")
     }
 
-    /// Ancestor-walk hop budget. Was 12 — field report 2026-07-30 (J2TeamNNL, 1.4.22):
-    /// a React composer's AXTextArea sat under ≥11 AXGroups, the walk ran out of hops
-    /// BEFORE reaching AXWebArea and fell back to selection-replace, whose synthetic
-    /// overtype the web editor swallows — tone keys consumed, edit never lands
-    /// ("không gõ được dấu"). 24 hops still bounds the AX round trips (each carries a
-    /// 50ms timeout, and refreshes ride the backoff-limited scan queue, never the
-    /// keystroke path) while covering deep modern web hierarchies.
-    static let maxAncestorHops = 24
+    /// Ancestor-walk hop budget. 12 → 24 after field report 2026-07-30 (J2TeamNNL,
+    /// 1.4.22): a React composer's AXTextArea sat under ≥11 AXGroups, the walk ran out
+    /// of hops BEFORE reaching AXWebArea and fell back to selection-replace, whose
+    /// synthetic overtype the web editor swallows ("không gõ được dấu"). 24 → 64 after
+    /// the SAME failure recurred 2026-08-14 on facebook.com's comment box, whose chain
+    /// is exactly 24 deep (AXTextArea → 6×AXGroup → AXTable → 16×AXGroup → …). Raising
+    /// the number is only half a fix — see `exhaustedMeansPageContent` for the rule
+    /// that stops this class of bug from returning a third time.
+    ///
+    /// Cost stays bounded: the walk STOPS at the first decisive ancestor, so only a
+    /// genuinely deep page pays for the extra hops, and every refresh runs on the
+    /// backoff-limited scan queue (50ms timeout per call), never the keystroke path.
+    static let maxAncestorHops = 64
+
+    /// A walk that used up its whole hop budget without finding a decisive ancestor is
+    /// PAGE CONTENT, not browser chrome — the structural fact behind it: an omnibox is
+    /// SHALLOW (address bar ≈ AXTextField → AXGroup → AXToolbar, a handful of hops),
+    /// while only a web document nests dozens of AXGroups deep. Twice now a deep page
+    /// exhausted the budget and inherited the "unknown → selection" default, which
+    /// hands page content the omnibox strategy — the exact channel web editors swallow
+    /// (2026-07-30 React composer, 2026-08-14 Facebook comment box, where it also made
+    /// the ⌫ re-open of issue #40 refuse: emitMode came out .emptyReset).
+    ///
+    /// So the fallback splits by WHY the walk ended: out of hops → page content; top of
+    /// tree reached with no web area → genuinely unknown → selection (unchanged).
+    /// Pure so the rule is pinned by tests.
+    static func exhaustedMeansPageContent(hops: Int) -> Bool { hops >= maxAncestorHops }
 
     /// One ancestor's vote: page content composes in-place, the browser chrome
     /// (address/search bar) needs selection-replace, anything else keeps walking.
@@ -963,13 +991,18 @@ enum FocusedFieldDetector {
     }
 
     /// Pure mirror of scan()'s walk over an already-collected role chain — first
-    /// decisive ancestor wins, unknown chain falls back to selection (the safer
-    /// default for the omnibox, where a missed detection breaks every word).
+    /// decisive ancestor wins. An undecided chain falls back to selection (the safer
+    /// default for the omnibox, where a missed detection breaks every word) UNLESS it
+    /// filled the hop budget, which only page content can do (see
+    /// `exhaustedMeansPageContent`).
     static func chainDecision<S: Sequence>(_ roles: S) -> Bool where S.Element == String {
+        var hops = 0
         for role in roles {
+            hops += 1
             if let verdict = roleDecision(role) { return verdict }
+            if hops >= maxAncestorHops { break }
         }
-        return true
+        return !exhaustedMeansPageContent(hops: hops)
     }
 }
 
