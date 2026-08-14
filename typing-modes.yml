@@ -97,6 +97,7 @@ com.readdle.smartemail-Mac: inPlace
 # report Facebook 14/08: từ có dấu "cũng/được/làm" không gõ được vì burst bị
 # nuốt, từ không dấu vẫn ăn). Word/PowerPoint đã inPlace sẵn; Outlook bị thiếu.
 com.microsoft.Outlook: inPlace
+com.apple.mail: inPlace
 # Browsers — tự dò theo ô (address bar vs nội dung trang)
 com.apple.Safari: axDetect
 com.apple.SafariTechnologyPreview: axDetect

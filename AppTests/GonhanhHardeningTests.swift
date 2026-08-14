@@ -48,6 +48,7 @@ final class GonhanhHardeningTests: XCTestCase {
         // diacritic words died on the tap channel; Word/PowerPoint were already
         // inPlace, Outlook was simply missing from the table.
         XCTAssertEqual(dict["com.microsoft.Outlook"], "inPlace")
+        XCTAssertEqual(dict["com.apple.mail"], "inPlace")
     }
 
     /// Messenger desktop (unofficial Electron wrapper) — field report 2026-08-11:
