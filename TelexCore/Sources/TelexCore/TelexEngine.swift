@@ -73,6 +73,18 @@ public struct TelexEngine {
     /// Default OFF. Preserved across `reset()`; the caller sets it from settings.
     public var quickTelex = false
 
+    /// Bracket vowels (UniKey/macOS-Simple-Telex habit, EXPERIMENTAL, default OFF):
+    /// `[` types ơ, `]` types ư, `{`/`}` their uppercase. One keystroke each, so ⌫
+    /// removes the whole vowel and auto-restore hands back the BRACKET the user
+    /// pressed ("th[" → "thơ", restored → "th[") — the raw buffer keeps the bracket
+    /// byte and only the parse translates it, so nothing downstream needs to know.
+    ///
+    /// A 15-year touch-typing habit for UniKey users (Facebook request 2026-08-14), and
+    /// opt-in for a reason: with it on, `[`/`]` are word KEYS, so they no longer end a
+    /// word — anyone typing `arr[i]` in code wants this off, which is the default.
+    /// Preserved across `reset()`; the caller sets it from settings.
+    public var bracketVowels = false
+
     /// VNI input method. When true the engine parses VNI, not Telex: LETTERS are
     /// always literal, and DIGITS carry the diacritics — 1-5 = sắc/huyền/hỏi/ngã/nặng,
     /// 6 = â/ê/ô (circumflex), 7 = ơ/ư (horn), 8 = ă (breve), 9 = đ, 0 = clear tone.
@@ -155,6 +167,7 @@ public struct TelexEngine {
     private var pSimpleTelex = false
     private var pQuickTelex = false
     private var pVniMode = false
+    private var pBracketVowels = false
     // Snapshot of `liveSpellCheck` the freeze state was computed with. Unlike the
     // other parse settings this one does not change how a single key folds — it
     // decides WHERE the word freezes (`disabledAtCount`), which is a function of the
@@ -325,7 +338,9 @@ public struct TelexEngine {
     /// Feed one typed character. Only ascii letters compose; other characters
     /// should be routed through `commitBoundary` by the caller.
     public mutating func feed(_ ch: Character) -> TelexAction {
-        guard let ascii = ch.asciiValue, isLetter(ascii) || (vniMode && isDigit(ascii)) else {
+        guard let ascii = ch.asciiValue,
+              isLetter(ascii) || (vniMode && isDigit(ascii))
+                || (bracketVowels && Self.bracketVowel(ascii) != nil) else {
             return .passthrough
         }
         guard rawCount < Self.capacity else { overflowed = true; return .passthrough }
@@ -352,7 +367,8 @@ public struct TelexEngine {
             rebuildFrozenAware()
         } else if pProcessed != rawCount - 1
             || pFreeMarking != freeMarking || pSimpleTelex != simpleTelex
-            || pQuickTelex != quickTelex || pVniMode != vniMode {
+            || pQuickTelex != quickTelex || pVniMode != vniMode
+            || pBracketVowels != bracketVowels {
             rebuildFrozenAware()
         } else {
             parseStep(rawCount - 1)
@@ -1393,6 +1409,7 @@ public struct TelexEngine {
         pSimpleTelex = simpleTelex
         pQuickTelex = quickTelex
         pVniMode = vniMode
+        pBracketVowels = bracketVowels
         pLiveSpellCheck = liveSpellCheck
         for i in 0..<rawCount { rawLetter[i] = -1 }
         for i in 0..<rawCount { parseStep(i) }
@@ -1402,6 +1419,19 @@ public struct TelexEngine {
     /// Fold raw key `at` into the parse state (`letters`, `pTone`, provenance…).
     /// This is the single-key body of the historical whole-word parse loop; feeding
     /// keys one at a time through it is equivalent to re-parsing the word.
+    /// Bracket → the horned vowel it types, or nil. `{`/`}` are the shifted keys, so
+    /// they carry the uppercase flag. Pure + static so both `feed`'s gate and the parse
+    /// read one definition.
+    static func bracketVowel(_ key: UInt8) -> (base: UInt8, upper: Bool)? {
+        switch key {
+        case UInt8(ascii: "["): return (UInt8(ascii: "o"), false)   // ơ
+        case UInt8(ascii: "]"): return (UInt8(ascii: "u"), false)   // ư
+        case UInt8(ascii: "{"): return (UInt8(ascii: "o"), true)    // Ơ
+        case UInt8(ascii: "}"): return (UInt8(ascii: "u"), true)    // Ư
+        default: return nil
+        }
+    }
+
     private mutating func parseStep(_ at: Int) {
         let key = raw[at]
         let lower = lowercased(key)
@@ -1421,6 +1451,18 @@ public struct TelexEngine {
         // HĐND…), where dd→Đ must still fire (see abbreviationDoublerException).
         if pCancelled || (at >= disabledAtCount && !abbreviationDoublerException(lower: lower, upper: upper)) {
             appendLetter(base: lower, mark: .none, upper: upper)
+            rawLetter[at] = pCount - 1
+            return
+        }
+
+        // Bracket vowels (opt-in): `[`→ơ, `]`→ư, `{`/`}` uppercase. Emitted as a
+        // FINISHED horned letter, not as an o+w pair — one keystroke, one letter, so ⌫
+        // removes the whole vowel and ươ words compose from the letters themselves
+        // ("tr" + ] + [ + "ng" → letters t,r,ư,ơ,n,g = trương, no propagation needed).
+        // AFTER the freeze/cancel branch above on purpose: in a word already frozen as
+        // English/code the bracket must stay the literal character it is.
+        if pBracketVowels, let bracket = Self.bracketVowel(key) {
+            appendLetter(base: bracket.base, mark: .horn, upper: bracket.upper)
             rawLetter[at] = pCount - 1
             return
         }

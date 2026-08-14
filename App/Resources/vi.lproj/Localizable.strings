@@ -219,3 +219,5 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Follow the previous input source" = "Theo nguồn nhập trước đó";
 "Which physical keyboard Telex reads. Pick Colemak, Dvorak… to type Vietnamese with that layout. Left on “follow”, the layout is inherited from whichever input source you switched from — so the same keys give different letters depending on where you came from." = "Bố cục bàn phím vật lý mà Telex đọc. Chọn Colemak, Dvorak… để gõ tiếng Việt bằng bố cục đó. Nếu để “theo nguồn nhập trước đó”, bố cục bị thừa hưởng từ nguồn nhập bạn vừa rời khỏi — cùng một phím sẽ ra chữ khác nhau tuỳ bạn chuyển từ đâu sang.";
 "FAQ" = "Câu hỏi thường gặp";
+"Bracket vowels: [ types ơ, ] types ư (experimental)" = "Phím ngoặc: [ ra ơ, ] ra ư (thử nghiệm)";
+"The UniKey habit: “th[” → “thơ”, “ng]” → “ngư” ({ and } for uppercase). Leave OFF if you type code — with it on, [ and ] belong to the word instead of ending it." = "Thói quen UniKey: “th[” → “thơ”, “ng]” → “ngư” ({ và } ra chữ hoa). Nếu bạn gõ code thì nên để TẮT — khi bật, [ và ] thuộc về từ đang gõ thay vì kết thúc từ.";

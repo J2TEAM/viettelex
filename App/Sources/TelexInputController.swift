@@ -410,6 +410,7 @@ final class TelexInputController: IMKInputController {
         engine.simpleTelex = AppState.shared.simpleTelex
         engine.quickTelex = AppState.shared.quickTelex
         engine.vniMode = AppState.shared.vniMode
+        engine.bracketVowels = AppState.shared.bracketVowels
         engine.contextualEnglish = AppState.shared.contextualEnglish
 
         switch event.keyCode {
@@ -596,7 +597,8 @@ final class TelexInputController: IMKInputController {
         // boundary as before (field report issue #28, 2026-07-27: VNI did nothing in the
         // app because every digit was consumed here — engine-level VNI tests all passed).
         guard let chars = effectiveCharacters(event), let ch = chars.first, let ascii = ch.asciiValue,
-              isWordKey(ascii, vniMode: engine.vniMode) else {
+              isWordKey(ascii, vniMode: engine.vniMode,
+                        bracketVowels: engine.bracketVowels) else {
             // space / punctuation / any non-letter ends the word. Brackets signal a
             // code-ish context (arr[i], {json}, (x)); skip auto-restore there so a
             // token isn't "corrected" (auto-restore is off around [ ] { }).
@@ -2199,8 +2201,18 @@ func isAsciiLetter(_ c: UInt8) -> Bool {
 /// digit ends the word. Extracted so AppTests can pin it — issue #28 (2026-07-27) was
 /// exactly this predicate being letters-only while the engine happily accepted digits.
 @inline(__always)
-func isWordKey(_ c: UInt8, vniMode: Bool) -> Bool {
+func isWordKey(_ c: UInt8, vniMode: Bool, bracketVowels: Bool = false) -> Bool {
     isAsciiLetter(c) || (vniMode && isAsciiDigit(c))
+        || (bracketVowels && isBracketVowelKey(c))
+}
+
+/// `[ ] { }` — the keys the bracket-vowel option turns into ơ/ư. They must be WORD
+/// keys while it is on (a boundary would commit the word before the engine sees the
+/// vowel) and plain boundaries while it is off — see AppState.bracketVowels.
+@inline(__always)
+func isBracketVowelKey(_ c: UInt8) -> Bool {
+    c == UInt8(ascii: "[") || c == UInt8(ascii: "]")
+        || c == UInt8(ascii: "{") || c == UInt8(ascii: "}")
 }
 
 @inline(__always)

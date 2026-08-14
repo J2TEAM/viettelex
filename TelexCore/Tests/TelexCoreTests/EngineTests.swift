@@ -990,3 +990,78 @@ final class EngineGoldenTests: XCTestCase {
         }
     }
 }
+
+// Bracket vowels (opt-in, Facebook request 2026-08-14): `[` types ơ, `]` types ư,
+// `{`/`}` uppercase — the UniKey / macOS-Simple-Telex habit. The raw buffer keeps the
+// BRACKET the user pressed, so ⌫ drops the whole vowel and auto-restore hands the
+// bracket back; only the parse translates. Off (the default) they stay passthrough,
+// i.e. ordinary word boundaries — which is what `arr[i]` needs.
+final class BracketVowelTests: XCTestCase {
+
+    private func engine(_ on: Bool = true, simple: Bool = false) -> TelexEngine {
+        var e = TelexEngine()
+        e.freeMarking = true; e.liveSpellCheck = true
+        e.simpleTelex = simple; e.bracketVowels = on
+        return e
+    }
+    private func compose(_ keys: String, _ e: inout TelexEngine) -> String {
+        for ch in keys { _ = e.feed(ch) }
+        return e.composed
+    }
+
+    func testBracketsTypeHornedVowels() {
+        for (keys, want) in [("th[", "thơ"), ("ng]", "ngư"), ("[", "ơ"), ("]", "ư"),
+                             ("{", "Ơ"), ("}", "Ư"), ("d[i", "dơi")] {
+            var e = engine()
+            XCTAssertEqual(compose(keys, &e), want, keys)
+        }
+    }
+
+    /// ươ words compose from the letters themselves — both vowels already carry the
+    /// horn, so no mark propagation is involved, and the tone still lands correctly.
+    func testUowWordsAndTones() {
+        var e = engine();  XCTAssertEqual(compose("tr][ng", &e), "trương")
+        var f = engine();  XCTAssertEqual(compose("n][cs", &f), "nước")
+        var g = engine();  XCTAssertEqual(compose("th]", &g), "thư")
+    }
+
+    func testWorksInSimpleTelexToo() {
+        var e = engine(true, simple: true)
+        XCTAssertEqual(compose("th[", &e), "thơ")
+        var f = engine(true, simple: true)
+        XCTAssertEqual(compose("ng]", &f), "ngư")
+    }
+
+    /// One keystroke, one letter: ⌫ removes the whole vowel and the raw buffer is back
+    /// to the letters before it (not to a half-typed "o").
+    func testBackspaceRemovesTheWholeVowel() {
+        var e = engine()
+        _ = compose("th[", &e)
+        _ = e.backspace()
+        XCTAssertEqual(e.composed, "th")
+        XCTAssertEqual(e.rawKeystrokes, "th")
+    }
+
+    /// The design point: auto-restore hands back the BRACKET the user pressed, never
+    /// the "ow"/"uw" an expansion would have left behind.
+    func testAutoRestoreGivesTheBracketBack() {
+        for keys in ["th[zz", "[qq", "gh[b"] {
+            var e = engine()
+            _ = compose(keys, &e)
+            XCTAssertEqual(e.rawKeystrokes, keys)
+            XCTAssertEqual(e.commitText(autoRestore: true), keys, "restore must return what was typed")
+        }
+    }
+
+    /// OFF (the default) nothing changes: the bracket is not a word key at all, so the
+    /// engine passes it through and the app treats it as a boundary — `arr[i]` intact.
+    func testOffKeepsBracketsAsBoundaries() {
+        var e = engine(false)
+        _ = compose("th", &e)
+        guard case .passthrough = e.feed("[") else {
+            return XCTFail("with the option off, [ must pass through")
+        }
+        XCTAssertEqual(e.composed, "th")
+        XCTAssertEqual(e.rawKeystrokes, "th")
+    }
+}

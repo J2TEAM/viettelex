@@ -85,6 +85,7 @@ final class SettingsModel: ObservableObject {
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
+    @Published var bracketVowels: Bool { didSet { AppState.shared.bracketVowels = bracketVowels } }
     /// ASCII keyboard layout Telex composes on ("" = inherit macOS's). Applied
     /// immediately as well as persisted: waiting for the next activateServer would
     /// leave the user's very next keystroke on the old layout.
@@ -148,6 +149,7 @@ final class SettingsModel: ObservableObject {
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
+        bracketVowels = AppState.shared.bracketVowels
         // A layout uninstalled since it was chosen (system update, removed third-party
         // bundle) would leave the Picker with no matching tag and render blank — fall
         // back to "system default" so the control always shows a real selection.
@@ -819,6 +821,10 @@ struct ExperimentalTab: View {
                 Toggle(model.loc("VNI typing (experimental)"), isOn: $model.vniMode)
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Bracket vowels: [ types ơ, ] types ư (experimental)"),
+                       isOn: $model.bracketVowels)
+                Text(model.loc("The UniKey habit: “th[” → “thơ”, “ng]” → “ngư” ({ and } for uppercase). Leave OFF if you type code — with it on, [ and ] belong to the word instead of ending it."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
                 Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
@@ -950,7 +956,7 @@ enum DebugHeader {
             // from every prior debug log meant a tester's own `defaults write` was invisible
             // evidence ("chỉ mỗi em bị" — 2026-08-05).
             "flags: modifyInPlace=\(s.tapModifyEventInPlace) skipKeyUp=\(s.tapSkipSyntheticKeyUp) axReplace=\(s.axSelectionReplace) breaker=\(s.tapCascadeBreaker) nativeFastPath=\(s.tapNativeFastPath)",
-            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord) safeUnknown=\(s.safeUnknownApps)",
+            "settings: simpleTelex=\(s.simpleTelex) freeMarking=\(s.freeMarking) modern=\(s.modernOrthography) liveSpell=\(s.liveSpellCheck) autoRestore=\(s.autoRestore) vni=\(s.vniMode) quick=\(s.quickTelex) ctxEnglish=\(s.contextualEnglish) reEdit=\(s.reEditWord) bracket=\(s.bracketVowels) safeUnknown=\(s.safeUnknownApps)",
             // Count only — the trigger/expansion pairs are USER-TYPED content the log
             // must never carry (same rule as everywhere else here), but a nonzero count
             // is itself diagnostic: a custom gõ tắt entry colliding with a Vietnamese

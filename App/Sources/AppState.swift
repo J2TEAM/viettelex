@@ -52,6 +52,7 @@ final class AppState: @unchecked Sendable {
         static let probedApps = "probedApps"          // learned: verified good
         static let manualModes = "manualAppModes"     // user override: bundleID -> AppMode
         static let keyboardLayout = "keyboardLayoutID" // ASCII layout Telex composes on
+        static let bracketVowels = "bracketVowels"    // [ → ơ, ] → ư (UniKey habit)
     }
 
     /// A user-forced per-app handling strategy (Settings → Bảng chế độ gõ). Overrides
@@ -109,6 +110,7 @@ final class AppState: @unchecked Sendable {
         _debugLogging = (defaults.object(forKey: "debugLogging") as? Bool) ?? false
         _safeUnknownApps = (defaults.object(forKey: "safeUnknownApps") as? Bool) ?? true
         _keyboardLayoutID = (defaults.object(forKey: Key.keyboardLayout) as? String) ?? ""
+        _bracketVowels = (defaults.object(forKey: Key.bracketVowels) as? Bool) ?? false
         shortcutsCache = (defaults.dictionary(forKey: Key.shortcuts) as? [String: String]) ?? [:]
         fallbackAppsCache = Set(defaults.stringArray(forKey: Key.fallbackApps) ?? [])
         probedAppsCache = Set(defaults.stringArray(forKey: Key.probedApps) ?? [])
@@ -237,6 +239,19 @@ final class AppState: @unchecked Sendable {
     var reEditWord: Bool {
         get { defaults.object(forKey: Key.reEditWord) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
+    }
+
+    /// `[` types ơ and `]` types ư (UniKey / macOS Simple Telex habit), `{`/`}` their
+    /// uppercase — EXPERIMENTAL, default OFF. Requested on Facebook 2026-08-14 by a
+    /// 15-year UniKey typist; opt-in because with it on the brackets are word KEYS and
+    /// stop ending a word, which anyone typing `arr[i]` in code does not want.
+    /// Read on the keystroke path via the engine mirror, so it is cached like the other
+    /// engine toggles.
+    private var _bracketVowels: Bool
+    var bracketVowels: Bool {
+        get { lock.withLock { _bracketVowels } }
+        set { lock.withLock { _bracketVowels = newValue }
+              defaults.set(newValue, forKey: Key.bracketVowels) }
     }
 
     /// Which ASCII keyboard layout Telex composes on — a kTISPropertyInputSourceID
