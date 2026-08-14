@@ -704,9 +704,43 @@ public struct TelexEngine {
         rawIsEnglishContextWord() || rawIsEnglishCollision() || rawIsEnglishException()
     }
     private func classifyWordContext(restored: Bool) -> WordContext {
-        if restored { return isRecognizedEnglish() ? .english : .neutral }
-        if compositionDiffersFromRaw() { return .vietnamese }   // a VN diacritic is on screen
-        return isRecognizedEnglish() ? .english : .vietnamese   // plain ascii: "he" vs "sao"
+        // A Vietnamese diacritic actually ON SCREEN outranks everything.
+        if !restored, compositionDiffersFromRaw() { return .vietnamese }
+        if isRecognizedEnglish() { return .english }            // "he", "the", collisions
+        // Neutral loanwords ("email", "app", "wifi") and restore-only interjections
+        // ("ok", "wow", "hi" — designed to never OPEN a run, see restoreOnly):
+        // Vietnamese sentences use them constantly — preserve the context (neither
+        // open nor end a run), or "email bans" would keep "bans" instead of "bán"
+        // and "ok cams" would keep "cams" instead of "cám".
+        if rawIsNeutralLoanword() || rawIsEnglishContextWord(includingRestoreOnly: true) {
+            return .neutral
+        }
+        // Toneless-Vietnamese typing ("sao", "khong") keeps the context Vietnamese.
+        if !restored, SyllableValidator.isValidSyllable(composed.lowercased()) { return .vietnamese }
+        // Everything left is a word NO Vietnamese syllable can be — untouched
+        // ("github") or restored-to-raw ("position", whose restore is a textual
+        // no-op) — and that structure is as strong an English-run signal as a
+        // dictionary hit. The dictionaries deliberately can't carry these: the
+        // collision table only holds words the engine MANGLES, and a word the
+        // validator refuses to compose is exactly the word that never gets mangled.
+        // Field report 2026-08-14: "position is" → "position í" — "position" fell
+        // to the old defaults (.neutral when restored, .vietnamese when untouched)
+        // and never opened the English run.
+        return .english
+    }
+
+    /// Raw keystrokes spell a neutral loanword (see EnglishContextWords.neutralLoanwords).
+    private func rawIsNeutralLoanword() -> Bool {
+        guard rawCount > 0, rawCount <= EnglishContextWords.maxLength else { return false }
+        var v = String.UnicodeScalarView()
+        v.reserveCapacity(rawCount)
+        for i in 0..<rawCount {
+            var b = raw[i]
+            if b >= UInt8(ascii: "A"), b <= UInt8(ascii: "Z") { b |= 0x20 }
+            guard b >= UInt8(ascii: "a"), b <= UInt8(ascii: "z") else { return false }
+            v.append(Unicode.Scalar(b))
+        }
+        return EnglishContextWords.neutralLoanwords.contains(String(v))
     }
 
     /// Fold the just-committed word into the cross-word context (only when the feature is on).

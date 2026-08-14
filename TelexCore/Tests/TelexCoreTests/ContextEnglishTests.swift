@@ -198,3 +198,24 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(sentence("he tieengs", context: true), "he tiếng")
     }
 }
+
+// Field report 2026-08-14 (maintainer): "position is not okay" → "position í not
+// okay" with the feature ON. "position" is untouched plain ascii (the validator
+// refuses to compose it, which is also exactly why the collision table can't carry
+// it), and the classifier's old default called every unrecognized ascii word
+// Vietnamese. Now the same validator that blocked composition decides the context:
+// structurally-impossible Vietnamese opens an English run.
+final class ContextEnglishFieldReportTests: XCTestCase {
+    func testPositionSeedsEnglishContext() {
+        XCTAssertEqual(sentence("position is not okay", context: true), "position is not okay")
+        XCTAssertEqual(sentence("github is", context: true), "github is")
+        XCTAssertEqual(sentence("Position is", context: true), "Position is")   // case-blind
+    }
+
+    /// The other half of the tradeoff must not move: toneless-Vietnamese words that
+    /// ARE valid syllables keep the context Vietnamese.
+    func testTonelessVietnameseStillKeepsVietnameseContext() {
+        XCTAssertEqual(sentence("sao is", context: true), "sao í")
+        XCTAssertEqual(sentence("khong is", context: true), "khong í")
+    }
+}

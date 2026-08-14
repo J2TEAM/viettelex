@@ -28,6 +28,24 @@ enum EnglishContextWords {
     /// `w` literal + `ow` → ơ, và "wơ" lại hợp lệ qua teencode w→qu = "quơ").
     static let restoreOnly: Set<String> = parse(restoreOnlyList)
 
+    /// NEUTRAL loanwords: English words Vietnamese sentences borrow constantly ("gửi
+    /// email", "cái app này", "bật wifi"). They must PRESERVE the current context —
+    /// neither open an English run (or "email bans" would keep "bans" instead of
+    /// composing "bán") nor end one ("the email is" keeps the run "the" opened).
+    /// Consulted only for words the classifier would otherwise call English by
+    /// STRUCTURE (not a possible VN syllable, not in any dictionary) — the fallback
+    /// added for the 2026-08-14 field report ("position is" → "position í": every
+    /// unrecognized non-VN word used to default to Vietnamese context).
+    static let neutralLoanwords: Set<String> = parse("""
+        app apps email mail wifi web blog file files link links game games chat
+        team teams fan fans form font menu tab tabs click share live stream
+        video videos photo photos camera laptop phone sim online offline admin
+        mod spam virus download upload update comment comments post posts story
+        feed group groups page pages shop sale size order ship voucher deal
+        combo view views like likes sub vlog idol hot top vip pro logo banner
+        code demo test server client account profile password login logout
+        """)
+
     /// Longest word in the set — lets the caller skip words that can't possibly match.
     static let maxLength = 12
 
