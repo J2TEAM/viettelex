@@ -84,12 +84,6 @@ Có: **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**.
 </details>
 
 <details>
-<summary><strong>Gõ trong Google Docs bị gạch chân?</strong></summary>
-
-Chủ đích — Google Docs chỉ hoạt động đúng với marked text (bộ gõ nào có composition cũng gạch chân ở đó, kể cả bàn phím tiếng Việt có sẵn của macOS).
-</details>
-
-<details>
 <summary><strong>Ô mật khẩu không gõ được tiếng Việt?</strong></summary>
 
 VietTelex tự tắt trong secure field — đúng hành vi bảo mật, không phải lỗi.
