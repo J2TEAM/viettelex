@@ -704,9 +704,21 @@ public struct TelexEngine {
         rawIsEnglishContextWord() || rawIsEnglishCollision() || rawIsEnglishException()
     }
     private func classifyWordContext(restored: Bool) -> WordContext {
-        // A Vietnamese diacritic actually ON SCREEN outranks everything.
-        if !restored, compositionDiffersFromRaw() { return .vietnamese }
+        // A Vietnamese diacritic actually ON SCREEN outranks everything. Tested on the
+        // OUTPUT, not on "differs from raw": a cancelled transform ("thiss" → plain
+        // ascii "this") also differs, and calling that Vietnamese is what made
+        // "thiss is" come out "this í" (field report 2026-08-14).
+        if !restored, compositionHasDiacritic() { return .vietnamese }
         if isRecognizedEnglish() { return .english }            // "he", "the", collisions
+        // Escape-typed English: the doubled key that cancels the transform leaves the
+        // real word on screen while the RAW keys ("thiss", "gooogle") are in no
+        // dictionary. Ask the same dictionaries about what the user actually SEES.
+        if let word = composedAsciiWord(),
+           EnglishContextWords.words.contains(word)
+            || EnglishCollisions.words.contains(word)
+            || EnglishContextWords.neutralLoanwords.contains(word) {
+            return EnglishContextWords.neutralLoanwords.contains(word) ? .neutral : .english
+        }
         // Neutral loanwords ("email", "app", "wifi") and restore-only interjections
         // ("ok", "wow", "hi" — designed to never OPEN a run, see restoreOnly):
         // Vietnamese sentences use them constantly — preserve the context (neither
@@ -1074,6 +1086,40 @@ public struct TelexEngine {
         if outCount != rawCount { return true }
         for i in 0..<outCount where out[i] != UInt32(raw[i]) { return true }
         return false
+    }
+
+    /// Is there a Vietnamese diacritic ACTUALLY ON SCREEN? Non-ascii output is exactly
+    /// that: every Telex transform that survives to the screen produces a non-ascii
+    /// scalar (â ê ô ơ ư đ + tones), and nothing else can.
+    ///
+    /// Distinct from `compositionDiffersFromRaw()`, which is also true when the diff is
+    /// a CANCELLED transform — "thiss" (doubled s to escape the tone) composes plain
+    /// ascii "this" yet differs from its raw keys. The context classifier needs THIS
+    /// question; using the other one called escaped English words Vietnamese (field
+    /// report 2026-08-14: "thiss is" → "this í").
+    private func compositionHasDiacritic() -> Bool {
+        for i in 0..<outCount where out[i] > 127 { return true }
+        return false
+    }
+
+    /// The composed text, lowercased ascii, when it is PURE ascii — the form an escaped
+    /// English word ends up in ("thiss" → "this", "gooogle" → "google"). nil when the
+    /// composition carries a diacritic (then it is Vietnamese, not a dictionary word) or
+    /// is longer than any word we look up. Lets the English dictionaries answer for the
+    /// escape class, whose RAW keys ("thiss") no dictionary can carry.
+    private func composedAsciiWord() -> String? {
+        guard outCount > 0, outCount <= EnglishContextWords.maxLength else { return nil }
+        var v = String.UnicodeScalarView()
+        v.reserveCapacity(outCount)
+        for i in 0..<outCount {
+            var c = out[i]
+            if c > 127 { return nil }
+            if c >= UInt32(UInt8(ascii: "A")), c <= UInt32(UInt8(ascii: "Z")) { c |= 0x20 }
+            guard c >= UInt32(UInt8(ascii: "a")), c <= UInt32(UInt8(ascii: "z")),
+                  let scalar = Unicode.Scalar(c) else { return nil }
+            v.append(scalar)
+        }
+        return String(v)
     }
 
     /// Uppercase tone/mark key preceded by a lowercase letter (camelCase like

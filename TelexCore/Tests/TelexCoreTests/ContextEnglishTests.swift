@@ -218,4 +218,26 @@ final class ContextEnglishFieldReportTests: XCTestCase {
         XCTAssertEqual(sentence("sao is", context: true), "sao í")
         XCTAssertEqual(sentence("khong is", context: true), "khong í")
     }
+
+    /// Field report 2026-08-14 #2: "thiss is" → "this í". The doubled `s` ESCAPES the
+    /// tone, so the screen shows plain ascii "this" — but the classifier's first branch
+    /// asked "does the composition differ from the raw keys?", which a cancelled
+    /// transform also satisfies, and called it Vietnamese. The question it meant to ask
+    /// is "is a diacritic on screen?".
+    func testEscapedEnglishWordSeedsEnglishContext() {
+        XCTAssertEqual(sentence("thiss is", context: true), "this is")
+        XCTAssertEqual(sentence("gooogle is", context: true), "google is")
+        XCTAssertEqual(sentence("tessted is", context: true), "tested is")
+        // Escaped LOANWORD stays NEUTRAL: it must not open a run, so a following
+        // Vietnamese word still composes. "wweb" is the real escape here — a lone `w`
+        // composes ư, so the doubled w is how "web" gets typed in full Telex.
+        XCTAssertEqual(sentence("wweb bans", context: true), "web bán")
+    }
+
+    /// The escape fix must not weaken the Vietnamese side: a word whose composition
+    /// really does carry a diacritic still ends any English run.
+    func testDiacriticOnScreenStillEndsTheRun() {
+        XCTAssertEqual(sentence("he thoi is", context: true), "he thoi í")
+        XCTAssertEqual(sentence("he thois is", context: true), "he thói í")
+    }
 }
