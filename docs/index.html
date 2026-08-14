@@ -101,6 +101,9 @@
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  #faq details { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-bottom: 10px; }
+  #faq summary { cursor: pointer; }
+  #faq details p { margin: 10px 0 2px; }
   .card h3 { font-size: 1.02rem; font-weight: 700; margin-bottom: 6px; }
   .card h3 .dot { color: var(--red); }
   .card p { font-size: .92rem; color: var(--ink-soft); }
@@ -231,6 +234,36 @@
         <img src="assets/instructions-2.png" alt="Thêm ViệtTelex trong Input Sources" loading="lazy" style="max-width:560px;margin-top:10px"></div>
       <div class="step"><strong>Gõ thử</strong><p>Chuyển sang ViệtTelex bằng phím 🌐 hoặc ⌃Space. Muốn gõ trong Terminal/iTerm/Chrome thì bật quyền Trợ năng cho VietTelex (Privacy &amp; Security → Accessibility).</p></div>
     </div>
+  </div>
+</section>
+
+<section id="faq" style="padding-top:0">
+  <div class="wrap">
+    <h2>Câu hỏi thường gặp</h2>
+    <details>
+      <summary><strong>Cài xong gõ vẫn bị gạch chân?</strong></summary>
+      <p>Do VietTelex chưa được cấp quyền Trợ năng: System Settings → Privacy &amp; Security → <b>Accessibility</b> → tick VietTelex (đã tick mà vẫn lỗi thì bỏ tick rồi tick lại). Có thể cần khởi động lại máy một lần để quyền có tác dụng.</p>
+    </details>
+    <details>
+      <summary><strong>Không thấy ViệtTelex trong Input Sources?</strong></summary>
+      <p>Đăng xuất/đăng nhập lại một lần rồi thêm lại.</p>
+    </details>
+    <details>
+      <summary><strong>Một app cụ thể gõ lỗi?</strong></summary>
+      <p>Menu bộ gõ → <b>Cài đặt…</b> → tab <b>Bảng cơ chế gõ</b> → thêm app (có sẵn danh sách app mở gần đây) → ép tay thử lần lượt: <b>Tap (backspace)</b>, <b>Gõ trực tiếp</b>, <b>Marked text</b>. Cách nào gõ đúng thì <a href="https://github.com/ptrinh/viettelex/issues/new/choose" rel="noopener">báo về GitHub</a> để bản sau thành mặc định cho mọi người.</p>
+    </details>
+    <details>
+      <summary><strong>Có hỗ trợ VNI không?</strong></summary>
+      <p>Có: <b>Cài đặt…</b> → tab <b>Thử nghiệm</b> → bật <b>Gõ kiểu VNI</b>.</p>
+    </details>
+    <details>
+      <summary><strong>Gõ trong Google Docs bị gạch chân?</strong></summary>
+      <p>Chủ đích — Google Docs chỉ hoạt động đúng với marked text (bộ gõ nào có composition cũng gạch chân ở đó, kể cả bàn phím tiếng Việt có sẵn của macOS).</p>
+    </details>
+    <details>
+      <summary><strong>Ô mật khẩu không gõ được tiếng Việt?</strong></summary>
+      <p>VietTelex tự tắt trong secure field — đúng hành vi bảo mật, không phải lỗi.</p>
+    </details>
   </div>
 </section>
 

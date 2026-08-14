@@ -57,11 +57,43 @@ Tùy chọn (Simple Telex, bỏ dấu tự do, kiểu cũ/mới, kiểm tra chí
 
 **Gõ kiểu VNI:** menu bộ gõ → **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**. Dấu gõ bằng số: `1-5` = sắc/huyền/hỏi/ngã/nặng, `6` = â/ê/ô, `7` = ơ/ư, `8` = ă, `9` = đ, `0` = bỏ dấu (ví dụ `Vie6t5` → Việt). Nên giữ **Kiểm tra chính tả khi gõ** bật để số như `mp3` không bị biến thành dấu.
 
-## Khắc phục sự cố
+## FAQ — câu hỏi thường gặp
 
-- **Không thấy trong Input Sources** → đăng xuất/đăng nhập lại một lần.
-- **Không gõ được trong Terminal/Chrome** → cấp quyền Accessibility (đã bật mà vẫn lỗi thì bỏ tick rồi tick lại).
-- **Ô mật khẩu** → tự tắt trong secure field (đúng hành vi).
+<details>
+<summary><strong>Cài xong gõ vẫn bị gạch chân?</strong></summary>
+
+Do VietTelex chưa được cấp quyền Trợ năng: System Settings → Privacy & Security → **Accessibility** → tick VietTelex (đã tick mà vẫn lỗi thì bỏ tick rồi tick lại). Có thể cần khởi động lại máy một lần để quyền có tác dụng.
+</details>
+
+<details>
+<summary><strong>Không thấy ViệtTelex trong Input Sources?</strong></summary>
+
+Đăng xuất/đăng nhập lại một lần rồi thêm lại.
+</details>
+
+<details>
+<summary><strong>Một app cụ thể gõ lỗi?</strong></summary>
+
+Menu bộ gõ → **Cài đặt…** → tab **Bảng cơ chế gõ** → thêm app (có sẵn danh sách app mở gần đây) → ép tay thử lần lượt: **Tap (backspace)**, **Gõ trực tiếp**, **Marked text**. Cách nào gõ đúng thì [báo về GitHub](https://github.com/ptrinh/viettelex/issues/new/choose) để bản sau thành mặc định cho mọi người.
+</details>
+
+<details>
+<summary><strong>Có hỗ trợ VNI không?</strong></summary>
+
+Có: **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**.
+</details>
+
+<details>
+<summary><strong>Gõ trong Google Docs bị gạch chân?</strong></summary>
+
+Chủ đích — Google Docs chỉ hoạt động đúng với marked text (bộ gõ nào có composition cũng gạch chân ở đó, kể cả bàn phím tiếng Việt có sẵn của macOS).
+</details>
+
+<details>
+<summary><strong>Ô mật khẩu không gõ được tiếng Việt?</strong></summary>
+
+VietTelex tự tắt trong secure field — đúng hành vi bảo mật, không phải lỗi.
+</details>
 
 ## Đóng góp & giấy phép
 

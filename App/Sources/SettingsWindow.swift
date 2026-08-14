@@ -1007,6 +1007,8 @@ struct AboutTab: View {
             Link("Website", destination: URL(string: "https://ptrinh.github.io/viettelex/")!)
             Link(model.loc("Learn Telex typing"),
                  destination: URL(string: "https://ptrinh.github.io/viettelex/learn")!)
+            Link(model.loc("FAQ"),
+                 destination: URL(string: "https://ptrinh.github.io/viettelex/#faq")!)
             Link(model.loc("How to report a bug"),
                  destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md")!)
 
