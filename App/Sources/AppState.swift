@@ -214,19 +214,28 @@ final class AppState: @unchecked Sendable {
               defaults.set(newValue, forKey: Key.vniMode) }
     }
 
-    /// Re-edit the word BEFORE the caret: a tone/mark key typed on an empty engine
-    /// seeds it from the text already on screen, so "toan" + `s` becomes "toán"
-    /// without retyping the word. Only in apps already proven to honor in-place
-    /// replacement, never in an omnibox-style field — see `tryReEditWord`.
-    /// Default ON since 2026-08-03 (maintainer: "tính năng ổn định rồi") — shipped
-    /// experimental/OFF 2026-07-30.
+    /// Gate cho HAI hành vi "với ngược vào từ trước con trỏ":
+    ///  • re-edit: phím dấu trên engine rỗng seed lại từ trên màn hình ("toan" + s
+    ///    → "toán") — chỉ ở app đã chứng minh honor in-place, không ở ô omnibox;
+    ///  • ⌫ re-open (issue #40, PR #42): xoá dấu cách mở lại từ vừa chốt
+    ///    ("tháy ␣" + ⌫ + a → "thấy").
+    ///
+    /// LỊCH SỬ DEFAULT — đọc trước khi đổi lần nữa:
+    ///  • 30/07/2026 ship experimental/OFF.
+    ///  • 03/08 bật ON, 04/08 REVERT ngay trong ngày (423b7d2). Field report
+    ///    (J2TeamNNL, 1.4.28): trên máy tester, phím w/s/a trên engine rỗng seed
+    ///    ĐOÁN từ trên màn hình rồi transform bậy ("ưeqweqwe…"), các replace sai
+    ///    offset sinh verify-probe verdict rác → field bị ép marked → "Enter 2 lần
+    ///    mới gửi được".
+    ///  • 14/08 bật ON lại (maintainer, sau một ngày field-test Discord/iTerm/
+    ///    Chrome/TextEdit). Điều kiện đã khác về BẢN CHẤT, không phải "thử lại":
+    ///    PR #42 thay ĐOÁN bằng snapshot chuỗi phím engine đã chốt + đối chiếu
+    ///    màn hình TỪNG KÝ TỰ trước khi mở lại (lệch → bỏ qua, ⌫ hành xử như cũ);
+    ///    gate keystream của #38 chặn seed xuyên boundary; poke AX cho app Electron
+    ///    (1.5.11) làm verify đọc được caret thật thay vì degrade im lặng.
+    ///    Chính lớp "đoán rồi transform bậy" của 04/08 giờ không còn đường chạy.
     var reEditWord: Bool {
-        // Default OFF — REVERTED 04/08/2026, cùng ngày bật (423b7d2). Field report
-        // (J2TeamNNL, 1.4.28): reEdit ON lần đầu trên máy tester → phím w/s/a trên
-        // engine rỗng seed lại từ trên màn hình và transform bậy ("ưeqweqwe…"),
-        // các replace sai offset tạo verify-probe verdict rác → field bị ép marked
-        // → "Enter 2 lần mới gửi được". Feature vẫn dùng được khi tự bật.
-        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? false }
+        get { defaults.object(forKey: Key.reEditWord) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 

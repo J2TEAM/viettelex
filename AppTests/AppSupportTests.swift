@@ -393,11 +393,13 @@ extension AppSupportTests {
         XCTAssertFalse(FocusedFieldDetector.lazyAXPokeWanted(reEditEnabled: false, routesTap: false))
     }
 
-    /// reEditWord now gates TWO reach-back behaviors — re-edit ("toan"+s→toán) AND
-    /// the ⌫ re-open of PR #42 ("tháy ␣"+⌫+a→thấy, issue #40) — so its default-OFF
-    /// contract (the 1.4.28 default-ON revert) is worth pinning explicitly: a fresh
-    /// install must do neither until the user opts in.
-    func testReEditGateDefaultsOff() {
+    /// reEditWord gates TWO reach-back behaviors — re-edit ("toan"+s→toán) and the ⌫
+    /// re-open of PR #42 ("tháy ␣"+⌫+a→thấy, issue #40). Default flipped ON 14/08/2026
+    /// after PR #42 replaced the GUESS that caused the 04/08 revert with a verified
+    /// snapshot (see the AppState doc for the full history). Pinned in both directions:
+    /// a fresh install has it on, and an explicit OFF must survive the ON default —
+    /// that opt-out is the escape hatch if the 04/08 class ever resurfaces.
+    func testReEditGateDefaultsOn() {
         let s = AppState.shared
         let saved = s.defaults.object(forKey: "reEditWord") as? Bool
         defer {
@@ -405,9 +407,9 @@ extension AppSupportTests {
             else { s.defaults.removeObject(forKey: "reEditWord") }
         }
         s.defaults.removeObject(forKey: "reEditWord")
-        XCTAssertFalse(s.reEditWord, "fresh install: no reach-back behavior until opted in")
-        s.reEditWord = true
-        XCTAssertTrue(s.reEditWord, "explicit opt-in sticks")
+        XCTAssertTrue(s.reEditWord, "fresh install: reach-back behaviors on by default")
+        s.reEditWord = false
+        XCTAssertFalse(s.reEditWord, "explicit OFF must survive the ON default")
     }
 }
 
