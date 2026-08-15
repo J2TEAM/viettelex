@@ -408,6 +408,40 @@ once. After that it stays.
 
 Do NOT `killall cfprefsd` after registering — it erases the transient registration.
 
+## ⌘R trong Xcode huỷ đăng ký input source — 2026-08-15 (học từ fork xkhanhs/vtx, 906640f)
+
+Triệu chứng: IME **biến mất khỏi menu bar**, không crash, DebugLog trống. App vẫn
+hoàn toàn lành — `spctl` → `accepted / Notarized Developer ID`, `stapler validate`
+OK, process chạy đúng từ `~/Library/Input Methods/`. Nhưng `AppleEnabledInputSources`
+đã bị **dựng lại từ mặc định**: IME rớt xuống chỉ còn trong `AppleInputSourceHistory`,
+và macOS tự nhét `com.apple.inputmethod.VietnameseSimpleTelex` vào thế chỗ.
+
+Dấu hiệu phân biệt "cả list bị reset" với "IME bị disable riêng": **layout non-Apple
+của user (nếu có) cũng mất cùng** khỏi enabled list.
+
+Thủ phạm: ⌘B/⌘R trong Xcode GUI build bundle vào DerivedData mặc định
+(`~/Library/Developer/Xcode/DerivedData/…/Build/Products/{Debug,Release}`), và ⌘R
+còn *chạy* bản đó. Bản chạy mang đúng `InputMethodConnectionName` như bản đã cài
+(fork đo được: `pgrep -lf` ra hai process, `mdfind -name` ra ba bundle) — hai process
+giành một connection name, macOS xử lý bằng cách dựng lại toàn bộ enabled list. Khớp
+với "Registration only PERSISTS via the login scan" ở trên: đăng ký vốn mong manh,
+một bundle trùng connection name đủ để thổi bay.
+
+Luật: **build/cài bằng `Scripts/dev-install.sh`, không bao giờ ⌘R app chính trong
+Xcode.** Mở Xcode để đọc/sửa code hay chạy test (⌘U) qua CLI runner thì theo dõi
+được — xem thêm mục XCTest host cướp IMK trong dev-loop notes. Kiểm tra sức khoẻ:
+
+```bash
+pgrep -lf VietTelex          # đúng 1 dòng, path ~/Library/Input Methods/
+mdfind -name "VietTelex.app" # không được ra bundle trong DerivedData
+```
+
+Khôi phục sau khi đã dọn bundle thừa: sửa `AppleEnabledInputSources` bằng
+`defaults export` → edit → `defaults import com.apple.HIToolbox`, rồi
+**logout/login** (đọc lại ngay sau import thì thấy đúng, nhưng menu bar chỉ cập
+nhật sau login scan). Đừng `killall cfprefsd`. Nhớ thêm lại layout non-Apple đã
+mất cùng — nó rơi im lặng.
+
 ## Debug commands
 
 ```bash

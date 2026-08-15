@@ -98,6 +98,14 @@ com.readdle.smartemail-Mac: inPlace
 # nuốt, từ không dấu vẫn ăn). Word/PowerPoint đã inPlace sẵn; Outlook bị thiếu.
 com.microsoft.Outlook: inPlace
 com.apple.mail: inPlace
+# MarkEdit — editor là CodeMirror 6 trong WKWebView: xử lý Backspace bằng JS và
+# áp edit vào document model BẤT ĐỒNG BỘ, nên loạt ⌫+retype của tap về sai thứ
+# tự (tap phát đủ edit — đếm log không thiếu lần nào — mà màn hình vẫn rơi dấu,
+# thừa ký tự, lệch ô). Cùng lớp WebView #44/#47, KHÁC lớp Electron biên-từ:
+# MarkEdit honor replacementRange thật (probe regionMatch=yes, reprobe
+# imkMatch2=yes, không gạch chân). Port từ fork xkhanhs/vtx (35b53f5,
+# maintainer field-test 14/08/2026).
+app.cyan.markedit: inPlace
 # Browsers — tự dò theo ô (address bar vs nội dung trang)
 com.apple.Safari: axDetect
 com.apple.SafariTechnologyPreview: axDetect

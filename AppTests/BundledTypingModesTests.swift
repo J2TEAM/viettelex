@@ -65,6 +65,20 @@ final class BundledTypingModesTests: XCTestCase {
         }
     }
 
+    // MARK: Port từ fork xkhanhs/vtx 35b53f5 (14/08/2026) — WebView editor phải inPlace
+
+    func testWebViewEditorsResolveToInPlace() throws {
+        // MarkEdit (CodeMirror 6 trong WKWebView) áp ⌫ giả lập bất đồng bộ nên burst
+        // của tap về sai thứ tự — tap phát đủ edit mà màn hình vẫn rơi dấu/thừa ký
+        // tự/lệch ô. In-place được đo là honored thật (regionMatch=yes, imkMatch2=yes,
+        // không gạch chân) — KHÁC lớp Electron ở trên, nơi caret self-report thật thà
+        // nhưng edit hỏng biên từ. Spark Classic đi kèm làm hàng rào cho rule #47.
+        for id in ["app.cyan.markedit", "com.readdle.smartemail-Mac"] {
+            XCTAssertEqual(try bundledRules()[id], "inPlace", "\(id) thiếu/hỏng trong typing-modes.yml")
+            XCTAssertEqual(AppState.shared.autoResolvedMode(id), .inPlace, id)
+        }
+    }
+
     func testEveryParsedRuleIsAValidNonAutoMode() throws {
         // Đây là hàng rào chống "unknown mode": AppState.builtInRules bỏ im lặng mọi
         // value không map được sang AppMode, và `auto` cũng bị bỏ (auto = không có
