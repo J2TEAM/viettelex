@@ -77,6 +77,33 @@ final class AppSupportTests: XCTestCase {
         XCTAssertEqual(huge?.count, UpdateCheck.notesCharacterCap + 1)   // + the ellipsis
     }
 
+    // MARK: Field report 14/08/2026 — "VietTelex tự nhiên bị mờ" = secure input
+
+    func testSecureInputPIDExtraction() {
+        // Shape thật của IOConsoleUsers: mảng session dict, chỉ session đang giữ
+        // secure input mới mang key kCGSSessionSecureInputPID.
+        let users: [[String: Any]] = [
+            ["kCGSSessionUserNameKey": "loginwindow", "kCGSSessionOnConsoleKey": false],
+            ["kCGSSessionUserNameKey": "ptrinh", "kCGSSessionSecureInputPID": 4242],
+        ]
+        XCTAssertEqual(SecureInputMonitor.extractSecureInputPID(consoleUsers: users), 4242)
+        XCTAssertNil(SecureInputMonitor.extractSecureInputPID(consoleUsers: []))
+        XCTAssertNil(SecureInputMonitor.extractSecureInputPID(consoleUsers: [["a": 1]]))
+        // PID 0 nghĩa là "không ai giữ" trong một số bản macOS — không được coi là thủ phạm.
+        XCTAssertNil(SecureInputMonitor.extractSecureInputPID(
+            consoleUsers: [["kCGSSessionSecureInputPID": 0]]))
+    }
+
+    func testSecureInputHolderLabelIsGreppable() {
+        // Label đi vào unified log + bug report: phải chứa cả tên lẫn PID, và không
+        // vỡ khi không resolve được tên (process đã chết giữa chừng).
+        XCTAssertEqual(SecureInputMonitor.Holder(pid: 123, name: "iTerm2").label,
+                       "iTerm2 (PID 123)")
+        XCTAssertEqual(SecureInputMonitor.Holder(pid: 123, name: nil).label, "PID 123")
+        // Tên process của chính test host phải resolve được (đường NSRunningApplication).
+        XCTAssertNotNil(SecureInputMonitor.processName(ProcessInfo.processInfo.processIdentifier))
+    }
+
     func testBoundedDataEnforcesByteCap() async {
         // data: URLs keep the test off the network; the cap must apply while streaming.
         let small = URLRequest(url: URL(string: "data:text/plain,hello")!)

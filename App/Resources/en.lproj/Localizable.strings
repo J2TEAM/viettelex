@@ -64,3 +64,8 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 "Clear filter" = "Clear filter";
 "Delete this shortcut" = "Delete this shortcut";
 "Open Settings → About to install it." = "Open Settings → About to install it.";
+
+/* Secure-input monitor (field report 14/08/2026 — "VietTelex randomly greyed out") */
+"Vietnamese typing is blocked (Secure Input)" = "Vietnamese typing is blocked (Secure Input)";
+"If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”" = "If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”";
+"Status: Blocked by Secure Input" = "Status: Blocked by Secure Input";

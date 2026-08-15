@@ -223,3 +223,8 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "FAQ" = "Câu hỏi thường gặp";
 "Bracket vowels: [ types ơ, ] types ư (experimental)" = "Phím ngoặc: [ ra ơ, ] ra ư (thử nghiệm)";
 "The UniKey habit: “th[” → “thơ”, “ng]” → “ngư” ({ and } for uppercase). Leave OFF if you type code — with it on, [ and ] belong to the word instead of ending it." = "Thói quen UniKey: “th[” → “thơ”, “ng]” → “ngư” ({ và } ra chữ hoa). Nếu bạn gõ code thì nên để TẮT — khi bật, [ và ] thuộc về từ đang gõ thay vì kết thúc từ.";
+
+/* Secure-input monitor (field report 14/08/2026 — "VietTelex tự nhiên bị mờ") */
+"Vietnamese typing is blocked (Secure Input)" = "Gõ tiếng Việt đang bị chặn (Secure Input)";
+"If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”" = "Nếu là Terminal/iTerm2: tắt “Secure Keyboard Entry” trong menu app đó";
+"Status: Blocked by Secure Input" = "Trạng thái: Bị chặn bởi Secure Input";

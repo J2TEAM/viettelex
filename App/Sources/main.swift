@@ -54,7 +54,15 @@ inputSourceObserver = DistributedNotificationCenter.default().addObserver(
     forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
     object: nil, queue: .main) { _ in
     TerminalTapController.shared.selectionChanged(isVietTelex: TelexInputController.isVietTelexSelected())
+    // Secure input bật thường kèm macOS đá selection sang ABC — đây là đường
+    // phát hiện NHANH; poll 5s của monitor chỉ là lưới an toàn.
+    SecureInputMonitor.shared.check(reason: "input-source-changed")
 }
+
+// "VietTelex bị mờ không rõ nguyên nhân" (field report 14/08/2026): khi có process
+// giữ secure input, macOS vô hiệu mọi IME bên thứ ba. Monitor nêu tên thủ phạm
+// (menu bar tạm thời + unified log + snapshot) — xem SecureInputMonitor.swift.
+SecureInputMonitor.shared.start()
 
 // Accessibility permission toggled (System Settings): react IMMEDIATELY, not on the
 // next keystroke. Revoke while the tap is live used to leave a tap macOS keeps

@@ -1702,7 +1702,13 @@ final class TelexInputController: IMKInputController {
         // Status first. Three states: OK / permission missing / permission STALE
         // (trusted but the tap was refused — needs a remove+re-add, see TerminalTap).
         let statusTitle: String
-        if !Accessibility.isTrusted {
+        if let holder = SecureInputMonitor.shared.activeHolder {
+            // Hiếm khi tới được đây (secure input thường đá selection sang ABC nên
+            // menu này không mở được), nhưng ca "secure input tạm thời trong ô
+            // password mà VietTelex vẫn selected" thì thấy. Không click-action:
+            // thủ phạm là app khác, mình không tắt hộ được.
+            statusTitle = VTLocalized("Status: Blocked by Secure Input") + " — \(holder.label)"
+        } else if !Accessibility.isTrusted {
             statusTitle = VTLocalized("Status: Permission needed")
         } else if TerminalTapController.shared.trustLooksStale {
             statusTitle = VTLocalized("Status: Permission stale — click to fix")
@@ -2122,6 +2128,9 @@ final class TelexInputController: IMKInputController {
 
     /// Permission OK: show a debug snapshot of the runtime state.
     private func showDebugLog() {
+        // Snapshot là lúc user đang thắc mắc "sao thế này" — re-check secure input
+        // ngay thay vì đợi nhịp poll 5s.
+        SecureInputMonitor.shared.check(reason: "snapshot")
         let id = AppState.shared.currentBundleID ?? "?"
         // tapRouting, not the per-mode getters: page content in browsers routes to
         // tap BY POLICY (2026-08-06) without the app ever being in a tap-mode set,
@@ -2147,6 +2156,7 @@ final class TelexInputController: IMKInputController {
             "Terminal tap: \(TerminalTapController.shared.isRunning ? "running" : "off")"
                 + (TerminalTapController.shared.isQuarantined ? " (quarantined)" : "")
                 + (SyntheticKeyboard.tripped ? " (breaker tripped)" : ""),
+            SecureInputMonitor.shared.snapshotLine,
             "Spotlight visible: \(SpotlightDetector.isVisible ? "yes" : "no")",
             "Current app: \(id)",
             "Strategy: \(mode)",
