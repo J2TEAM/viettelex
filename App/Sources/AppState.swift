@@ -95,10 +95,12 @@ final class AppState: @unchecked Sendable {
         _simpleTelex = (defaults.object(forKey: Key.simpleTelex) as? Bool) ?? false
         _quickTelex = (defaults.object(forKey: Key.quickTelex) as? Bool) ?? false
         _vniMode = (defaults.object(forKey: Key.vniMode) as? Bool) ?? false
-        // Default OFF (maintainer 03/08/2026, sau khi cân nhắc lại trong cùng ngày):
-        // toggle đã tốt nghiệp sang tab Tùy chỉnh nhưng hành vi đổi cách gõ diện rộng
-        // ("he is" vs "he í") — user chủ động bật, không ép qua default.
-        _contextualEnglish = (defaults.object(forKey: Key.contextualEnglish) as? Bool) ?? false
+        // LỊCH SỬ DEFAULT: OFF từ 03/08/2026 (hành vi đổi cách gõ diện rộng, user
+        // chủ động bật). Bật ON 15/08/2026 (maintainer): sau hai tuần field-use +
+        // các fix "position is"/"thiss is"/Enter-giữ-ngữ-cảnh, quyết định theo ngữ
+        // cảnh đã đủ chín — người gõ lẫn Anh-Việt hưởng lợi ngay khỏi phải biết
+        // toggle tồn tại; ai không muốn vẫn tắt được trong Cài đặt.
+        _contextualEnglish = (defaults.object(forKey: Key.contextualEnglish) as? Bool) ?? true
         tapNativeFastPath = (defaults.object(forKey: "tapNativeFastPath") as? Bool) ?? true
         _tapModifyEventInPlace = (defaults.object(forKey: "tapModifyEventInPlace") as? Bool) ?? true
         _tapSkipSyntheticKeyUp = (defaults.object(forKey: "tapSkipSyntheticKeyUp") as? Bool) ?? true
@@ -285,7 +287,8 @@ final class AppState: @unchecked Sendable {
               defaults.set(newValue, forKey: "safeUnknownApps") }
     }
 
-    /// Context-based decision (EXPERIMENTAL, default OFF). See `TelexEngine.contextualEnglish`.
+    /// Context-based decision (default ON since 15/08/2026 — see init for the history).
+    /// See `TelexEngine.contextualEnglish`.
     private var _contextualEnglish: Bool
     var contextualEnglish: Bool {
         get { lock.withLock { _contextualEnglish } }
