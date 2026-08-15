@@ -2443,8 +2443,12 @@ final class TerminalTapController {
             lastTapKeyWasBoundary = true
             // A newline breaks the English run: the first word on the next line has no
             // preceding word, so "is" → "í". Reset AFTER emitBoundary commits (and
-            // classifies) the current word, via defer so every return path clears it.
-            if keyCode == kReturn || keyCode == kEnter { defer { engine.resetContext() } }
+            // classifies) the current word — the defer must sit at THIS block's scope;
+            // nested inside `if { defer {...} }` it fired immediately and wiped the
+            // context BEFORE the restore decision ("early too⏎" → "early tô", same
+            // defer-scope bug as the IMKit path — field report 15/08/2026).
+            let newlineKey = keyCode == kReturn || keyCode == kEnter
+            defer { if newlineKey { engine.resetContext() } }
             // Commit the composed word, then prefer passing the REAL key through: a
             // synthetic (isTrusted=false) Tab/Return doesn't trigger the app's own
             // handling — shell Tab-completion never fires, web/Electron "Enter to send"

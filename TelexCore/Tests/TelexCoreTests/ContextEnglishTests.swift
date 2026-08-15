@@ -100,6 +100,33 @@ final class ContextEnglishTests: XCTestCase {
         XCTAssertEqual(e.commitText(autoRestore: true), "í")
     }
 
+    // MARK: Field report 15/08/2026 — "early too⏎" gửi thành "early tô" (WhatsApp)
+    //
+    // ORDER INVARIANT for the controllers' newline handling: resetContext() belongs
+    // AFTER the boundary commit, never before. Both controllers had a Swift
+    // defer-scope bug (`if newline { defer { resetContext() } }` fires immediately)
+    // that wiped the "early = English" context BEFORE the restore decision, so Enter
+    // committed "tô" while space restored "too". These two tests pin each order.
+    func testNewlineResetAfterCommitKeepsEnglishRestore() {
+        var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = true
+        for ch in "early" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true)
+        for ch in "too" { _ = e.feed(ch) }
+        XCTAssertEqual(e.commitText(autoRestore: true), "too")   // context intact → restored
+        e.resetContext()                                          // Enter: reset AFTER commit
+        for ch in "is" { _ = e.feed(ch) }
+        XCTAssertEqual(e.commitText(autoRestore: true), "í")     // new line: run is broken
+    }
+
+    func testNewlineResetBeforeCommitLosesTheRestore() {
+        // The buggy order, kept as documentation of WHY the invariant matters: reset
+        // first and the same keystrokes ship the Vietnamese composition instead.
+        var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = true
+        for ch in "early" { _ = e.feed(ch) }; _ = e.commitText(autoRestore: true)
+        for ch in "too" { _ = e.feed(ch) }
+        e.resetContext()                                          // ← the defer-scope bug
+        XCTAssertEqual(e.commitText(autoRestore: true), "tô")
+    }
+
     // Context does not leak across a resetContext(): "he" then reset then "is" → "í".
     func testResetContextBreaksTheRun() {
         var e = TelexEngine(); e.liveSpellCheck = true; e.contextualEnglish = true

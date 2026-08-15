@@ -529,8 +529,13 @@ final class TelexInputController: IMKInputController {
 
         case kReturn, kEnter, kTab, kEscape:
             // A newline starts a fresh line/prompt with no preceding word ("is" → "í"):
-            // reset AFTER boundary() commits + classifies the current word (defer).
-            if event.keyCode == kReturn || event.keyCode == kEnter { defer { engine.resetContext() } }
+            // reset AFTER boundary() commits + classifies the current word. The defer
+            // must live at CASE scope — nested inside `if { defer {...} }` its scope is
+            // that if-block and it fires IMMEDIATELY, wiping the context BEFORE
+            // boundary() decides the restore ("early too⏎" sent "early tô" while
+            // "early too␣" restored fine — field report 15/08/2026, WhatsApp).
+            let newlineKey = event.keyCode == kReturn || event.keyCode == kEnter
+            defer { if newlineKey { engine.resetContext() } }
             // KNOWN LIMITATION — while a MARKED composition is open in a terminal,
             // the first boundary press only commits; the second acts ("vậy⏎⏎").
             // Tried and closed (2026-07-21): delivering the key's byte through
