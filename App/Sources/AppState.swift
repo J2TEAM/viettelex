@@ -297,10 +297,12 @@ final class AppState: @unchecked Sendable {
     }
 
     /// UI language override for the Settings window + menu, independent of the
-    /// system language: "system" (follow macOS), "en", or "vi". Default "system".
-    /// Read by `VTLocalized`.
+    /// system language: "system" (follow macOS), "en", or "vi". Default "vi"
+    /// (maintainer 15/08/2026): gần như toàn bộ user là người Việt nhưng nhiều máy
+    /// để macOS tiếng Anh, nên "system" cho họ UI tiếng Anh — mặc định thẳng tiếng
+    /// Việt, ai muốn English/system thì tự chọn trong Settings. Read by `VTLocalized`.
     var uiLanguage: String {
-        get { defaults.string(forKey: "uiLanguage") ?? "system" }
+        get { defaults.string(forKey: "uiLanguage") ?? "vi" }
         set { defaults.set(newValue, forKey: "uiLanguage") }
     }
 
