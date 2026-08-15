@@ -119,8 +119,7 @@ enum UpdateCheck {
         var req = URLRequest(url: api, timeoutInterval: 12)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.setValue("VietTelex/\(currentVersion())", forHTTPHeaderField: "User-Agent")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200,
+        guard let data = await boundedData(for: req),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         return sanitizeNotes(obj["body"] as? String)
@@ -129,6 +128,29 @@ enum UpdateCheck {
     /// Longest changelog we will render. The About tab is a 640pt window, not a browser;
     /// past this the "Full changelog" link is the better answer.
     static let notesCharacterCap = 4000
+
+    /// Hard ceiling on any update-check response BEFORE it is buffered. `notesCharacterCap`
+    /// trims what we render, but `URLSession.data(for:)` would still pull an arbitrarily
+    /// large body into RAM first — and a release body is remote input. Real responses are
+    /// a few KB; a megabyte of "release notes" is not news, it's a problem.
+    static let responseByteCap = 1 << 20
+
+    /// Fetch with the byte ceiling enforced during streaming: past the cap the transfer is
+    /// abandoned and nil comes back, matching the notes' best-effort contract.
+    static func boundedData(for req: URLRequest, cap: Int = responseByteCap) async -> Data? {
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req) else { return nil }
+        // Non-HTTP schemes (data: in tests) have no status code; HTTP must be 200.
+        if let http = resp as? HTTPURLResponse, http.statusCode != 200 { return nil }
+        var data = Data()
+        data.reserveCapacity(min(cap, 64 * 1024))
+        do {
+            for try await byte in bytes {
+                if data.count >= cap { return nil }
+                data.append(byte)
+            }
+        } catch { return nil }
+        return data
+    }
 
     /// The release page for a version — same `v`-prefixed tag naming `SelfUpdater` uses to
     /// build the download URL. Derived rather than carried through `Outcome`, so the weekly

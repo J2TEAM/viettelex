@@ -77,6 +77,21 @@ final class AppSupportTests: XCTestCase {
         XCTAssertEqual(huge?.count, UpdateCheck.notesCharacterCap + 1)   // + the ellipsis
     }
 
+    func testBoundedDataEnforcesByteCap() async {
+        // data: URLs keep the test off the network; the cap must apply while streaming.
+        let small = URLRequest(url: URL(string: "data:text/plain,hello")!)
+        let got = await UpdateCheck.boundedData(for: small, cap: 16)
+        XCTAssertEqual(got.flatMap { String(data: $0, encoding: .utf8) }, "hello")
+
+        let big = URLRequest(url: URL(string: "data:text/plain," +
+                                      String(repeating: "x", count: 100))!)
+        let over = await UpdateCheck.boundedData(for: big, cap: 16)
+        XCTAssertNil(over)                                    // over cap → abandoned, not truncated
+
+        let exact = await UpdateCheck.boundedData(for: small, cap: 5)
+        XCTAssertEqual(exact.map { $0.count }, 5)             // cap boundary is inclusive
+    }
+
     func testReleaseNoteBlockParsing() {
         let blocks = UpdateCheck.noteBlocks("## Tính năng mới\n\n- **Phím ngoặc**\n* second\nplain line")
         XCTAssertEqual(blocks.count, 4)                      // blank line dropped
