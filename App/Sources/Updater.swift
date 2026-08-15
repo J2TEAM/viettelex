@@ -127,7 +127,7 @@ enum UpdateCheck {
 
     /// Longest changelog we will render. The About tab is a 640pt window, not a browser;
     /// past this the "Full changelog" link is the better answer.
-    static let notesCharacterCap = 4000
+    static let notesCharacterCap = 2000
 
     /// Hard ceiling on any update-check response BEFORE it is buffered. `notesCharacterCap`
     /// trims what we render, but `URLSession.data(for:)` would still pull an arbitrarily
