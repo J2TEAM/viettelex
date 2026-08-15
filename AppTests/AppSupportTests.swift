@@ -52,26 +52,108 @@ final class AppSupportTests: XCTestCase {
         XCTAssertFalse(UpdateCheck.currentVersion().isEmpty)
     }
 
+    func testReleaseNotesSanitizing() {
+        XCTAssertNil(UpdateCheck.sanitizeNotes(nil))
+        XCTAssertNil(UpdateCheck.sanitizeNotes(""))
+        XCTAssertNil(UpdateCheck.sanitizeNotes("\n\n  \n"))          // blank-only → nothing to show
+
+        // Git trailers are commit plumbing; the release body carries them verbatim, and
+        // stripping one must not leave a hole at the end (v1.6.3 shipped with exactly this).
+        let body = "## Tính năng mới\n\n- Phím ngoặc `[` ra ơ\n\nCảm ơn bạn Tuấn Linh\n\n" +
+                   "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n"
+        let clean = UpdateCheck.sanitizeNotes(body)
+        XCTAssertNotNil(clean)
+        XCTAssertFalse(clean!.contains("Co-Authored-By"))
+        XCTAssertFalse(clean!.hasSuffix("\n"))
+        XCTAssertTrue(clean!.contains("Cảm ơn bạn Tuấn Linh"))
+        XCTAssertFalse(clean!.contains("\n\n\n"))                    // blank runs collapsed
+        XCTAssertTrue(UpdateCheck.isTrailer("Signed-off-by: A B"))
+        XCTAssertTrue(UpdateCheck.isTrailer("Reviewed-By: A B"))
+        XCTAssertFalse(UpdateCheck.isTrailer("Ví dụ: th[ → thơ"))    // a colon alone isn't a trailer
+        XCTAssertFalse(UpdateCheck.isTrailer("- Bật ở Cài đặt: Thử nghiệm"))
+
+        // Long bodies are truncated, not rendered whole into a 640pt window.
+        let huge = UpdateCheck.sanitizeNotes(String(repeating: "x", count: 9000))
+        XCTAssertEqual(huge?.count, UpdateCheck.notesCharacterCap + 1)   // + the ellipsis
+    }
+
+    func testReleaseNoteBlockParsing() {
+        let blocks = UpdateCheck.noteBlocks("## Tính năng mới\n\n- **Phím ngoặc**\n* second\nplain line")
+        XCTAssertEqual(blocks.count, 4)                      // blank line dropped
+        XCTAssertEqual(blocks[0].kind, .heading)
+        XCTAssertEqual(blocks[0].text, "Tính năng mới")      // marker stripped, not rendered as "##"
+        XCTAssertEqual(blocks[1].kind, .bullet)
+        XCTAssertEqual(blocks[1].text, "**Phím ngoặc**")     // inline markdown left for Text
+        XCTAssertEqual(blocks[2].kind, .bullet)              // "*" bullets too
+        XCTAssertEqual(blocks[3].kind, .paragraph)
+        XCTAssertEqual(UpdateCheck.noteBlocks("").count, 0)
+        XCTAssertEqual(UpdateCheck.noteBlocks("###\n-  ").count, 0)   // markers with no text
+
+        // ATX headings need a space after the hashes. An issue reference opening a line is
+        // NOT a heading — treating it as one ate the "#" and bolded the rest.
+        let issueRef = UpdateCheck.noteBlocks("#42 sửa lỗi gõ tắt")
+        XCTAssertEqual(issueRef.first?.kind, .paragraph)
+        XCTAssertEqual(issueRef.first?.text, "#42 sửa lỗi gõ tắt")
+        XCTAssertTrue(UpdateCheck.isHeading("## Heading"))
+        XCTAssertFalse(UpdateCheck.isHeading("#42"))
+
+        XCTAssertEqual(UpdateCheck.releasePageURL(forVersion: "1.6.3")?.absoluteString,
+                       "https://github.com/\(UpdateCheck.repo)/releases/tag/v1.6.3")
+    }
+
     // MARK: Updater — network paths via a URLProtocol stub
 
     func testCheckPathsAgainstStubbedNetwork() async {
         URLProtocol.registerClass(StubURLProtocol.self)
         defer { URLProtocol.unregisterClass(StubURLProtocol.self) }
 
-        // Stable manifest newer than current → .update with the manifest URL.
+        // Stable manifest newer than current → .update with the manifest URL. The stable
+        // channel has no changelog of its own, so it must go on to ask for the TAG's
+        // release body (`releases/tags/v99.0.0`) — that's what gives both channels notes.
         StubURLProtocol.responder = { url in
             if url.absoluteString.contains("stable.json") {
                 return (200, #"{"version":"99.0.0","url":"https://example.com/rel"}"#)
             }
-            return (200, #"{"tag_name":"v99.0.0","html_url":"https://example.com/gh"}"#)
+            if url.absoluteString.contains("releases/tags/v99.0.0") {
+                // ##"…"## delimiters, and the body starts with \n: a literal `"##` inside a
+                // #"…"# raw string would close it early. The leading blank line also proves
+                // sanitizeNotes trims it off the front.
+                return (200, ##"{"tag_name":"v99.0.0","body":"\n## Heading\n- from the tag"}"##)
+            }
+            return (200, #"{"tag_name":"v99.0.0","html_url":"https://example.com/gh","body":"- from latest"}"#)
         }
-        if case let .update(latest, url) = await UpdateCheck.checkStable() {
+        if case let .update(latest, url, notes) = await UpdateCheck.checkStable() {
             XCTAssertEqual(latest, "99.0.0")
             XCTAssertEqual(url.absoluteString, "https://example.com/rel")
+            XCTAssertEqual(notes, "## Heading\n- from the tag")
         } else { XCTFail("expected .update from stable") }
-        if case let .update(latest, _) = await UpdateCheck.check() {
+        if case let .update(latest, _, notes) = await UpdateCheck.check() {
             XCTAssertEqual(latest, "99.0.0")
+            XCTAssertEqual(notes, "- from latest")   // free: same response as the tag lookup
         } else { XCTFail("expected .update from latest") }
+
+        // A release with no body is still an update — just without the notes box.
+        StubURLProtocol.responder = { url in
+            url.absoluteString.contains("stable.json")
+                ? (200, #"{"version":"99.0.0","url":"https://example.com/rel"}"#)
+                : (200, #"{"tag_name":"v99.0.0"}"#)
+        }
+        if case let .update(_, _, notes) = await UpdateCheck.checkStable() {
+            XCTAssertNil(notes)
+        } else { XCTFail("bodyless release must still be .update") }
+
+        // The load-bearing invariant of the whole feature: the CHANGELOG lookup is
+        // best-effort, so a tag endpoint that 404s (tag named differently, release deleted,
+        // rate limit) must still yield .update — the version is the news, notes are extra.
+        StubURLProtocol.responder = { url in
+            url.absoluteString.contains("stable.json")
+                ? (200, #"{"version":"99.0.0","url":"https://example.com/rel"}"#)
+                : (404, #"{"message":"Not Found"}"#)
+        }
+        if case let .update(latest, _, notes) = await UpdateCheck.checkStable() {
+            XCTAssertEqual(latest, "99.0.0")
+            XCTAssertNil(notes)
+        } else { XCTFail("a failed notes fetch must not fail the update check") }
 
         // Same version → upToDate.
         let cur = UpdateCheck.currentVersion()

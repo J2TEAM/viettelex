@@ -20,6 +20,15 @@ enum UpdateCheck {
         get { notifyDefaults.string(forKey: "pendingUpdateVersion").flatMap { $0.isEmpty ? nil : $0 } }
         set { notifyDefaults.set(newValue ?? "", forKey: "pendingUpdateVersion") }
     }
+
+    /// Changelog for `pendingUpdateVersion`, persisted for the same reason it is: the
+    /// weekly check and the About-tab visit are separated by an IME relaunch, and
+    /// re-fetching on `onAppear` would put the network back on a path the user never
+    /// clicked. Always written and cleared together with the version above.
+    nonisolated(unsafe) static var pendingUpdateNotes: String? {
+        get { notifyDefaults.string(forKey: "pendingUpdateNotes").flatMap { $0.isEmpty ? nil : $0 } }
+        set { notifyDefaults.set(newValue ?? "", forKey: "pendingUpdateNotes") }
+    }
     // Same suite AppState uses — including the XCTest isolation (see settingsSuiteName).
     private static let notifyDefaults = UserDefaults(suiteName: AppState.settingsSuiteName) ?? .standard
 
@@ -39,13 +48,15 @@ enum UpdateCheck {
         guard now - AppState.shared.lastAutoUpdateCheckAt > 7 * 24 * 3600 else { return }
         AppState.shared.lastAutoUpdateCheckAt = now
         Task {
-            guard case let .update(latest, _) = await checkStable() else { return }
+            guard case let .update(latest, _, notes) = await checkStable() else { return }
             await MainActor.run {
                 guard AppState.shared.lastNotifiedUpdateVersion != latest else { return }
                 AppState.shared.lastNotifiedUpdateVersion = latest
                 // Always record it first: the About tab shows this even if the banner
-                // never appears (permission denied / Do Not Disturb).
+                // never appears (permission denied / Do Not Disturb). The notes ride
+                // along so that surface can answer "what changed?", not just "something did".
                 pendingUpdateVersion = latest
+                pendingUpdateNotes = notes
                 UpdateNotifier.post(version: latest)
             }
         }
@@ -55,7 +66,9 @@ enum UpdateCheck {
 
     enum Outcome {
         case upToDate(String)                       // current == latest
-        case update(latest: String, url: URL)       // a newer release exists
+        /// `notes` is the release body (Markdown), already sanitized — nil when GitHub
+        /// had none or the fetch failed. Never a reason to fail the whole check.
+        case update(latest: String, url: URL, notes: String?)
         case failed(String)                         // network / parse error
     }
 
@@ -82,11 +95,79 @@ enum UpdateCheck {
                   let stable = obj["version"] as? String else { return .failed("dữ liệu lạ") }
             let pageURL = (obj["url"] as? String).flatMap(URL.init(string:))
                 ?? URL(string: "https://github.com/\(repo)/releases/latest")!
-            return isNewer(stable, than: current) ? .update(latest: stable, url: pageURL)
-                                                  : .upToDate(current)
+            guard isNewer(stable, than: current) else { return .upToDate(current) }
+            // The manifest deliberately stays two lines the maintainer hand-edits, so the
+            // changelog is read from the release that tag already points at — one source of
+            // truth (the GitHub release body), no second thing to remember at promote time.
+            return .update(latest: stable, url: pageURL,
+                           notes: await releaseNotes(forVersion: stable))
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    /// The release body for one version's tag (`v1.6.3`), used by the STABLE channel —
+    /// `/releases/latest` hands its body over for free, but `stable.json` only names a
+    /// version, so that channel has to ask for the tag by name.
+    ///
+    /// Best-effort by construction: every failure path returns nil rather than throwing,
+    /// because a missing changelog must never turn a real update into `.failed`. The
+    /// version number is the news; the notes are the courtesy.
+    static func releaseNotes(forVersion version: String) async -> String? {
+        guard let api = URL(string: "https://api.github.com/repos/\(repo)/releases/tags/v\(version)")
+        else { return nil }
+        var req = URLRequest(url: api, timeoutInterval: 12)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("VietTelex/\(currentVersion())", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return sanitizeNotes(obj["body"] as? String)
+    }
+
+    /// Longest changelog we will render. The About tab is a 640pt window, not a browser;
+    /// past this the "Full changelog" link is the better answer.
+    static let notesCharacterCap = 4000
+
+    /// The release page for a version — same `v`-prefixed tag naming `SelfUpdater` uses to
+    /// build the download URL. Derived rather than carried through `Outcome`, so the weekly
+    /// channel (which only ever persists a version) can offer the link too.
+    static func releasePageURL(forVersion version: String) -> URL? {
+        URL(string: "https://github.com/\(repo)/releases/tag/v\(version)")
+    }
+
+    /// Make a remote release body safe to put on screen: drop git trailers, collapse the
+    /// blank-line runs that leaves behind, and cap the length. Nothing here assumes the
+    /// body is short, non-empty, or well-formed — it arrives over the network.
+    static func sanitizeNotes(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        var kept: [String] = []
+        for line in raw.replacingOccurrences(of: "\r\n", with: "\n")
+                       .split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if isTrailer(trimmed) { continue }
+            // Collapse runs of blanks (and drop leading ones) so stripping a trailer
+            // doesn't leave a hole at the end of the notes.
+            if trimmed.isEmpty, kept.last?.isEmpty ?? true { continue }
+            kept.append(trimmed.isEmpty ? "" : String(line))
+        }
+        while kept.last?.isEmpty ?? false { kept.removeLast() }
+        guard !kept.isEmpty else { return nil }
+        let joined = kept.joined(separator: "\n")
+        return joined.count > notesCharacterCap
+            ? String(joined.prefix(notesCharacterCap)) + "…"
+            : joined
+    }
+
+    /// Git trailer lines — `Co-Authored-By:`, `Signed-off-by:`, `Reviewed-by:` — which
+    /// GitHub copies verbatim from the commit into the release body. Commit plumbing, not
+    /// news: users opened the changelog to read what changed.
+    static func isTrailer(_ line: String) -> Bool {
+        guard let colon = line.firstIndex(of: ":") else { return false }
+        let token = line[line.startIndex..<colon]
+        guard !token.isEmpty, token.allSatisfy({ $0.isLetter || $0 == "-" }) else { return false }
+        return token.lowercased().hasSuffix("-by")
     }
 
     /// Network happens ONLY here (and checkStable above). Called from the About tab's
@@ -111,11 +192,65 @@ enum UpdateCheck {
             let latest = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
             let pageURL = (obj["html_url"] as? String).flatMap(URL.init(string:))
                 ?? URL(string: "https://github.com/\(repo)/releases/latest")!
-            return isNewer(latest, than: current) ? .update(latest: latest, url: pageURL)
-                                                  : .upToDate(current)
+            // This channel gets the changelog for free — the release body is already in
+            // the response we just parsed for the tag. No second request.
+            return isNewer(latest, than: current)
+                ? .update(latest: latest, url: pageURL, notes: sanitizeNotes(obj["body"] as? String))
+                : .upToDate(current)
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    /// One block of a rendered changelog.
+    ///
+    /// GitHub returns Markdown, but SwiftUI's `Text` only interprets INLINE markdown
+    /// (bold / code / links) — headings and bullets pass through as literal `##` and `-`.
+    /// So the block markers are stripped here, and the view renders each `text` as inline
+    /// markdown at the weight its `kind` calls for. Deliberately small: this is a release
+    /// note, not a document, and a real Markdown engine is a dependency we don't need.
+    struct NoteBlock: Identifiable {
+        enum Kind: Equatable { case heading, bullet, paragraph }
+        let id: Int
+        let kind: Kind
+        let text: String
+    }
+
+    /// An ATX heading needs a SPACE after the hashes — Markdown's own rule, and the reason
+    /// a bare `hasPrefix("#")` is wrong: a release note opening with an issue reference
+    /// ("#42 sửa lỗi gõ tắt") would otherwise be promoted to a heading with its `#` eaten,
+    /// rendering as bold "42 sửa lỗi gõ tắt".
+    static func isHeading(_ trimmed: String) -> Bool {
+        guard trimmed.hasPrefix("#") else { return false }
+        let rest = trimmed.drop(while: { $0 == "#" })
+        return rest.isEmpty || rest.hasPrefix(" ")
+    }
+
+    /// Split sanitized notes into renderable blocks. Blank lines are dropped: the view
+    /// spaces blocks itself, so carrying them through would double the gaps.
+    static func noteBlocks(_ notes: String) -> [NoteBlock] {
+        var out: [NoteBlock] = []
+        for line in notes.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            let kind: NoteBlock.Kind
+            var text = trimmed
+            if isHeading(trimmed) {
+                kind = .heading
+                text = String(trimmed.drop(while: { $0 == "#" })).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ")
+                        || trimmed == "-" || trimmed == "*" {
+                // The bare-marker case matters: a markerless bullet would otherwise fall
+                // through as a paragraph reading "-" instead of being dropped as empty.
+                kind = .bullet
+                text = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+            } else {
+                kind = .paragraph
+            }
+            guard !text.isEmpty else { continue }
+            out.append(NoteBlock(id: out.count, kind: kind, text: text))
+        }
+        return out
     }
 
     /// Numeric, dot-separated compare: "1.1.2" > "1.1.1" > "1.1".
@@ -242,6 +377,7 @@ enum SelfUpdater {
 
                 await MainActor.run {
                     UpdateCheck.pendingUpdateVersion = nil   // installed; nothing left to nag about
+                    UpdateCheck.pendingUpdateNotes = nil
                     let done = NSAlert()
                     done.messageText = String(format: VTLocalized("Updated to %@"), version)
                     done.informativeText = VTLocalized("Update done body")

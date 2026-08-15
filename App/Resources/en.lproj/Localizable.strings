@@ -14,6 +14,10 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 
 "Open Accessibility Settings" = "Open Accessibility Settings";
 
+"What’s new" = "What’s new";
+
+"Full changelog" = "Full changelog";
+
 "Update now" = "Update now";
 
 "Update now body" = "Update now downloads the new version, verifies its signature and swaps it in automatically — no password needed. The input method restarts when done.";

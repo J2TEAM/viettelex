@@ -44,6 +44,8 @@
 "Download update…" = "Tải bản mới…";
 "You’re up to date (%@)." = "Đã là bản mới nhất (%@).";
 "Update available: %@" = "Có bản mới: %@";
+"What’s new" = "Có gì mới";
+"Full changelog" = "Xem đầy đủ thay đổi";
 "Couldn’t check — %@." = "Không kiểm tra được — %@.";
 
 /* Shortcuts tab */
