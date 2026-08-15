@@ -260,6 +260,10 @@
       <summary><strong>Ô mật khẩu không gõ được tiếng Việt?</strong></summary>
       <p>VietTelex tự tắt trong secure field — đúng hành vi bảo mật, không phải lỗi.</p>
     </details>
+    <details>
+      <summary><strong>Phím tắt trong app chụp màn hình (Flameshot…) không ăn?</strong></summary>
+      <p>Lỗi của framework Qt (Flameshot, OBS, VLC… dùng): shortcut trong overlay bị nuốt khi có <b>bất kỳ</b> bộ gõ nào đang active — bộ gõ Simple Telex có sẵn của Apple cũng dính y hệt, không riêng VietTelex (<a href="https://github.com/ptrinh/viettelex/issues/54">chi tiết</a>). Khắc phục: System Settings → Keyboard → bật <b>“Automatically switch to a document's input source”</b>, rồi một lần chuyển sang ABC khi đang ở app đó — macOS sẽ tự nhớ, các app khác vẫn gõ tiếng Việt bình thường.</p>
+    </details>
   </div>
 </section>
 
