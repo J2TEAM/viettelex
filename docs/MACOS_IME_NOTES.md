@@ -408,6 +408,28 @@ once. After that it stays.
 
 Do NOT `killall cfprefsd` after registering — it erases the transient registration.
 
+## App Qt nuốt shortcut khi CÓ BẤT KỲ IME nào active — 2026-08-15 (issue #54, Flameshot)
+
+Triệu chứng: shortcut (⌘C, phím đơn) trong overlay chụp màn hình của Flameshot chết
+khi VietTelex đang được chọn; layout thường (US/ABC) thì sống. Nhìn qua tưởng bug
+của mình.
+
+Cách phân xử — hai bước, mất 5 phút:
+1. Debug log mức event: trong suốt lúc overlay mở, **không keyDown nào đi qua
+   VietTelex** (không `handle ENTER`, không tap-emit; macOS vốn không route ⌘-chord
+   vào IME, và tap pass chord nguyên vẹn). Event bị nuốt TRƯỚC KHI tới bộ gõ.
+2. Phép thử quyết định: **Simple Telex của Apple cũng hỏng y hệt** → lỗi theo lớp
+   "input source là IME thật" chứ không theo VietTelex.
+
+Nguyên nhân: input context của Qt trên macOS làm rơi key-equivalent khi IME active.
+Không fix được từ phía IME. Workaround cho user: per-app input source ("Automatically
+switch to a document's input source" + một lần chọn ABC trong app Qt đó), hoặc
+⌃Space sang ABC trước khi dùng. Trỏ user báo upstream, nhấn mạnh Apple IME cũng dính.
+
+Tổng quát: gặp report "shortcut chết trong app X khi bật VietTelex" → hỏi ngay
+"Simple Telex có dính không?" trước khi đào code. App Qt (Flameshot, OBS, VLC,
+qBittorrent, Telegram bản Qt…) là ứng viên hàng đầu của lớp này.
+
 ## ⌘R trong Xcode huỷ đăng ký input source — 2026-08-15 (học từ fork xkhanhs/vtx, 906640f)
 
 Triệu chứng: IME **biến mất khỏi menu bar**, không crash, DebugLog trống. App vẫn
