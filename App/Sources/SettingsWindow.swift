@@ -146,7 +146,11 @@ final class SettingsModel: ObservableObject {
     @Published var accessibilityTrusted: Bool = Accessibility.isTrusted
 
     init(selected: SettingsTab) {
-        selectedTab = selected
+        // Tab bar tự vẽ render THẲNG selectedTab (không còn TabView tự né tab ẩn):
+        // mở thẳng vào tab advanced khi advancedFeatures đang tắt phải rơi về Chung.
+        selectedTab = (!AppState.shared.advancedFeatures
+                       && (selected == .modeTable || selected == .experimental))
+            ? .general : selected
         autoRestore = AppState.shared.autoRestore
         freeMarking = AppState.shared.freeMarking
         modernOrthography = AppState.shared.modernOrthography
@@ -497,48 +501,62 @@ struct AppModeRow: Identifiable {
 struct SettingsView: View {
     @EnvironmentObject var model: SettingsModel
 
-    // Icon sidebar (macOS 15+) — tab cổ điển chỉ hiện Text nên Label vẫn ổn cho cả hai.
-    // .focusEffectDisabled() (macOS 14+, no-op below that): tắt viền focus-ring xanh
-    // quanh tab đang chọn — field report 07/08/2026, ảnh cho thấy viền tách rời khỏi
-    // nền pill, khác hẳn segmented control chuẩn của System Settings (chỉ có nền đặc,
-    // không viền riêng). CHƯA verify trực quan được (không có cách screenshot cửa sổ
-    // Settings từ ngoài phiên IME đang chạy) — nhờ xác nhận lại sau khi cài bản mới.
-    @ViewBuilder private var tabs: some View {
-        if #available(macOS 14.0, *) {
-            tabView.focusEffectDisabled()
-        } else {
-            tabView
+    // Tab bar TỰ VẼ (15/08/2026): NSTabView/TabView cổ điển của macOS chỉ hiện TEXT
+    // trong dải tab — systemImage của Label bị bỏ qua (ảnh field 15/08 xác nhận).
+    // Muốn icon thì phải tự vẽ: HStack các nút Label icon+text, nút đang chọn mang
+    // nền accent bo góc — cùng dáng segmented control cũ (user 2026-07-24 đã thử
+    // sidebar rồi quay lại tab ngang, nên giữ đúng hình khối đó).
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            tabButton(.general, "Settings", "slider.horizontal.3")
+            tabButton(.shortcuts, "Shortcuts", "keyboard")
+            if model.advancedFeatures {
+                tabButton(.modeTable, "Typing modes", "list.bullet.rectangle")
+                tabButton(.experimental, "Experimental", "testtube.2")
+            }
+            tabButton(.about, "About", "info.circle")
         }
+        .padding(3)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(Color.primary.opacity(0.06)))
     }
 
-    private var tabView: some View {
-        TabView(selection: $model.selectedTab) {
-            GeneralTab()
-                .tabItem { Label(model.loc("Settings"), systemImage: "slider.horizontal.3") }
-                .tag(SettingsTab.general)
-            ShortcutsTab()
-                .tabItem { Label(model.loc("Shortcuts"), systemImage: "keyboard") }
-                .tag(SettingsTab.shortcuts)
-            if model.advancedFeatures {
-                ModeTableTab()
-                    .tabItem { Label(model.loc("Typing modes"), systemImage: "list.bullet.rectangle") }
-                    .tag(SettingsTab.modeTable)
-                ExperimentalTab()
-                    .tabItem { Label(model.loc("Experimental"), systemImage: "testtube.2") }
-                    .tag(SettingsTab.experimental)
-            }
-            AboutTab()
-                .tabItem { Label(model.loc("About"), systemImage: "info.circle") }
-                .tag(SettingsTab.about)
+    private func tabButton(_ tab: SettingsTab, _ titleKey: String, _ icon: String) -> some View {
+        let selected = model.selectedTab == tab
+        return Button { model.selectedTab = tab } label: {
+            Label(model.loc(titleKey), systemImage: icon)
+                .labelStyle(.titleAndIcon)
+                .font(.callout)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 11)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(selected ? Color.accentColor : Color.clear))
+                .foregroundStyle(selected ? Color.white : Color.primary)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    @ViewBuilder private var activeTab: some View {
+        // selectedTab không bao giờ trỏ vào tab advanced khi advancedFeatures tắt —
+        // SettingsModel tự đưa về .general (xem didSet của advancedFeatures).
+        switch model.selectedTab {
+        case .general:      GeneralTab()
+        case .shortcuts:    ShortcutsTab()
+        case .modeTable:    ModeTableTab()
+        case .experimental: ExperimentalTab()
+        case .about:        AboutTab()
         }
     }
 
     var body: some View {
-        // Tab ngang phía trên như bản cũ (user 2026-07-24 — thử sidebar rồi
-        // quay lại); standard TabView vẫn tự nhận diện mạo mới trên Tahoe.
-        tabs
-            .padding(16)
-            .frame(minWidth: 640, minHeight: 500)
+        VStack(spacing: 14) {
+            tabBar
+            activeTab.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(16)
+        .frame(minWidth: 640, minHeight: 500)
     }
 }
 
@@ -565,7 +583,7 @@ struct GeneralTab: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Section(model.loc("Input style")) {
+            Section(header: Label(model.loc("Input style"), systemImage: "keyboard")) {
                 Toggle(model.loc("Simple Telex"), isOn: $model.simpleTelex)
                 Text(model.loc("A lone “w” stays “w” (type “uw” for ư). Off = full Telex (cw→cư)."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -591,7 +609,7 @@ struct GeneralTab: View {
                 Text(model.loc("Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Spelling")) {
+            Section(header: Label(model.loc("Spelling"), systemImage: "textformat.abc.dottedunderline")) {
                 Toggle(model.loc("Auto-restore invalid words"), isOn: $model.autoRestore)
                 Text(model.loc("A word that isn’t valid Vietnamese snaps back to the keys you actually typed when the word ends (retore → retore)."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -826,7 +844,7 @@ struct ExperimentalTab: View {
 
     var body: some View {
         Form {
-            Section(model.loc("Input method")) {
+            Section(header: Label(model.loc("Input method"), systemImage: "character.textbox")) {
                 Toggle(model.loc("VNI typing (experimental)"), isOn: $model.vniMode)
                 Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -843,7 +861,7 @@ struct ExperimentalTab: View {
                 Text(model.loc("Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Keyboard layout")) {
+            Section(header: Label(model.loc("Keyboard layout"), systemImage: "keyboard.badge.ellipsis")) {
                 Picker(model.loc("Compose on"), selection: $model.keyboardLayoutID) {
                     Text(model.loc("Follow the previous input source"))
                         .tag(KeyboardLayoutOverride.systemDefault)
@@ -855,13 +873,13 @@ struct ExperimentalTab: View {
                 Text(model.loc("Which physical keyboard Telex reads. Pick Colemak, Dvorak… to type Vietnamese with that layout. Left on “follow”, the layout is inherited from whichever input source you switched from — so the same keys give different letters depending on where you came from."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Unknown apps")) {
+            Section(header: Label(model.loc("Unknown apps"), systemImage: "questionmark.app")) {
                 Toggle(model.loc("Unknown apps use the safe channel (tap/marked)"),
                        isOn: $model.safeUnknownApps)
                 Text(model.loc("Apps without a rule type via backspace-retype (or underlined composition without Accessibility) instead of trying direct insertion and guessing. Turn off to restore the old probe-and-learn behavior."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Terminal typing latency")) {
+            Section(header: Label(model.loc("Terminal typing latency"), systemImage: "terminal")) {
                 Toggle(model.loc("Modify key events in place"), isOn: $model.tapModifyEventInPlace)
                 Text(model.loc("In terminals, apply a one-letter tone edit (w→ư) by rewriting the real keystroke instead of posting two synthetic events — lower latency."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -872,12 +890,12 @@ struct ExperimentalTab: View {
                 Text(model.loc("Apply tone edits in Chrome and Spotlight with one Accessibility edit instead of a burst of Shift+Left key events."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Safety")) {
+            Section(header: Label(model.loc("Safety"), systemImage: "shield.lefthalf.filled")) {
                 Toggle(model.loc("Cascade circuit breaker"), isOn: $model.tapCascadeBreaker)
                 Text(model.loc("Keep this ON. Stops the terminal tap if it ever floods the keyboard with synthetic events, so a bug can’t freeze typing."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(model.loc("Diagnostics")) {
+            Section(header: Label(model.loc("Diagnostics"), systemImage: "stethoscope")) {
                 Toggle(model.loc("Record debug log"), isOn: $model.debugLogging)
                 Text(model.loc("Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Copy debug log and paste it into your report — or save it as a file."))
                     .font(.caption).foregroundStyle(.secondary)
