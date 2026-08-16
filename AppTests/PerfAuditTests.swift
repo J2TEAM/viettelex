@@ -1,0 +1,91 @@
+import XCTest
+@testable import VietTelex
+@testable import TelexCore
+
+// Hàng rào cho đợt tối ưu 17/08/2026 (audit hiệu năng). Mỗi test ở đây pin một
+// tính chất mà nếu ai đó "dọn dẹp" làm hỏng thì rất khó phát hiện bằng mắt: cờ
+// engine bị rơi trên đường truyền, hoặc watchdog quay lại đốt pin khi gõ tiếng Anh.
+final class PerfAuditTests: XCTestCase {
+
+    // MARK: Gộp 8 cờ engine vào MỘT lần khoá
+
+    func testEngineFlagsSnapshotMatchesIndividualGetters() {
+        // Ảnh chụp phải khớp từng getter — nếu ai thêm cờ vào EngineFlags mà quên
+        // đọc đúng biến nền, test này đỏ thay vì âm thầm gửi giá trị mặc định.
+        let s = AppState.shared
+        let f = s.engineFlags()
+        XCTAssertEqual(f.freeMarking, s.freeMarking)
+        XCTAssertEqual(f.modernTone, s.modernOrthography)
+        XCTAssertEqual(f.liveSpellCheck, s.liveSpellCheck)
+        XCTAssertEqual(f.simpleTelex, s.simpleTelex)
+        XCTAssertEqual(f.quickTelex, s.quickTelex)
+        XCTAssertEqual(f.vniMode, s.vniMode)
+        XCTAssertEqual(f.bracketVowels, s.bracketVowels)
+        XCTAssertEqual(f.contextualEnglish, s.contextualEnglish)
+    }
+
+    func testEngineFlagsSnapshotFollowsAToggle() {
+        // Ảnh chụp là ảnh MỚI mỗi lần gọi, không phải cache thiu: hai path nóng đẩy
+        // cờ vào engine mỗi phím chính vì user có thể gạt toggle giữa từ.
+        let s = AppState.shared
+        let saved = s.vniMode
+        defer { s.vniMode = saved }
+        s.vniMode = !saved
+        XCTAssertEqual(s.engineFlags().vniMode, !saved)
+    }
+
+    func testEveryEngineFlagIsCarriedIntoTheEngine() {
+        // Đường truyền đầy đủ: đặt MỌI cờ về giá trị nghịch với mặc định của engine
+        // rồi apply — cờ nào bị quên trong apply() sẽ lộ ra ngay.
+        var flags = AppState.EngineFlags()
+        flags.freeMarking = true; flags.modernTone = true; flags.liveSpellCheck = true
+        flags.simpleTelex = true; flags.quickTelex = true; flags.vniMode = true
+        flags.bracketVowels = true; flags.contextualEnglish = true
+        var e = TelexEngine()
+        e.apply(flags)
+        XCTAssertTrue(e.freeMarking); XCTAssertTrue(e.modernTone)
+        XCTAssertTrue(e.liveSpellCheck); XCTAssertTrue(e.simpleTelex)
+        XCTAssertTrue(e.quickTelex); XCTAssertTrue(e.vniMode)
+        XCTAssertTrue(e.bracketVowels); XCTAssertTrue(e.contextualEnglish)
+
+        var allOff = AppState.EngineFlags()
+        allOff.freeMarking = false; allOff.modernTone = false; allOff.liveSpellCheck = false
+        allOff.simpleTelex = false; allOff.quickTelex = false; allOff.vniMode = false
+        allOff.bracketVowels = false; allOff.contextualEnglish = false
+        e.apply(allOff)
+        XCTAssertFalse(e.freeMarking); XCTAssertFalse(e.modernTone)
+        XCTAssertFalse(e.liveSpellCheck); XCTAssertFalse(e.simpleTelex)
+        XCTAssertFalse(e.quickTelex); XCTAssertFalse(e.vniMode)
+        XCTAssertFalse(e.bracketVowels); XCTAssertFalse(e.contextualEnglish)
+    }
+
+    func testEngineFlagsHasExactlyTheDocumentedCount() {
+        // Thêm cờ mới vào struct mà quên thêm vào apply() là lỗi im lặng (setting
+        // không tới engine, không ai báo). Đếm field buộc người thêm phải đụng cả
+        // engineFlagCount lẫn hai test ở trên.
+        XCTAssertEqual(Mirror(reflecting: AppState.EngineFlags()).children.count,
+                       AppState.engineFlagCount)
+    }
+
+    // MARK: Watchdog không được coi phím tiếng Anh là "đang gõ"
+
+    func testLivenessStampOnlyWhileVietTelexIsSelected() {
+        // Tap nhìn thấy MỌI phím trên máy. Trước 17/08 phím nào cũng stamp, nên gõ
+        // ABC cả buổi vẫn giữ watchdog ở trạng thái "typing active" → mỗi 3s một
+        // synthetic F20 + một AX scan cross-process cho một tap không biến đổi gì.
+        XCTAssertTrue(TerminalTapController.stampsLiveness(imeActive: true))
+        XCTAssertFalse(TerminalTapController.stampsLiveness(imeActive: false))
+    }
+
+    // MARK: Quyết định marked chỉ giải MỘT lần mỗi phím
+
+    func testMarkedDecisionIsPureForAGivenState() {
+        // `handle()` giải `usesMarkedNow` một lần rồi dùng lại cho mọi nhánh. Điều đó
+        // chỉ đúng nếu hàm là thuần theo state — pin lại đây để ai thêm side effect
+        // (đọc rồi ghi lại cache) sẽ thấy giả định bị phá.
+        let c = TelexInputController()
+        let first = c._testUsesMarkedNow("com.apple.Terminal")
+        XCTAssertEqual(first, c._testUsesMarkedNow("com.apple.Terminal"))
+        XCTAssertEqual(first, c._testUsesMarkedNow("com.apple.Terminal"))
+    }
+}

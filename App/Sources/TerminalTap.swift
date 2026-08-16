@@ -1726,6 +1726,14 @@ final class TerminalTapController {
     /// cross-process). The trust check always runs.
     private static let watchdogIdleNs: UInt64 = 180_000_000_000   // 3 minutes
 
+    /// Does this keystroke count as "typing to protect" for the watchdog's idle skip?
+    /// ONLY while VietTelex is the selected source. The tap sees every key on the
+    /// system, so before this gate an afternoon of typing in ABC kept the watchdog
+    /// permanently "active": a synthetic F20 post + a cross-process secure-field scan
+    /// every 3s, protecting a tap that transforms nothing — and each post tickles the
+    /// system activity monitor. Perf audit 17/08/2026.
+    static func stampsLiveness(imeActive: Bool) -> Bool { imeActive }
+
     // Functional health probe (stateLock): watchdog bumps probeSentTick and posts;
     // the callback copies it into probeSeenTick on arrival. Sent != seen for two
     // consecutive watchdog ticks ⇒ posts are dropped or the tap is wedged.
@@ -2240,13 +2248,25 @@ final class TerminalTapController {
             return pass
         }
 
+        // One read of the activation latch for the whole key (it is a locked computed
+        // property; the stamp below and the self-heal further down both need it).
+        let active = imeActive
+
         // ONE stateLock round trip per real key (uncontended NSLock, tens of ns):
         //  • stamp liveness for the watchdog's idle skip (it must not probe a machine
-        //    nobody types on);
+        //    nobody types on) — ONLY while WE are the selected input source. Typing in
+        //    ABC used to stamp too (the stamp sat above the imeActive gate), so a whole
+        //    afternoon of English kept the watchdog "typing active": every 3s a synthetic
+        //    F20 post + a cross-process secure-field scan, guarding a tap that transforms
+        //    nothing — and each post tickles the system activity monitor. Blind window
+        //    when switching back is the one already accepted for the idle skip: the
+        //    probe re-arms on the first key after activateServer.
         //  • consume the pending post-(re)enable engine reset armed by start() — the
         //    engine is tap-thread confined, so the reset happens HERE, on this thread.
         let needsEngineReset: Bool = stateLock.withLock {
-            lastKeyDownNs = DispatchTime.now().uptimeNanoseconds
+            if Self.stampsLiveness(imeActive: active) {
+                lastKeyDownNs = DispatchTime.now().uptimeNanoseconds
+            }
             defer { pendingEngineReset = false }
             return pendingEngineReset
         }
@@ -2267,7 +2287,7 @@ final class TerminalTapController {
         // asynchronously. The correction lands via the locked selectionChanged() and
         // takes effect on the NEXT keystroke — one key later than the old synchronous
         // check, which is fine for a ≤750ms-throttled self-heal of an already-stale flag.
-        if imeActive {
+        if active {
             let now = DispatchTime.now().uptimeNanoseconds
             if now &- lastReconcileNs > reconcileWindowNs {
                 lastReconcileNs = now
@@ -2401,14 +2421,7 @@ final class TerminalTapController {
 
         // Reflect the current "bỏ dấu tự do" setting (feed/backspace/boundary all
         // re-parse `raw` and honor it).
-        engine.freeMarking = AppState.shared.freeMarking
-        engine.modernTone = AppState.shared.modernOrthography
-        engine.liveSpellCheck = AppState.shared.liveSpellCheck
-        engine.simpleTelex = AppState.shared.simpleTelex
-        engine.quickTelex = AppState.shared.quickTelex
-        engine.vniMode = AppState.shared.vniMode
-        engine.bracketVowels = AppState.shared.bracketVowels
-        engine.contextualEnglish = AppState.shared.contextualEnglish
+        engine.apply(AppState.shared.engineFlags())
 
         // Signpost the tap-handled keystroke; message = emit mode (see Instrumentation).
         let spState = Signposts.poster.beginInterval("tap.handle",
@@ -2477,11 +2490,20 @@ final class TerminalTapController {
             return pass
         }
 
-        // Read the typed character.
+        // Read the typed character. Stack tuple, NOT `[UniChar](repeating:)`: an Array
+        // literal here was one malloc + free on EVERY key, inside the callback macOS
+        // times out — the last allocation left on the tap path after the engine was
+        // made zero-alloc. `withUnsafeMutableBufferPointer` on a homogeneous tuple is
+        // the documented way to hand C a fixed 4-slot buffer with no heap traffic.
         var len = 0
-        var buf = [UniChar](repeating: 0, count: 4)
-        event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &len, unicodeString: &buf)
-        guard len >= 1, let scalar = Unicode.Scalar(buf[0]) else {
+        var slots: (UniChar, UniChar, UniChar, UniChar) = (0, 0, 0, 0)
+        let first: UniChar? = withUnsafeMutableBytes(of: &slots) { raw in
+            let buf = raw.bindMemory(to: UniChar.self)
+            event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &len,
+                                           unicodeString: buf.baseAddress)
+            return len >= 1 ? buf[0] : nil
+        }
+        guard let unit = first, let scalar = Unicode.Scalar(unit) else {
             // Dead/function key: flush the word, let the odd key through.
             // (no shortcut expansion — not an explicit text boundary)
             lastTapKeyWasBoundary = true
@@ -2496,7 +2518,7 @@ final class TerminalTapController {
         // function-key codepoint is navigation, NOT text: flush the word and PASS THE
         // REAL KEY THROUGH so cursor/history work — never re-emit it as inserted text
         // (re-emitting arrows as 0x1C killed arrow-key navigation).
-        if buf[0] < 0x20 || (buf[0] >= 0xF700 && buf[0] <= 0xF8FF) {
+        if unit < 0x20 || (unit >= 0xF700 && unit <= 0xF8FF) {
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             engine.forgetLastCommit()      // navigation: the caret left the word behind
@@ -2530,7 +2552,7 @@ final class TerminalTapController {
             // tapNativeFastPath like the letter fast-path below. (modifyInPlace adds
             // nothing here: with no rewrite pending the untouched event is already
             // exactly what should land, in every emit mode.)
-            let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(ch.utf16.first ?? buf[0]))
+            let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(ch.utf16.first ?? unit))
             // A plain ascii boundary (space, punctuation, digit) leaves exactly ONE
             // character after the word, which is what makes the next ⌫ re-openable
             // (issue #40). Anything else — an option-key symbol, a multi-scalar

@@ -170,6 +170,32 @@ final class AppState: @unchecked Sendable {
               defaults.set(newValue, forKey: Key.freeMarking) }
     }
 
+    /// The eight engine toggles, read in ONE lock round trip. Both hot paths push all
+    /// of them into the engine on every keystroke (feed/backspace/boundary re-parse
+    /// `raw` and honor them, so they must be current before any engine op). Reading
+    /// them one property at a time meant EIGHT uncontended NSLock trips per key on
+    /// each path — and worse, eight separate reads can straddle a user toggling a
+    /// setting, handing the engine a mix of old and new. One snapshot is both faster
+    /// and consistent.
+    struct EngineFlags {
+        var freeMarking = true, modernTone = false, liveSpellCheck = true
+        var simpleTelex = false, quickTelex = false, vniMode = false
+        var bracketVowels = false, contextualEnglish = true
+    }
+
+    func engineFlags() -> EngineFlags {
+        lock.withLock {
+            EngineFlags(freeMarking: _freeMarking, modernTone: _modernOrthography,
+                        liveSpellCheck: _liveSpellCheck, simpleTelex: _simpleTelex,
+                        quickTelex: _quickTelex, vniMode: _vniMode,
+                        bracketVowels: _bracketVowels, contextualEnglish: _contextualEnglish)
+        }
+    }
+
+    /// Sanity net for the snapshot above: every engine toggle must be carried, or a
+    /// setting silently stops reaching the engine. Bump when adding a flag.
+    static let engineFlagCount = 8
+
     /// Tone-placement style. false (default) = old style (hòa, thủy); true = modern
     /// (hoà, thuý). See `TelexEngine.modernTone`.
     private var _modernOrthography: Bool
@@ -1037,5 +1063,20 @@ enum ShortcutImporter {
             out[key] = value
         }
         return out.isEmpty ? nil : out
+    }
+}
+
+extension TelexEngine {
+    /// Push a whole settings snapshot into the engine. Lives here (App target), not in
+    /// TelexCore, so the engine package stays free of app types.
+    mutating func apply(_ f: AppState.EngineFlags) {
+        freeMarking = f.freeMarking
+        modernTone = f.modernTone
+        liveSpellCheck = f.liveSpellCheck
+        simpleTelex = f.simpleTelex
+        quickTelex = f.quickTelex
+        vniMode = f.vniMode
+        bracketVowels = f.bracketVowels
+        contextualEnglish = f.contextualEnglish
     }
 }

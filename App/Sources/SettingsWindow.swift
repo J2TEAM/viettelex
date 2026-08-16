@@ -75,6 +75,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         SettingsModel.installedCache.removeAll()
         SettingsModel.nameCache.removeAll()
         NSApp.setActivationPolicy(.accessory) // back to background agent
+        // Hand the freed pages back to the OS. Dropping the window/model above frees
+        // the SwiftUI graph (AttributeGraph nodes, DisplayLists, SF Symbol renders,
+        // autolayout constraints — measured ~20 MB), but malloc keeps those pages on
+        // its own free lists, so an input method that lives for the whole login session
+        // showed a permanent high-water mark in Activity Monitor after the user opened
+        // Settings ONCE (peak 159 MB → resident 68 MB, audit 17/08/2026). Deferred one
+        // runloop hop so the teardown that AppKit still has queued finishes first.
+        DispatchQueue.main.async { malloc_zone_pressure_relief(nil, 0) }
     }
 }
 

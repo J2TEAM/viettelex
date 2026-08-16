@@ -172,6 +172,12 @@ final class TelexInputController: IMKInputController {
             || (AppState.shared.usesAxDetect(id) && FocusedFieldDetector.wantsMarkedField)
     }
 
+    #if DEBUG
+    /// `handle()` resolves this ONCE per key and reuses it — a test pins that the
+    /// decision is a pure read of state (no side effect that a second call would see).
+    func _testUsesMarkedNow(_ id: String?) -> Bool { usesMarkedNow(id) }
+    #endif
+
     // MARK: - Event handling (hot path)
 
     /// Also receive flagsChanged (default is keyDown only): the composition is
@@ -399,19 +405,22 @@ final class TelexInputController: IMKInputController {
         logDecision("handle \(id ?? "?")/front=\(frontID ?? "?"): "
             + "\(usesMarkedNow(id) ? "marked" : "in-place") "
             + "needsProbe=\(AppState.shared.needsProbe(id))")
-        spMode = usesMarkedNow(id) ? "marked"
+        // Only resolve the label when something is actually recording. `usesMarkedNow`
+        // is NOT cheap — it re-runs the whole per-app + per-field policy (≈50 set
+        // ONE resolution of the marked decision for this key, reused by every branch
+        // below. `usesMarkedNow` is NOT cheap — it re-runs the whole per-app + per-field
+        // policy (≈50 set lookups + several lock trips), and it used to be called 3–4
+        // times per keystroke. Safe to reuse within one call: the only thing that flips
+        // it mid-key is a verify demotion inside probeInPlace, and every path that can
+        // reach probeInPlace (⌫, boundary keys, replace) RETURNS before the reuse sites.
+        // Perf audit 17/08/2026.
+        let markedNow = usesMarkedNow(id)
+        spMode = markedNow ? "marked"
                : (tracking || engine.isEmpty ? "in-place" : "in-place-per-op")
 
         // Reflect the current "bỏ dấu tự do" setting before any engine op (feed,
         // backspace and boundary all re-parse `raw` and honor this flag).
-        engine.freeMarking = AppState.shared.freeMarking
-        engine.modernTone = AppState.shared.modernOrthography
-        engine.liveSpellCheck = AppState.shared.liveSpellCheck
-        engine.simpleTelex = AppState.shared.simpleTelex
-        engine.quickTelex = AppState.shared.quickTelex
-        engine.vniMode = AppState.shared.vniMode
-        engine.bracketVowels = AppState.shared.bracketVowels
-        engine.contextualEnglish = AppState.shared.contextualEnglish
+        engine.apply(AppState.shared.engineFlags())
 
         switch event.keyCode {
         case kDelete:
@@ -448,7 +457,7 @@ final class TelexInputController: IMKInputController {
             // the guard on the FIRST mid-word ⌫: composition dropped, the underlined
             // text orphaned on screen, every later ⌫/space dead until a click —
             // reporter's "không thể xoá cũng như bấm space để thoát khỏi từ".
-            if tracking, Self.backspaceFreshnessGuardApplies(marked: usesMarkedNow(id)) {
+            if tracking, Self.backspaceFreshnessGuardApplies(marked: markedNow) {
                 let sel = client.selectedRange()
                 let expected = anchor + onLen
                 if !Self.trackedWindowIsFresh(caret: sel.location == NSNotFound ? nil : sel.location,
@@ -475,7 +484,7 @@ final class TelexInputController: IMKInputController {
             // overflow character on the first ⌫ and then rewrite identical text
             // forever (⌫ dead for the rest of the word).
             switch Self.passthroughPlan(overflowPassthrough: Self.isPassthrough(action) && engine.isOverflowed,
-                                        marked: usesMarkedNow(id), isBackspace: true) {
+                                        marked: markedNow, isBackspace: true) {
             case .commitAndPassThrough:
                 endComposition(client)
                 return false
@@ -485,7 +494,7 @@ final class TelexInputController: IMKInputController {
             case .honorEngineAction:
                 break
             }
-            if usesMarkedNow(id) { updateMarked(client); return true }
+            if markedNow { updateMarked(client); return true }
             if edgeTapWord {
                 // Edge word stays on the CGEvent channel: plain deletion passes the
                 // physical ⌫ through; a tone re-place ("toán"->"tóa") goes synthetic.
@@ -701,12 +710,12 @@ final class TelexInputController: IMKInputController {
         // (In-place mode is unaffected: its .passthrough branch inserts the letter
         // itself, which is already correct.)
         if case .commitAndPassThrough = Self.passthroughPlan(overflowPassthrough: Self.isPassthrough(action) && engine.isOverflowed,
-                                                            marked: usesMarkedNow(id), isBackspace: false) {
+                                                            marked: markedNow, isBackspace: false) {
             endComposition(client)
             client.insertText(String(ch), replacementRange: kNoRange)
             return true
         }
-        if usesMarkedNow(id) { updateMarked(client); return true }
+        if markedNow { updateMarked(client); return true }
         switch action {
         case .passthrough:
             if edgeTapWord, KeyboardLayoutOverride.translator == nil {
