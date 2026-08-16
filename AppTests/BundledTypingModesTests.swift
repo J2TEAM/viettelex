@@ -79,6 +79,14 @@ final class BundledTypingModesTests: XCTestCase {
         }
     }
 
+    func testCometResolvesToInPlaceNotBrowserAxDetect() throws {
+        // Comet (Perplexity, Chromium) cố ý KHÔNG theo họ browser axDetect —
+        // maintainer chỉ định In-Place 15/08/2026. Hàng rào: một cleanup "gom mọi
+        // browser về axDetect" sẽ đỏ đúng test này thay vì lặng lẽ đổi hành vi.
+        XCTAssertEqual(try bundledRules()["ai.perplexity.comet"], "inPlace")
+        XCTAssertEqual(AppState.shared.autoResolvedMode("ai.perplexity.comet"), .inPlace)
+    }
+
     func testEveryParsedRuleIsAValidNonAutoMode() throws {
         // Đây là hàng rào chống "unknown mode": AppState.builtInRules bỏ im lặng mọi
         // value không map được sang AppMode, và `auto` cũng bị bỏ (auto = không có

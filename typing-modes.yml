@@ -139,6 +139,9 @@ com.duckduckgo.macos.browser: axDetect
 com.kagi.kagimacOS: axDetect
 ru.yandex.desktop.yandex-browser: axDetect
 com.sigmaos.sigmaos.macos: axDetect
+# Comet (Perplexity, Chromium) — KHÔNG theo họ axDetect như các browser trên:
+# maintainer chỉ định In-Place 15/08/2026.
+ai.perplexity.comet: inPlace
 
 # JetBrains/Android Studio: KHÔNG có rule built-in — để auto (probe → learn).
 # 12 rule `selection` từng nằm ở đây nhưng là dead data cho tới 1.4.24; khi
