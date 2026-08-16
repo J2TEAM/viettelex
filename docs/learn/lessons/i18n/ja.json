@@ -109,7 +109,7 @@
   "gameChapter": "ゲーム",
   "gameTitle": "たこあげ — 入力して雲をわろう",
   "gameDesc": "雲の中の単語を入力して、たこを高く飛ばそう。レベル・星・花火！",
-  "footer": "<a href=\"../\">ViệtTelex</a> の一部 — macOS向けオープンソースのベトナム語入力メソッド。<br>レッスンは入力メソッドの本物のエンジンから生成されています。 © 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
+  "footer": "<a href=\"../\">ViệtTelex</a> の一部 — macOS向けオープンソースのベトナム語入力メソッド。<br>レッスンは入力メソッドの本物のエンジンから生成されています。 © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
  },
  "chapters": {
   "c0": "キーボードとなかよく",
@@ -299,7 +299,7 @@
    "<h3><span class=\"e\">✨</span>đ の文字と声調を消す</h3><p><b>dd</b>→đ。いま付けた声調は <b>z</b> をおすと消せます。同じ声調キーをもう一度おしても消えます。</p>",
    "<h3><span class=\"e\">🧠</span>まちがえてもだいじょうぶ</h3><p>IME はベトナム語じゃない言葉（<code>google</code> など）を見わけて、そのままにしてくれます。ふつうにタイプしてね。ちがったら消してタイプしなおそう。</p>"
   ],
-  "footer": "<a href=\"../\">ViệtTelex</a> — macOS 用のオープンソースなベトナム語入力メソッド。<br>本物のアプリとまったく同じルールで動きます。© 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
+  "footer": "<a href=\"../\">ViệtTelex</a> — macOS 用のオープンソースなベトナム語入力メソッド。<br>本物のアプリとまったく同じルールで動きます。© 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
   "cheatText": {
    "⌫ dấu": "⌫ 声調",
    "xoá dấu vừa bỏ": "直前に付けた声調を消す"

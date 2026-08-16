@@ -109,7 +109,7 @@
   "gameChapter": "ល្បែងកម្សាន្ត",
   "gameTitle": "បង្ហោះខ្លែង — វាយពាក្យបំបែកពពក",
   "gameDesc": "វាយពាក្យក្នុងពពកនីមួយៗ ដើម្បីឲ្យខ្លែងហោះខ្ពស់។ មានកម្រិត ផ្កាយ និងកាំជ្រួច!",
-  "footer": "ផ្នែកមួយនៃ <a href=\"../\">ViệtTelex</a> — កម្មវិធីវាយអក្សរវៀតណាមកូដបើកទូលាយសម្រាប់ macOS។<br>មេរៀនបង្កើតចេញពីម៉ាស៊ីនពិតរបស់កម្មវិធីវាយអក្សរ។ © 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
+  "footer": "ផ្នែកមួយនៃ <a href=\"../\">ViệtTelex</a> — កម្មវិធីវាយអក្សរវៀតណាមកូដបើកទូលាយសម្រាប់ macOS។<br>មេរៀនបង្កើតចេញពីម៉ាស៊ីនពិតរបស់កម្មវិធីវាយអក្សរ។ © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
  },
  "chapters": {
   "c0": "ស្គាល់ក្តារចុច",
@@ -283,7 +283,7 @@
    "<h3><span class=\"e\">✨</span>អក្សរ đ &amp; ការលុបសំនៀង</h3><p><b>dd</b>→đ។ វាយ <b>z</b> ដើម្បីលុបសំនៀងដែលអ្នកទើបបន្ថែម។ វាយគ្រាប់ចុចសំនៀងដដែលម្តងទៀតក៏លុបវាបានដែរ។</p>",
    "<h3><span class=\"e\">🧠</span>ខុសក៏មិនអីដែរ</h3><p>IME ស្គាល់ពាក្យដែលមិនមែនជាភាសាវៀតណាម (ដូចជា <code>google</code>) ហើយទុកវាដដែល។ គ្រាន់តែវាយធម្មតា បើខុស សូមលុប រួចវាយឡើងវិញ។</p>"
   ],
-  "footer": "<a href=\"../\">ViệtTelex</a> — វិធីបញ្ចូលភាសាវៀតណាមប្រភពបើកចំហសម្រាប់ macOS។<br>ឈុតច្បាប់ដូចគ្នានឹងកម្មវិធីពិត។ © 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
+  "footer": "<a href=\"../\">ViệtTelex</a> — វិធីបញ្ចូលភាសាវៀតណាមប្រភពបើកចំហសម្រាប់ macOS។<br>ឈុតច្បាប់ដូចគ្នានឹងកម្មវិធីពិត។ © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
   "heroH1": "រៀនវាយអក្សរ <span class=\"accent\">Telex</span> ភាសាវៀតណាម",
   "heroSub": "វាយដោយគ្មានសញ្ញាសម្គាល់ ទទួលបានភាសាវៀតណាមពេញលេញ។ មតិត្រឡប់ភ្លាមៗ — ឈុតច្បាប់ត្រឹមត្រូវនៃវិធីបញ្ចូល ViệtTelex។",
   "sandboxLabel": "✏️ សាកល្បងឥឡូវនេះ — វាយភាសាវៀតណាមតាមរបៀប Telex",

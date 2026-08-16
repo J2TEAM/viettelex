@@ -1113,7 +1113,7 @@ struct AboutTab: View {
             // error) used to be clipped by the 66pt box.
             .frame(minHeight: 66)
 
-            Text("© Phil Trinh \(String(currentYear))").foregroundStyle(.secondary)
+            Text("© \(String(currentYear)) Vietnam Blockchain Association by Phil Trinh").foregroundStyle(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

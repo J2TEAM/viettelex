@@ -109,7 +109,7 @@
   "gameChapter": "게임",
   "gameTitle": "연날리기 — 단어를 입력해 구름을 터뜨려요",
   "gameDesc": "구름 속 단어를 입력해 연을 높이 띄워요. 레벨, 별, 불꽃놀이!",
-  "footer": "<a href=\"../\">ViệtTelex</a>의 일부 — macOS용 오픈소스 베트남어 입력기.<br>수업은 입력기의 실제 엔진에서 생성됩니다. © 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
+  "footer": "<a href=\"../\">ViệtTelex</a>의 일부 — macOS용 오픈소스 베트남어 입력기.<br>수업은 입력기의 실제 엔진에서 생성됩니다. © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>"
  },
  "chapters": {
   "c0": "키보드와 인사하기",
@@ -299,7 +299,7 @@
    "<h3><span class=\"e\">✨</span>đ 글자 &amp; 성조 지우기</h3><p><b>dd</b>→đ. 방금 붙인 성조를 지우려면 <b>z</b>를 눌러요. 같은 성조 키를 다시 눌러도 지워져요.</p>",
    "<h3><span class=\"e\">🧠</span>틀려도 괜찮아요</h3><p>IME는 베트남어가 아닌 낱말(예: <code>google</code>)을 알아보고 그대로 둬요. 편하게 입력하고, 틀리면 지우고 다시 쳐요.</p>"
   ],
-  "footer": "<a href=\"../\">ViệtTelex</a> — macOS를 위한 오픈 소스 베트남어 입력 방식이에요.<br>실제 앱에서 돌아가는 규칙 그대로예요. © 2026 Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
+  "footer": "<a href=\"../\">ViệtTelex</a> — macOS를 위한 오픈 소스 베트남어 입력 방식이에요.<br>실제 앱에서 돌아가는 규칙 그대로예요. © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href=\"https://github.com/ptrinh/viettelex\">GitHub</a>",
   "cheatText": {
    "⌫ dấu": "⌫ 성조",
    "xoá dấu vừa bỏ": "방금 넣은 성조를 지우기"
