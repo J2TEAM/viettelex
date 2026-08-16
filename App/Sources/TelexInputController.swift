@@ -1704,9 +1704,11 @@ final class TelexInputController: IMKInputController {
         // menus. Strip it (and any trailing separator) each time the menu opens.
         menu.delegate = self
 
-        // Status first. Three states: OK / permission missing / permission STALE
-        // (trusted but the tap was refused — needs a remove+re-add, see TerminalTap).
-        let statusTitle: String
+        // Status first — nhưng CHỈ khi có chuyện (maintainer 15/08/2026): "Tình
+        // trạng: OK" thường trực là nhiễu, ẨN đi khi mọi thứ ổn. Tính năng ẩn
+        // "click status → copy debug snapshot" KHÔNG mất: nó chuyển xuống dòng
+        // version bên dưới (click được ở mọi trạng thái).
+        let statusTitle: String?
         if let holder = SecureInputMonitor.shared.activeHolder {
             // Hiếm khi tới được đây (secure input thường đá selection sang ABC nên
             // menu này không mở được), nhưng ca "secure input tạm thời trong ô
@@ -1725,20 +1727,25 @@ final class TelexInputController: IMKInputController {
             // user action that outranks the backoff.
             statusTitle = VTLocalized("Status: Tap paused — click to retry")
         } else {
-            statusTitle = VTLocalized("Status: OK")
+            statusTitle = nil                       // OK = im lặng, không chiếm dòng
         }
-        let status = NSMenuItem(title: statusTitle,
-                                action: #selector(showStatus(_:)), keyEquivalent: "")
-        status.target = self
-        menu.addItem(status)
+        if let statusTitle {
+            let status = NSMenuItem(title: statusTitle,
+                                    action: #selector(showStatus(_:)), keyEquivalent: "")
+            status.target = self
+            menu.addItem(status)
+        }
 
-        // Version + build, disabled: testers report "which build?" straight from the
-        // menu without opening Settings. Not localized — it's an identifier.
+        // Version + build: testers report "which build?" straight from the menu
+        // without opening Settings. Not localized — it's an identifier. CLICKABLE:
+        // giữ tính năng ẩn copy-debug-snapshot (trước nằm ở "Status: OK", dòng đó
+        // giờ ẩn khi ổn) — click = copy snapshot vào clipboard, như cũ.
         let bundle = Bundle(for: TelexInputController.self)
         let ver = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        let version = NSMenuItem(title: "VietTelex \(ver) (build \(build))", action: nil, keyEquivalent: "")
-        version.isEnabled = false
+        let version = NSMenuItem(title: "VietTelex \(ver) (build \(build))",
+                                 action: #selector(copySnapshot(_:)), keyEquivalent: "")
+        version.target = self
         menu.addItem(version)
 
         // Everything else lives in the Settings window (Chung + Gõ tắt tabs). The menu
@@ -2017,6 +2024,13 @@ final class TelexInputController: IMKInputController {
 
     @objc private func openSettings(_ sender: Any?) {
         SettingsWindowController.shared.show(tab: .general)
+    }
+
+    /// Dòng version trong menu: LUÔN copy debug snapshot, bất kể trạng thái — khác
+    /// showStatus (hành động theo trạng thái). Đây là chỗ mới của tính năng ẩn
+    /// "click Status: OK → copy snapshot" sau khi dòng status ẩn đi lúc ổn.
+    @objc private func copySnapshot(_ sender: Any?) {
+        DispatchQueue.main.async { [weak self] in self?.showDebugLog() }
     }
 
     @objc private func showStatus(_ sender: Any?) {

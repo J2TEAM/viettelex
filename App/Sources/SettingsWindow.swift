@@ -512,7 +512,7 @@ struct SettingsView: View {
             tabButton(.shortcuts, "Shortcuts", "keyboard")
             if model.advancedFeatures {
                 tabButton(.modeTable, "Typing modes", "list.bullet.rectangle")
-                tabButton(.experimental, "Experimental", "testtube.2")
+                tabButton(.experimental, "Experimental", "flask")
             }
             tabButton(.about, "About", "info.circle")
         }
@@ -575,8 +575,10 @@ struct GeneralTab: View {
                 Section {
                     Text("⚠️ " + model.loc("No Accessibility permission — typing in Terminal/Chrome won’t work"))
                         .foregroundStyle(.red)
-                    Button(model.loc("Open Accessibility Settings")) {
+                    Button {
                         SettingsModel.openAccessibilitySettings()
+                    } label: {
+                        Label(model.loc("Open Accessibility Settings"), systemImage: "accessibility")
                     }
                     .prominentGlass()
                     Text(model.loc("Tick VietTelex in Privacy & Security → Accessibility. You may need to restart your Mac for the permission to take effect."))
@@ -598,13 +600,17 @@ struct GeneralTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Button(model.loc("System Settings…")) {
+                Button {
                     TelexInputController.openKeyboardInputSources()
+                } label: {
+                    Label(model.loc("System Settings…"), systemImage: "gearshape")
                 }
                 Text(model.loc("Opens Keyboard settings — set automatic input-source switching per app / document there."))
                     .font(.caption).foregroundStyle(.secondary)
-                Button(model.loc("Input source hotkey…")) {
+                Button {
                     TelexInputController.openInputSourceHotkeySettings()
+                } label: {
+                    Label(model.loc("Input source hotkey…"), systemImage: "command")
                 }
                 Text(model.loc("Opens Keyboard Shortcuts → Input Sources, where the shortcut for switching between VietTelex and other input sources lives."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -770,7 +776,7 @@ struct ModeTableTab: View {
                 }
                 TextField(model.loc("…or a bundle id"), text: $model.newModeAppID)
                     .textFieldStyle(.roundedBorder)
-                Button(model.loc("Add")) { model.addApp() }
+                Button { model.addApp() } label: { Label(model.loc("Add"), systemImage: "plus.circle") }
                     .disabled(model.newModeAppID.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
@@ -778,11 +784,11 @@ struct ModeTableTab: View {
                 // role .destructive alone doesn't tint a bordered macOS button —
                 // color the label explicitly so the destructive action reads as one.
                 Button(role: .destructive) { model.clearLearned() } label: {
-                    Text(model.loc("Clear & re-learn")).foregroundStyle(.red)
+                    Label(model.loc("Clear & re-learn"), systemImage: "arrow.counterclockwise.circle").foregroundStyle(.red)
                 }
                 Spacer()
-                Button(model.loc("Import…")) { importModes() }
-                Button(model.loc("Export to YAML…")) { exportModes() }
+                Button { importModes() } label: { Label(model.loc("Import…"), systemImage: "square.and.arrow.up.on.square") }
+                Button { exportModes() } label: { Label(model.loc("Export to YAML…"), systemImage: "square.and.arrow.up") }
             }
             Text(model.loc("An app types wrong or shows underlines? Pick Tap — real keystrokes, no underline (needs Accessibility). Marked text always renders correctly but underlines while typing. The modes below the divider are for special cases — leave them unless you know the app needs one. Clear forgets everything learned; manual picks are kept."))
                 .font(.caption).foregroundStyle(.secondary)
@@ -900,9 +906,9 @@ struct ExperimentalTab: View {
                 Text(model.loc("Records tap health events in memory (never the text you type). Turn it on, reproduce the problem, then Copy debug log and paste it into your report — or save it as a file."))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button(model.loc("Copy debug log")) { copyLog() }
-                    Button(model.loc("Save debug log…")) { saveLog() }
-                    Button(model.loc("Clear")) { DebugLog.clear(); saveResult = nil }
+                    Button { copyLog() } label: { Label(model.loc("Copy debug log"), systemImage: "doc.on.doc") }
+                    Button { saveLog() } label: { Label(model.loc("Save debug log…"), systemImage: "square.and.arrow.down") }
+                    Button { DebugLog.clear(); saveResult = nil } label: { Label(model.loc("Clear"), systemImage: "trash") }
                 }
                 if let saveResult {
                     Text(saveResult).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -1067,17 +1073,19 @@ struct AboutTab: View {
                     // releases page, so the "I want it now" path was the manual one
                     // (user decision 2026-07-27). A failure falls back to that page via
                     // SelfUpdater's own alert.
-                    Button(model.loc("Update now")) {
+                    Button {
                         installing = true
                         status = model.loc("Downloading and installing…")
                         SelfUpdater.run(version: updateVersion) {
                             installing = false
                             status = nil                     // SelfUpdater showed the reason
                         }
+                    } label: {
+                        Label(model.loc("Update now"), systemImage: "arrow.down.circle")
                     }
                     .prominentGlass()
                 } else {
-                    Button(model.loc("Check for updates")) { runCheck() }
+                    Button { runCheck() } label: { Label(model.loc("Check for updates"), systemImage: "arrow.triangle.2.circlepath") }
                         .prominentGlass()
                 }
                 if let status {
@@ -1246,15 +1254,18 @@ struct ShortcutsTab: View {
             HStack {
                 TextField(model.loc("type"), text: $newKey).frame(width: 120)
                 TextField(model.loc("becomes"), text: $newValue)
-                Button(model.loc(isEditing ? "Update" : "Add")) { save() }
+                Button { save() } label: {
+                    Label(model.loc(isEditing ? "Update" : "Add"),
+                          systemImage: isEditing ? "checkmark.circle" : "plus.circle")
+                }
                     .disabled(newKey.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             Text(model.loc("Click a row to edit."))
                 .font(.caption).foregroundStyle(.secondary)
 
             HStack {
-                Button(model.loc("Import…")) { importPlist() }
-                Button(model.loc("Export to YAML…")) { exportPlist() }
+                Button { importPlist() } label: { Label(model.loc("Import…"), systemImage: "square.and.arrow.up.on.square") }
+                Button { exportPlist() } label: { Label(model.loc("Export to YAML…"), systemImage: "square.and.arrow.up") }
                 Spacer()
             }
         }
