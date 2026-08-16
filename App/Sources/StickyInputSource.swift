@@ -130,10 +130,10 @@ final class StickyInputSource {
               !SecureFieldDetector.isSecure else { return }
         let now = DispatchTime.now().uptimeNanoseconds
         let allowed: Bool = lock.withLock {
-            guard now &- lastChordNs > Self.gestureWindowNs,
-                  now &- lastMenuBarClickNs > Self.menuClickWindowNs,
-                  now &- lastAppChangeNs > Self.appChangeWindowNs || lastAppChangeNs == 0,
-                  reclaimStamps.count < Self.breakerMax else { return false }
+            guard Self.reverifyAllowsReclaim(nowNs: now, lastChordNs: lastChordNs,
+                                             lastMenuBarClickNs: lastMenuBarClickNs,
+                                             lastAppChangeNs: lastAppChangeNs,
+                                             recentReclaims: reclaimStamps.count) else { return false }
             reclaimStamps.append(now)
             return true
         }
@@ -144,6 +144,22 @@ final class StickyInputSource {
     }
 
     // MARK: - Heuristic thuần (test được)
+
+    /// Lớp bảo hiểm chạy SAU reclaimDelayMs: cùng các cửa sổ gesture/app-change như
+    /// shouldReclaim nhưng với timestamp ĐÃ TƯƠI. Tồn tại vì thứ tự hai notification
+    /// (TIS đổi source vs NSWorkspace activate app) không đảm bảo — TIS tới trước
+    /// thì shouldReclaim quyết định trên lastAppChangeNs cũ và nói "giành" nhầm ở
+    /// ca chuyển app; 150ms sau notification activate chắc chắn đã xử lý xong và
+    /// guard này chặn lại.
+    static func reverifyAllowsReclaim(nowNs: UInt64, lastChordNs: UInt64,
+                                      lastMenuBarClickNs: UInt64, lastAppChangeNs: UInt64,
+                                      recentReclaims: Int) -> Bool {
+        guard recentReclaims < breakerMax else { return false }
+        if lastChordNs != 0, nowNs &- lastChordNs <= gestureWindowNs { return false }
+        if lastMenuBarClickNs != 0, nowNs &- lastMenuBarClickNs <= menuClickWindowNs { return false }
+        if lastAppChangeNs != 0, nowNs &- lastAppChangeNs <= appChangeWindowNs { return false }
+        return true
+    }
 
     /// Quyết định GIÀNH LẠI hay không, tại thời điểm nhận notification đổi input
     /// source. Chỉ giành khi: VietTelex vừa bị RỜI (was=true, now=false), KHÔNG có

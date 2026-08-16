@@ -54,6 +54,48 @@ final class StickyInputSourceTests: XCTestCase {
         XCTAssertFalse(reclaim(reclaims: StickyInputSource.breakerMax))
     }
 
+    // MARK: Kịch bản per-app memory (câu hỏi maintainer 15/08): app A = VietTelex,
+    // app B = ABC (user tự đặt), từ app C quay lại app B → phải Ở NGUYÊN ABC.
+
+    func testReturningToAppPinnedToABCStaysABC() {
+        // Đường thuận: notification activate-app (C→B) tới TRƯỚC notification đổi
+        // source — lastAppChangeNs tươi ngay lúc quyết định → không giành.
+        let appChange = now - sec / 10                       // vừa đổi app 0.1s trước
+        XCTAssertFalse(reclaim(was: true, isNow: false, appChange: appChange))
+    }
+
+    func testNotificationRaceIsCaughtByTheReverifyLayer() {
+        // Đường race: TIS tới TRƯỚC NSWorkspace — lúc quyết định lastAppChangeNs còn
+        // CŨ nên shouldReclaim nói "giành" nhầm…
+        let staleAppChange = now - 60 * sec
+        XCTAssertTrue(reclaim(was: true, isNow: false, appChange: staleAppChange))
+        // …nhưng reclaim chỉ chạy sau reclaimDelayMs, và lúc re-verify thì
+        // notification activate đã được xử lý (timestamp tươi) → lớp bảo hiểm chặn.
+        let reverifyTime = now + UInt64(StickyInputSource.reclaimDelayMs) * 1_000_000
+        let freshAppChange = now + 20 * 1_000_000            // activate xử lý 20ms sau TIS
+        XCTAssertFalse(StickyInputSource.reverifyAllowsReclaim(
+            nowNs: reverifyTime, lastChordNs: 0, lastMenuBarClickNs: 0,
+            lastAppChangeNs: freshAppChange, recentReclaims: 0))
+        // Đối chứng: không có app change nào (ca Word thật) thì re-verify cho qua.
+        XCTAssertTrue(StickyInputSource.reverifyAllowsReclaim(
+            nowNs: reverifyTime, lastChordNs: 0, lastMenuBarClickNs: 0,
+            lastAppChangeNs: staleAppChange, recentReclaims: 0))
+    }
+
+    func testReverifyHonorsLateGesturesAndBreaker() {
+        // Trong 150ms chờ, user kịp nhấn ⌃Space → re-verify phải nhường.
+        let t = now
+        XCTAssertFalse(StickyInputSource.reverifyAllowsReclaim(
+            nowNs: t, lastChordNs: t - sec / 20, lastMenuBarClickNs: 0,
+            lastAppChangeNs: 0, recentReclaims: 0))
+        XCTAssertFalse(StickyInputSource.reverifyAllowsReclaim(
+            nowNs: t, lastChordNs: 0, lastMenuBarClickNs: t - sec,
+            lastAppChangeNs: 0, recentReclaims: 0))
+        XCTAssertFalse(StickyInputSource.reverifyAllowsReclaim(
+            nowNs: t, lastChordNs: 0, lastMenuBarClickNs: 0,
+            lastAppChangeNs: 0, recentReclaims: StickyInputSource.breakerMax))
+    }
+
     func testMenuBarStripDetection() {
         // Display chính: bounds (0,0,1728,1117), y=0 là MÉP TRÊN (toạ độ CGEvent).
         let main = { (_: CGPoint) -> CGRect? in CGRect(x: 0, y: 0, width: 1728, height: 1117) }
