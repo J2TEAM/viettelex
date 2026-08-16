@@ -77,6 +77,22 @@ final class AppSupportTests: XCTestCase {
         XCTAssertEqual(huge?.count, UpdateCheck.notesCharacterCap + 1)   // + the ellipsis
     }
 
+    // MARK: Default ngôn ngữ UI — chốt để không ai lật ngược (maintainer 15/08/2026)
+
+    func testUILanguageDefaultsToVietnamese() {
+        // "system" cho UI tiếng Anh trên máy để macOS tiếng Anh, trong khi gần như
+        // toàn bộ user là người Việt → default thẳng "vi" (1.6.6). Xoá key trong
+        // suite TEST (không phải suite thật — xem AppState.settingsSuiteName) để đọc
+        // đúng giá trị mặc định của code, rồi trả lại nguyên trạng.
+        let s = AppState.shared
+        let saved = s.defaults.object(forKey: "uiLanguage")
+        s.defaults.removeObject(forKey: "uiLanguage")
+        XCTAssertEqual(s.uiLanguage, "vi", "default ngôn ngữ UI phải là tiếng Việt")
+        // Và VTLocalized phải THẬT SỰ ra tiếng Việt ở default đó, không chỉ trả về key.
+        XCTAssertEqual(VTLocalized("Settings"), "Tùy chỉnh")
+        if let saved { s.defaults.set(saved, forKey: "uiLanguage") }
+    }
+
     // MARK: Field report 14/08/2026 — "VietTelex tự nhiên bị mờ" = secure input
 
     func testSecureInputPIDExtraction() {
