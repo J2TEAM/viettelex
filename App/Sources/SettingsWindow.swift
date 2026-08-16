@@ -692,18 +692,19 @@ struct ModeTableTab: View {
                     }
                 }.width(min: 120)
                 TableColumn(model.loc("Manual"), value: \.manual) { row in
-                    // Common picks first (Auto / Tap / Marked cover ~95% of real
-                    // overrides); the specialist modes sit below the divider —
+                    // Common picks first (Auto / In-place / Tap / Marked cover ~95%
+                    // of real overrides — In-place lên ngay dưới Auto: maintainer
+                    // 15/08/2026); the specialist modes sit below the divider —
                     // Empty-reset exists for exactly one app (Excel), and picking it
                     // elsewhere types stray U+202F.
                     Picker("", selection: Binding(get: { model.appMode(row.id) },
                                                   set: { model.setAppMode(row.id, $0) })) {
                         Text(model.loc("Auto")).tag("auto")
+                        Text(model.loc("In-place")).tag("inPlace")
                         Text(model.loc("Tap (backspace)")).tag("tap")
                         Text(model.loc("Marked text")).tag("marked")
                         Divider()
                         Text(model.loc("Per-field (AX)")).tag("axDetect")
-                        Text(model.loc("In-place")).tag("inPlace")
                         Text(model.loc("Selection-replace")).tag("selection")
                         Text(model.loc("Empty-reset")).tag("emptyReset")
                         Text(model.loc("Passthrough")).tag("passthrough")
