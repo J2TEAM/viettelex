@@ -63,7 +63,7 @@ var STR = {
     map: '← Bản đồ', listen: '🔊 Nghe', dict: '🎧 Nghe rồi gõ', dictOn: '🎧 Đang nghe-gõ',
     fsOn: 'Toàn màn hình', fsOff: 'Thoát toàn màn hình',
     upNext: 'Học tiếp',
-    footer: 'Một phần của <a href="../">ViệtTelex</a> — bộ gõ tiếng Việt mã nguồn mở cho macOS.<br>Bài học sinh từ chính engine của bộ gõ. © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>',
+    footer: 'Một phần của <a href="../">ViệtTelex</a> — bộ gõ tiếng Việt mã nguồn mở cho macOS.<br>Bài học sinh từ chính engine của bộ gõ. © 2026 Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>',
     gameChapter: 'Trò chơi', gameTitle: 'Thả diều — gõ chữ phá mây',
     gameDesc: 'Gõ đúng từ trong đám mây để diều bay cao. Có level, sao và pháo hoa!',
     imeTitle: 'Tắt bộ gõ tiếng Việt trước khi học',
@@ -109,7 +109,7 @@ var STR = {
     map: '← Map', listen: '🔊 Listen', dict: '🎧 Listen & type', dictOn: '🎧 Dictation on',
     fsOn: 'Fullscreen', fsOff: 'Exit fullscreen',
     upNext: 'Continue',
-    footer: 'Part of <a href="../">ViệtTelex</a> — the open-source Vietnamese input method for macOS.<br>Lessons come from the input method’s real engine. © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>',
+    footer: 'Part of <a href="../">ViệtTelex</a> — the open-source Vietnamese input method for macOS.<br>Lessons come from the input method’s real engine. © 2026 Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>',
     gameChapter: 'Game', gameTitle: 'Kite flying — type to pop clouds',
     gameDesc: 'Type the word in each cloud to keep the kite up. Levels, stars, fireworks!',
     imeTitle: 'Turn OFF your Vietnamese IME first',
@@ -223,7 +223,7 @@ var STATIC_I18N = [
     { en: '<h3><span class="e">✨</span>The letter đ &amp; clearing tones</h3><p><b>dd</b>→đ. Type <b>z</b> to clear a tone you just added. Typing the same tone key again also clears it.</p>' }],
   ['#why4', function (x) { return x && x.landing && x.landing.why && x.landing.why[3]; },
     { en: '<h3><span class="e">🧠</span>Mistakes are fine</h3><p>The IME recognises non-Vietnamese words (like <code>google</code>) and leaves them alone. Just type naturally; if it’s wrong, delete and retype.</p>' }],
-  ['#pageFooter', L('footer'), { en: 'Part of <a href="../">ViệtTelex</a> — the open-source Vietnamese input method for macOS.<br>The same rule set that runs in the real app. © 2026 Vietnam Blockchain Association by Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>' }],
+  ['#pageFooter', L('footer'), { en: 'Part of <a href="../">ViệtTelex</a> — the open-source Vietnamese input method for macOS.<br>The same rule set that runs in the real app. © 2026 Phil Trịnh · <a href="https://github.com/ptrinh/viettelex">GitHub</a>' }],
   ['#hands h2', function (x) { return x && x.hands && x.hands.h2; }, { en: 'Hand position — touch typing' }],
   ['#hands .lead', function (x) { return x && x.hands && x.hands.lead; }, { en: 'Before the lessons, place your hands right: each finger owns a few keys and returns to the <b>home row</b>. This is the foundation for everything below.' }]
 ];
