@@ -69,3 +69,7 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 "Vietnamese typing is blocked (Secure Input)" = "Vietnamese typing is blocked (Secure Input)";
 "If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”" = "If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”";
 "Status: Blocked by Secure Input" = "Status: Blocked by Secure Input";
+
+/* Sticky input source (field report 15/08/2026 — Word comment boxes reset the input source) */
+"Keep VietTelex when macOS auto-switches the input source (experimental)" = "Keep VietTelex when macOS auto-switches the input source (experimental)";
+"Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)." = "Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app).";

@@ -91,6 +91,7 @@ final class SettingsModel: ObservableObject {
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
+    @Published var stickyInputSource: Bool { didSet { AppState.shared.stickyInputSource = stickyInputSource } }
     @Published var bracketVowels: Bool { didSet { AppState.shared.bracketVowels = bracketVowels } }
     /// ASCII keyboard layout Telex composes on ("" = inherit macOS's). Applied
     /// immediately as well as persisted: waiting for the next activateServer would
@@ -155,6 +156,7 @@ final class SettingsModel: ObservableObject {
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
+        stickyInputSource = AppState.shared.stickyInputSource
         bracketVowels = AppState.shared.bracketVowels
         // A layout uninstalled since it was chosen (system update, removed third-party
         // bundle) would leave the Picker with no matching tag and render blank — fall
@@ -835,6 +837,10 @@ struct ExperimentalTab: View {
                 Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
                        isOn: $model.reEditWord)
                 Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Keep VietTelex when macOS auto-switches the input source (experimental)"),
+                       isOn: $model.stickyInputSource)
+                Text(model.loc("Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(model.loc("Keyboard layout")) {

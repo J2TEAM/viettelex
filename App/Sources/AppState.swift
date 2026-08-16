@@ -243,6 +243,15 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
+    /// Giành lại VietTelex khi macOS TỰ đổi input source theo document (Word coi mỗi
+    /// ô comment là một document — field report 15/08/2026). EXPERIMENTAL, default
+    /// OFF — giành selection với OS là vùng nhạy (bài học #32). Đọc trên MAIN khi có
+    /// TIS notification (không phải hot path) → defaults-backed, không cache.
+    var stickyInputSource: Bool {
+        get { defaults.object(forKey: "stickyInputSource") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "stickyInputSource") }
+    }
+
     /// `[` types ơ and `]` types ư (UniKey / macOS Simple Telex habit), `{`/`}` their
     /// uppercase — EXPERIMENTAL, default OFF. Requested on Facebook 2026-08-14 by a
     /// 15-year UniKey typist; opt-in because with it on the brackets are word KEYS and

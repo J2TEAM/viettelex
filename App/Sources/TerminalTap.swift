@@ -2224,6 +2224,9 @@ final class TerminalTapController {
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
             lastTapKeyWasBoundary = false   // click at a word's end re-arms re-edit
+            // Sticky-source: click trong dải menu bar = user có thể đang tự đổi input
+            // source bằng menu — dấu vết để KHÔNG giành lại (StickyInputSource).
+            StickyInputSource.shared.noteClick(at: event.location)
             if imeActive { NotificationCenter.default.post(name: .telexResetComposition, object: nil) }
             return pass
         }
@@ -2311,6 +2314,9 @@ final class TerminalTapController {
             // QWERTY fired ⌘P while macOS sat on Colemak (VTX fork's measurement).
             // Re-address the event here, the one place that sees every chord.
             remapChordKeyCode(event, shift: flags.contains(.maskShift))
+            // Sticky-source: chord = có thể là hotkey đổi input source (⌃Space/custom)
+            // — dấu vết để KHÔNG giành lại (StickyInputSource).
+            StickyInputSource.shared.noteUserModifierChord()
             return pass
         }
 

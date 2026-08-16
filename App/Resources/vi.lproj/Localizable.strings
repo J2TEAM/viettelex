@@ -228,3 +228,7 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Vietnamese typing is blocked (Secure Input)" = "Gõ tiếng Việt đang bị chặn (Secure Input)";
 "If this is Terminal/iTerm2: turn off “Secure Keyboard Entry”" = "Nếu là Terminal/iTerm2: tắt “Secure Keyboard Entry” trong menu app đó";
 "Status: Blocked by Secure Input" = "Trạng thái: Bị chặn bởi Secure Input";
+
+/* Sticky input source (field report 15/08/2026 — ô comment Word reset bộ gõ) */
+"Keep VietTelex when macOS auto-switches the input source (experimental)" = "Giữ VietTelex khi macOS tự đổi bộ gõ (thử nghiệm)";
+"Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)." = "Một số app (ô comment của Word…) làm macOS rơi về bộ gõ mặc định ở mỗi ô mới khi bật “Automatically switch to a document's input source”. Tính năng này tự chuyển lại VietTelex — chỉ khi thay đổi không phải do bạn (không ⌃Space, không click menu, không đổi app).";
