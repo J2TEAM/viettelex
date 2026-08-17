@@ -100,6 +100,15 @@ final class SettingsModel: ObservableObject {
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
     @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
     @Published var stickyInputSource: Bool { didSet { AppState.shared.stickyInputSource = stickyInputSource } }
+    /// "vt" / "star". didSet ghi đè MenuIcon.pdf ngay (hiệu lực sau restart máy);
+    /// menuIconApplied bật để view hiện dòng "cần khởi động lại".
+    @Published var menuIcon: String {
+        didSet {
+            AppState.shared.menuIcon = menuIcon
+            if MenuIconSwitcher.applyIfNeeded(choice: menuIcon) { menuIconApplied = true }
+        }
+    }
+    @Published var menuIconApplied = false
     @Published var bracketVowels: Bool { didSet { AppState.shared.bracketVowels = bracketVowels } }
     /// ASCII keyboard layout Telex composes on ("" = inherit macOS's). Applied
     /// immediately as well as persisted: waiting for the next activateServer would
@@ -169,6 +178,7 @@ final class SettingsModel: ObservableObject {
         contextualEnglish = AppState.shared.contextualEnglish
         reEditWord = AppState.shared.reEditWord
         stickyInputSource = AppState.shared.stickyInputSource
+        menuIcon = AppState.shared.menuIcon
         bracketVowels = AppState.shared.bracketVowels
         // A layout uninstalled since it was chosen (system update, removed third-party
         // bundle) would leave the Picker with no matching tag and render blank — fall
@@ -874,6 +884,18 @@ struct ExperimentalTab: View {
                        isOn: $model.stickyInputSource)
                 Text(model.loc("Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)."))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section(header: Label(model.loc("Menu bar icon"), systemImage: "star.square")) {
+                Picker(model.loc("Icon"), selection: $model.menuIcon) {
+                    Text("Vᴛ — " + model.loc("default")).tag("vt")
+                    Text("★ — " + model.loc("five-pointed star")).tag("star")
+                }
+                Text(model.loc("Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.menuIconApplied {
+                    Text(model.loc("Icon saved — restart your Mac to see it."))
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
             Section(header: Label(model.loc("Keyboard layout"), systemImage: "keyboard.badge.ellipsis")) {
                 Picker(model.loc("Compose on"), selection: $model.keyboardLayoutID) {

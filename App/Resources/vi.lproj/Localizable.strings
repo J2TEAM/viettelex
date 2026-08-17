@@ -232,3 +232,11 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 /* Sticky input source (field report 15/08/2026 — ô comment Word reset bộ gõ) */
 "Keep VietTelex when macOS auto-switches the input source (experimental)" = "Giữ VietTelex khi macOS tự đổi bộ gõ (thử nghiệm)";
 "Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)." = "Một số app (ô comment của Word…) làm macOS rơi về bộ gõ mặc định ở mỗi ô mới khi bật “Automatically switch to a document's input source”. Tính năng này tự chuyển lại VietTelex — chỉ khi thay đổi không phải do bạn (không ⌃Space, không click menu, không đổi app).";
+
+/* Menu bar icon picker (maintainer 17/08/2026 — cho chọn MenuIcon, chấp nhận gãy seal) */
+"Menu bar icon" = "Biểu tượng trên thanh menu";
+"Icon" = "Biểu tượng";
+"default" = "mặc định";
+"five-pointed star" = "ngôi sao 5 cánh";
+"Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect." = "Đổi biểu tượng sẽ ghi lại một file bên trong app, làm hỏng niêm phong chữ ký của app (app vẫn hoạt động và giữ nguyên các quyền). Cần khởi động lại máy để có hiệu lực.";
+"Icon saved — restart your Mac to see it." = "Đã lưu biểu tượng — khởi động lại máy để thấy thay đổi.";

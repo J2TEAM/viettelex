@@ -72,6 +72,11 @@ SecureInputMonitor.shared.start()
 // 15/08/2026). Xem StickyInputSource.swift.
 StickyInputSource.shared.start()
 
+// Icon menu bar user chọn: SelfUpdater tráo nguyên bundle mỗi lần cập nhật nên
+// MenuIcon.pdf quay về mặc định — áp lại lựa chọn đã lưu ở mỗi lần khởi động
+// (no-op khi nội dung đã đúng, tức bundle chỉ bị chạm khi user thật sự đổi icon).
+MenuIconSwitcher.applyIfNeeded(choice: AppState.shared.menuIcon)
+
 // Accessibility permission toggled (System Settings): react IMMEDIATELY, not on the
 // next keystroke. Revoke while the tap is live used to leave a tap macOS keeps
 // disabling while we kept re-enabling — a ping-pong that wedged ALL input (keyboard

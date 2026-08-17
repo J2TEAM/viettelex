@@ -73,3 +73,11 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 /* Sticky input source (field report 15/08/2026 — Word comment boxes reset the input source) */
 "Keep VietTelex when macOS auto-switches the input source (experimental)" = "Keep VietTelex when macOS auto-switches the input source (experimental)";
 "Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)." = "Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app).";
+
+/* Menu bar icon picker (maintainer 17/08/2026 — user-selectable MenuIcon, seal-breaking accepted) */
+"Menu bar icon" = "Menu bar icon";
+"Icon" = "Icon";
+"default" = "default";
+"five-pointed star" = "five-pointed star";
+"Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect." = "Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect.";
+"Icon saved — restart your Mac to see it." = "Icon saved — restart your Mac to see it.";

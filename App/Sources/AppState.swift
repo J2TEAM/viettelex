@@ -269,6 +269,14 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.reEditWord) }
     }
 
+    /// Biểu tượng bộ gõ trên menu bar: "vt" (mặc định) hoặc "star". Áp dụng bằng cách
+    /// ghi đè MenuIcon.pdf trong bundle — đọc MenuIconSwitcher.swift cho các rủi ro
+    /// đã cân nhắc (seal gãy, cần restart, tự áp lại sau mỗi lần update).
+    var menuIcon: String {
+        get { defaults.string(forKey: "menuIcon") ?? MenuIconSwitcher.defaultChoice }
+        set { defaults.set(newValue, forKey: "menuIcon") }
+    }
+
     /// Giành lại VietTelex khi macOS TỰ đổi input source theo document (Word coi mỗi
     /// ô comment là một document — field report 15/08/2026). EXPERIMENTAL, default
     /// OFF — giành selection với OS là vùng nhạy (bài học #32). Đọc trên MAIN khi có
