@@ -85,7 +85,22 @@ final class AppState: @unchecked Sendable {
         "globalDefault", "perApp", "alwaysOffApps", "hotkeyKeyCode", "hotkeyModifiers",
     ]
 
+    // Toggles TỐT NGHIỆP khỏi tab Thử nghiệm (17/08/2026): tính năng đã ổn định,
+    // UI gỡ bỏ, mặc định BẬT cho tất cả. Key vẫn ĐƯỢC ĐỌC (property còn nguyên,
+    // hot path còn dùng) nhưng giá trị OFF mà tester từng đặt bị xoá ở đây — không
+    // còn UI nào để họ bật lại, giữ override cũ là kẹt vĩnh viễn ở đường chậm/kém
+    // an toàn mà không ai biết. Khác legacyKeys (không còn đọc), đừng gộp chung.
+    private static let graduatedKeys = [
+        "reEditWord",             // Gõ thêm dấu cho từ ngay trước con trỏ
+        "tapCascadeBreaker",      // Bộ ngắt chống tràn sự kiện
+        "tapModifyEventInPlace",  // Sửa sự kiện phím tại chỗ
+    ]
+
     private init() {
+        // graduatedKeys xoá TRƯỚC mọi lần đọc bên dưới — xoá sau thì cache in-memory
+        // của phiên này vẫn giữ giá trị OFF cũ và default-bật chỉ có hiệu lực từ lần
+        // khởi động sau.
+        for key in Self.graduatedKeys { defaults.removeObject(forKey: key) }
         // Engine toggles: cached in memory (see the property docs) — every one of these
         // was read from UserDefaults on EVERY keystroke, on both hot paths.
         _autoRestore = (defaults.object(forKey: Key.autoRestore) as? Bool) ?? true

@@ -98,7 +98,6 @@ final class SettingsModel: ObservableObject {
     @Published var quickTelex: Bool { didSet { AppState.shared.quickTelex = quickTelex } }
     @Published var vniMode: Bool { didSet { AppState.shared.vniMode = vniMode } }
     @Published var contextualEnglish: Bool { didSet { AppState.shared.contextualEnglish = contextualEnglish } }
-    @Published var reEditWord: Bool { didSet { AppState.shared.reEditWord = reEditWord } }
     @Published var stickyInputSource: Bool { didSet { AppState.shared.stickyInputSource = stickyInputSource } }
     @Published var switchHotkey: String { didSet { AppState.shared.switchHotkey = switchHotkey } }
     /// "vt" / "star". didSet ghi đè MenuIcon.pdf ngay (hiệu lực sau restart máy);
@@ -122,10 +121,8 @@ final class SettingsModel: ObservableObject {
     }
     @Published var safeUnknownApps: Bool { didSet { AppState.shared.safeUnknownApps = safeUnknownApps } }
     /// Advanced (terminal tap latency) — see AppState for the full semantics.
-    @Published var tapModifyEventInPlace: Bool { didSet { AppState.shared.tapModifyEventInPlace = tapModifyEventInPlace } }
     @Published var tapSkipSyntheticKeyUp: Bool { didSet { AppState.shared.tapSkipSyntheticKeyUp = tapSkipSyntheticKeyUp } }
     @Published var axSelectionReplace: Bool { didSet { AppState.shared.axSelectionReplace = axSelectionReplace } }
-    @Published var tapCascadeBreaker: Bool { didSet { AppState.shared.tapCascadeBreaker = tapCascadeBreaker } }
     @Published var debugLogging: Bool { didSet { AppState.shared.debugLogging = debugLogging } }
     @Published var autoUpdateCheck: Bool { didSet { AppState.shared.autoUpdateCheck = autoUpdateCheck } }
     /// Shows/hides the Bảng chế độ gõ + Thử Nghiệm tabs. When turned off while one
@@ -177,7 +174,6 @@ final class SettingsModel: ObservableObject {
         quickTelex = AppState.shared.quickTelex
         vniMode = AppState.shared.vniMode
         contextualEnglish = AppState.shared.contextualEnglish
-        reEditWord = AppState.shared.reEditWord
         stickyInputSource = AppState.shared.stickyInputSource
         switchHotkey = AppState.shared.switchHotkey
         menuIcon = AppState.shared.menuIcon
@@ -189,10 +185,8 @@ final class SettingsModel: ObservableObject {
         keyboardLayoutID = KeyboardLayoutOverride.isInstalled(savedLayout)
             ? savedLayout : KeyboardLayoutOverride.systemDefault
         safeUnknownApps = AppState.shared.safeUnknownApps
-        tapModifyEventInPlace = AppState.shared.tapModifyEventInPlace
         tapSkipSyntheticKeyUp = AppState.shared.tapSkipSyntheticKeyUp
         axSelectionReplace = AppState.shared.axSelectionReplace
-        tapCascadeBreaker = AppState.shared.tapCascadeBreaker
         debugLogging = AppState.shared.debugLogging
         autoUpdateCheck = AppState.shared.autoUpdateCheck
         advancedFeatures = AppState.shared.advancedFeatures
@@ -606,15 +600,28 @@ struct GeneralTab: View {
                 }
             }
             Section(header: Label(model.loc("Input style"), systemImage: "keyboard")) {
-                Toggle(model.loc("Simple Telex"), isOn: $model.simpleTelex)
-                Text(model.loc("A lone “w” stays “w” (type “uw” for ư). Off = full Telex (cw→cư)."))
+                // VNI tốt nghiệp từ tab Thử nghiệm (maintainer 17/08/2026). Bật VNI thì
+                // các tuỳ chỉnh THUẦN-TELEX ẩn đi (Simple/Quick/bỏ dấu tự do/phím ngoặc
+                // — freeMarking chỉ chạy trong parseStep của Telex, VNI không đọc);
+                // "kiểu cũ/mới" là quy tắc ĐẶT dấu, áp dụng cho cả hai nên giữ hiện.
+                Toggle(model.loc("VNI typing"), isOn: $model.vniMode)
+                Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
                     .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Quick Telex"), isOn: $model.quickTelex)
-                Text(model.loc("Doubled first consonant expands: cc→ch, gg→gi, kk→kh, nn→ng, qq→qu, pp→ph, tt→th."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Free tone placement"), isOn: $model.freeMarking)
-                Text(model.loc("Off = strict Telex: tones apply only next to a vowel — good for English/code (data→data). On: free placement (ama→âm)."))
-                    .font(.caption).foregroundStyle(.secondary)
+                if !model.vniMode {
+                    Toggle(model.loc("Simple Telex"), isOn: $model.simpleTelex)
+                    Text(model.loc("A lone “w” stays “w” (type “uw” for ư). Off = full Telex (cw→cư)."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Quick Telex"), isOn: $model.quickTelex)
+                    Text(model.loc("Doubled first consonant expands: cc→ch, gg→gi, kk→kh, nn→ng, qq→qu, pp→ph, tt→th."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Free tone placement"), isOn: $model.freeMarking)
+                    Text(model.loc("Off = strict Telex: tones apply only next to a vowel — good for English/code (data→data). On: free placement (ama→âm)."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Bracket vowels: [ types ơ, ] types ư"),
+                           isOn: $model.bracketVowels)
+                    Text(model.loc("The UniKey habit: “th[” → “thơ”, “ng]” → “ngư” ({ and } for uppercase). Leave OFF if you type code — with it on, [ and ] belong to the word instead of ending it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle(model.loc("Modern tone placement (oà, uý)"), isOn: $model.modernOrthography)
                 Text(model.loc("Off = old style (hòa, thủy, khỏe). On = new style (hoà, thuý, khoẻ). Only oa/oe/uy differ."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -870,18 +877,9 @@ struct ExperimentalTab: View {
 
     var body: some View {
         Form {
+            // VNI + phím ngoặc đã tốt nghiệp sang tab Tùy chỉnh; "gõ thêm dấu cho từ
+            // ngay trước con trỏ" ổn định → bỏ UI, mặc định bật (maintainer 17/08/2026).
             Section(header: Label(model.loc("Input method"), systemImage: "character.textbox")) {
-                Toggle(model.loc("VNI typing (experimental)"), isOn: $model.vniMode)
-                Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Bracket vowels: [ types ơ, ] types ư (experimental)"),
-                       isOn: $model.bracketVowels)
-                Text(model.loc("The UniKey habit: “th[” → “thơ”, “ng]” → “ngư” ({ and } for uppercase). Leave OFF if you type code — with it on, [ and ] belong to the word instead of ending it."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Add diacritics to the word before the caret (experimental)"),
-                       isOn: $model.reEditWord)
-                Text(model.loc("Type “toan”, then “s” → “toán” — no need to retype the whole word. Deleting the space after a word re-opens it: “tháy ” + ⌫ + “a” → “thấy”."))
-                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Keep VietTelex when macOS auto-switches the input source (experimental)"),
                        isOn: $model.stickyInputSource)
                 Text(model.loc("Some apps (Word comments…) make macOS fall back to the default input source for every new field when “Automatically switch to a document's input source” is on. This switches back to VietTelex — only when the change wasn't yours (no ⌃Space, no menu click, same app)."))
@@ -927,20 +925,15 @@ struct ExperimentalTab: View {
                 Text(model.loc("Apps without a rule type via backspace-retype (or underlined composition without Accessibility) instead of trying direct insertion and guessing. Turn off to restore the old probe-and-learn behavior."))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            // "Sửa sự kiện phím tại chỗ" + "Bộ ngắt chống tràn sự kiện" ổn định →
+            // bỏ UI, mặc định bật; giá trị OFF cũ của tester bị xoá lúc khởi động
+            // (graduatedKeys trong AppState — maintainer 17/08/2026).
             Section(header: Label(model.loc("Terminal typing latency"), systemImage: "terminal")) {
-                Toggle(model.loc("Modify key events in place"), isOn: $model.tapModifyEventInPlace)
-                Text(model.loc("In terminals, apply a one-letter tone edit (w→ư) by rewriting the real keystroke instead of posting two synthetic events — lower latency."))
-                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Skip synthetic key-up"), isOn: $model.tapSkipSyntheticKeyUp)
                 Text(model.loc("Post only the key-down for inserted letters in terminals, halving events per keystroke."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("AX replace (Chrome/Spotlight)"), isOn: $model.axSelectionReplace)
                 Text(model.loc("Apply tone edits in Chrome and Spotlight with one Accessibility edit instead of a burst of Shift+Left key events."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section(header: Label(model.loc("Safety"), systemImage: "shield.lefthalf.filled")) {
-                Toggle(model.loc("Cascade circuit breaker"), isOn: $model.tapCascadeBreaker)
-                Text(model.loc("Keep this ON. Stops the terminal tap if it ever floods the keyboard with synthetic events, so a bug can’t freeze typing."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("Diagnostics"), systemImage: "stethoscope")) {

@@ -56,7 +56,7 @@ Ví dụ: `vieejt` → việt · `truowngf` → trường · `hoas` → hóa.
 
 Tùy chọn (Simple Telex, bỏ dấu tự do, kiểu cũ/mới, kiểm tra chính tả, gõ tắt) ở menu bộ gõ → **Cài đặt…**
 
-**Gõ kiểu VNI:** menu bộ gõ → **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**. Dấu gõ bằng số: `1-5` = sắc/huyền/hỏi/ngã/nặng, `6` = â/ê/ô, `7` = ơ/ư, `8` = ă, `9` = đ, `0` = bỏ dấu (ví dụ `Vie6t5` → Việt). Nên giữ **Kiểm tra chính tả khi gõ** bật để số như `mp3` không bị biến thành dấu.
+**Gõ kiểu VNI:** menu bộ gõ → **Cài đặt…** → tab **Tùy chỉnh** → bật **Gõ kiểu VNI**. Dấu gõ bằng số: `1-5` = sắc/huyền/hỏi/ngã/nặng, `6` = â/ê/ô, `7` = ơ/ư, `8` = ă, `9` = đ, `0` = bỏ dấu (ví dụ `Vie6t5` → Việt). Nên giữ **Kiểm tra chính tả khi gõ** bật để số như `mp3` không bị biến thành dấu.
 
 ## FAQ — câu hỏi thường gặp
 
@@ -81,7 +81,7 @@ Menu bộ gõ → **Cài đặt…** → tab **Bảng cơ chế gõ** → thêm 
 <details>
 <summary><strong>Có hỗ trợ VNI không?</strong></summary>
 
-Có: **Cài đặt…** → tab **Thử nghiệm** → bật **Gõ kiểu VNI**.
+Có: **Cài đặt…** → tab **Tùy chỉnh** → bật **Gõ kiểu VNI**.
 </details>
 
 <details>
