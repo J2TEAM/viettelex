@@ -43,6 +43,14 @@ targets:
         buildPhase: resources
       - path: App/Resources/MenuIcon.pdf
         buildPhase: resources
+      # Bộ icon user chọn được (tab Thử nghiệm): MenuIcon.pdf là file ACTIVE mà
+      # Info.plist trỏ tới; 1 = bản gốc Vᴛ (để quay lại), 2 = sao 5 cánh.
+      # MenuIconSwitcher ghi đè file active theo lựa chọn — xem file đó cho rủi ro
+      # seal đã chấp nhận (maintainer 17/08/2026).
+      - path: App/Resources/MenuIcon1.pdf
+        buildPhase: resources
+      - path: App/Resources/MenuIcon2.pdf
+        buildPhase: resources
       - path: App/Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
       # Built-in per-app typing rules — repo-root data file (see its header);

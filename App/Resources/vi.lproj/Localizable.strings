@@ -240,3 +240,9 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "five-pointed star" = "ngôi sao 5 cánh";
 "Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect." = "Đổi biểu tượng sẽ ghi lại một file bên trong app, làm hỏng niêm phong chữ ký của app (app vẫn hoạt động và giữ nguyên các quyền). Cần khởi động lại máy để có hiệu lực.";
 "Icon saved — restart your Mac to see it." = "Đã lưu biểu tượng — khởi động lại máy để thấy thay đổi.";
+
+/* Switch hotkey (tiếp nối issue #54 — tổ hợp chỉ-modifier mà macOS không cho gán) */
+"Switch hotkey" = "Phím tắt chuyển bộ gõ";
+"Toggle VietTelex with" = "Chuyển VietTelex bằng";
+"Off — use the macOS shortcut" = "Tắt — dùng phím tắt của macOS";
+"Press and release the modifiers alone to toggle between VietTelex and your previous input source — the modifier-only combos macOS's own Keyboard Shortcuts can't assign. Ignored if you type a key or click while holding them. Needs Accessibility permission." = "Nhấn rồi thả riêng các phím bổ trợ để chuyển qua lại giữa VietTelex và bộ gõ trước đó — kiểu tổ hợp chỉ-modifier mà Keyboard Shortcuts của macOS không cho gán. Gõ phím hay click chuột trong lúc giữ thì không tính. Cần quyền Trợ năng.";

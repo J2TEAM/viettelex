@@ -113,6 +113,7 @@ final class AppState: @unchecked Sendable {
         _safeUnknownApps = (defaults.object(forKey: "safeUnknownApps") as? Bool) ?? true
         _keyboardLayoutID = (defaults.object(forKey: Key.keyboardLayout) as? String) ?? ""
         _bracketVowels = (defaults.object(forKey: Key.bracketVowels) as? Bool) ?? false
+        _switchHotkey = (defaults.object(forKey: "switchHotkey") as? String) ?? "off"
         shortcutsCache = (defaults.dictionary(forKey: Key.shortcuts) as? [String: String]) ?? [:]
         fallbackAppsCache = Set(defaults.stringArray(forKey: Key.fallbackApps) ?? [])
         probedAppsCache = Set(defaults.stringArray(forKey: Key.probedApps) ?? [])
@@ -267,6 +268,16 @@ final class AppState: @unchecked Sendable {
     var reEditWord: Bool {
         get { defaults.object(forKey: Key.reEditWord) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.reEditWord) }
+    }
+
+    /// Hotkey chuyển input source: "off" (default) / "ctrl-shift" / "opt-shift" /
+    /// "cmd-shift". Cached + locked vì TAP THREAD đọc ở mỗi flagsChanged (mỗi lần
+    /// nhấn/nhả modifier toàn hệ thống). Xem SwitchHotkey.swift.
+    private var _switchHotkey: String
+    var switchHotkey: String {
+        get { lock.withLock { _switchHotkey } }
+        set { lock.withLock { _switchHotkey = newValue }
+              defaults.set(newValue, forKey: "switchHotkey") }
     }
 
     /// Biểu tượng bộ gõ trên menu bar: "vt" (mặc định) hoặc "star". Áp dụng bằng cách

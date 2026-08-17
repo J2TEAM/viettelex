@@ -1800,6 +1800,10 @@ final class TerminalTapController {
     /// the new permission. Polling here means a grant is noticed within one tick
     /// (same 3s cadence as the health watchdog) with no cooperation required from
     /// either of those signals.
+    /// Máy nhận diện chord hotkey chuyển bộ gõ — TAP-thread confined (mọi note/disarm
+    /// đều từ callback), không cần lock. Xem SwitchHotkey.swift.
+    private var chordRecognizer = ModifierChordRecognizer()
+
     private var trustPoll: Timer?
 
     private func startTrustPollIfNeeded() {
@@ -1976,7 +1980,11 @@ final class TerminalTapController {
     func start() {
         guard !quarantined else { return }
         guard stateLock.withLock({ tap == nil }), Accessibility.isTrusted else { return }
+        // flagsChanged: cho hotkey chuyển bộ gõ chỉ-gồm-modifier (SwitchHotkey).
+        // Chi phí khi tắt hotkey: một string compare rồi return pass mỗi lần nhấn/nhả
+        // modifier — không chạm engine, không chạm policy.
         let mask = CGEventMask((1 << CGEventType.keyDown.rawValue)
+                             | (1 << CGEventType.flagsChanged.rawValue)
                              | (1 << CGEventType.leftMouseDown.rawValue)
                              | (1 << CGEventType.rightMouseDown.rawValue))
         guard let tap = CGEvent.tapCreate(
@@ -2229,9 +2237,21 @@ final class TerminalTapController {
         // abandon it. We do NOT emit backspaces/
         // edits — the caret is elsewhere now and the typed text is already real. Also
         // signal the IMKit controller (other apps) to drop its composition.
+        // Hotkey chuyển bộ gõ (SwitchHotkey): chord chỉ-gồm-modifier hoàn tất khi nhả.
+        // TAP-thread confined recognizer; toggle chạy trên MAIN (TIS không an toàn
+        // ngoài main). Sự kiện flagsChanged luôn pass — mình chỉ quan sát, không sửa.
+        if type == .flagsChanged {
+            if let target = SwitchHotkey.targetFlags(for: AppState.shared.switchHotkey),
+               chordRecognizer.note(flags: event.flags, target: target) {
+                DispatchQueue.main.async { SwitchHotkey.toggle() }
+            }
+            return pass
+        }
+
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
             lastTapKeyWasBoundary = false   // click at a word's end re-arms re-edit
+            chordRecognizer.disarm()        // click giữa lúc giữ chord = không phải toggle
             // Sticky-source: click trong dải menu bar = user có thể đang tự đổi input
             // source bằng menu — dấu vết để KHÔNG giành lại (StickyInputSource).
             StickyInputSource.shared.noteClick(at: event.location)
@@ -2263,6 +2283,10 @@ final class TerminalTapController {
         //    probe re-arms on the first key after activateServer.
         //  • consume the pending post-(re)enable engine reset armed by start() — the
         //    engine is tap-thread confined, so the reset happens HERE, on this thread.
+        // Phím thường (đã lọc synthetic ở trên) giữa lúc giữ chord = một shortcut
+        // thật, không phải toggle bộ gõ — disarm. Tap-thread confined, plain store.
+        chordRecognizer.disarm()
+
         let needsEngineReset: Bool = stateLock.withLock {
             if Self.stampsLiveness(imeActive: active) {
                 lastKeyDownNs = DispatchTime.now().uptimeNanoseconds

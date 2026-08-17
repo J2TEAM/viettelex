@@ -60,6 +60,10 @@ inputSourceObserver = DistributedNotificationCenter.default().addObserver(
     SecureInputMonitor.shared.check(reason: "input-source-changed")
     // Sticky-source (experimental): macOS tự đổi source theo document → giành lại.
     StickyInputSource.shared.selectionChanged(isVietTelex: isVietTelex)
+    // Hotkey chuyển bộ gõ: nhớ source non-VietTelex gần nhất làm đích cho chiều
+    // VietTelex → khác (xem SwitchHotkey.toggle).
+    SwitchHotkey.noteSelection(isVietTelex: isVietTelex,
+                               currentID: SwitchHotkey.currentInputSourceID())
 }
 
 // "VietTelex bị mờ không rõ nguyên nhân" (field report 14/08/2026): khi có process
