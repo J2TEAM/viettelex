@@ -51,6 +51,8 @@ targets:
         buildPhase: resources
       - path: App/Resources/MenuIcon2.pdf
         buildPhase: resources
+      - path: App/Resources/MenuIcon3.pdf
+        buildPhase: resources
       - path: App/Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
       # Built-in per-app typing rules — repo-root data file (see its header);

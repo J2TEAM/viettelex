@@ -261,6 +261,10 @@
       <p>VietTelex tự tắt trong secure field — đúng hành vi bảo mật, không phải lỗi.</p>
     </details>
     <details>
+      <summary><strong>Gỡ cài đặt thế nào cho sạch?</strong></summary>
+      <p>Gỡ khỏi Input Sources chỉ tắt bộ gõ, chưa xoá app. Gỡ hẳn: xoá <code>~/Library/Input Methods/VietTelex.app</code> (Finder → Go → Go to Folder…) rồi đăng xuất/đăng nhập. Muốn xoá luôn cài đặt cá nhân: xoá thêm <code>~/Library/Preferences/com.viettelex.settings.plist</code>. Cài bằng Homebrew thì chỉ cần <code>brew uninstall --cask viettelex</code>.</p>
+    </details>
+    <details>
       <summary><strong>Phím tắt trong app chụp màn hình (Flameshot…) không ăn?</strong></summary>
       <p>Lỗi của framework Qt (Flameshot, OBS, VLC… dùng): shortcut trong overlay bị nuốt khi có <b>bất kỳ</b> bộ gõ nào đang active — bộ gõ Simple Telex có sẵn của Apple cũng dính y hệt, không riêng VietTelex (<a href="https://github.com/ptrinh/viettelex/issues/54">chi tiết</a>). Khắc phục: System Settings → Keyboard → bật <b>“Automatically switch to a document's input source”</b>, rồi một lần chuyển sang ABC khi đang ở app đó — macOS sẽ tự nhớ, các app khác vẫn gõ tiếng Việt bình thường.</p>
     </details>

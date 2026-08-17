@@ -910,6 +910,7 @@ struct ExperimentalTab: View {
                 Picker(model.loc("Icon"), selection: $model.menuIcon) {
                     Text("Vᴛ — " + model.loc("default")).tag("vt")
                     Text("★ — " + model.loc("five-pointed star")).tag("star")
+                    Text("🇻🇳 — " + model.loc("Vietnam flag")).tag("flag")
                 }
                 Text(model.loc("Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect."))
                     .font(.caption).foregroundStyle(.secondary)

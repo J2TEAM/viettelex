@@ -29,7 +29,11 @@ enum MenuIconSwitcher {
     /// File nguồn tương ứng với lựa chọn — cả hai đều được ship trong Resources,
     /// MenuIcon.pdf là file "đang hoạt động" mà Info.plist trỏ tới.
     static func sourceName(for choice: String) -> String {
-        choice == "star" ? "MenuIcon2" : "MenuIcon1"
+        switch choice {
+        case "star": return "MenuIcon2"
+        case "flag": return "MenuIcon3"   // cờ VN màu thật (field request qua email 17/08)
+        default:     return "MenuIcon1"
+        }
     }
 
     /// Chỉ ghi khi nội dung khác — khởi động bình thường (đã đúng icon) không được

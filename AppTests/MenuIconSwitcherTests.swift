@@ -10,6 +10,7 @@ final class MenuIconSwitcherTests: XCTestCase {
     func testChoiceMapsToTheRightSourceFile() {
         XCTAssertEqual(MenuIconSwitcher.sourceName(for: "vt"), "MenuIcon1")
         XCTAssertEqual(MenuIconSwitcher.sourceName(for: "star"), "MenuIcon2")
+        XCTAssertEqual(MenuIconSwitcher.sourceName(for: "flag"), "MenuIcon3")
         // Giá trị lạ (settings hỏng / bản cũ hơn) rơi về mặc định, không crash.
         XCTAssertEqual(MenuIconSwitcher.sourceName(for: "gibberish"), "MenuIcon1")
         XCTAssertEqual(MenuIconSwitcher.defaultChoice, "vt")
@@ -19,7 +20,7 @@ final class MenuIconSwitcherTests: XCTestCase {
         // MenuIcon.pdf = đang hoạt động (Info.plist trỏ tới), MenuIcon1 = bản gốc
         // để quay lại, MenuIcon2 = sao 5 cánh. Thiếu cái nào là tính năng chết im.
         let bundle = Bundle(for: TelexInputController.self)
-        for name in ["MenuIcon", "MenuIcon1", "MenuIcon2"] {
+        for name in ["MenuIcon", "MenuIcon1", "MenuIcon2", "MenuIcon3"] {
             let url = bundle.url(forResource: name, withExtension: "pdf")
             XCTAssertNotNil(url, "\(name).pdf thiếu trong bundle")
             if let url, let data = try? Data(contentsOf: url) {
