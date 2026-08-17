@@ -178,6 +178,22 @@ final class TelexInputController: IMKInputController {
     func _testUsesMarkedNow(_ id: String?) -> Bool { usesMarkedNow(id) }
     #endif
 
+    /// SPLIT-BRAIN → marked (lớp bug issue #55). Fire khi: client id routes họ tap,
+    /// KHÁC app với frontmost, mà routing theo frontmost (góc nhìn của TAP — tap
+    /// quyết mỗi phím bằng FrontmostApp) lại KHÔNG thuộc họ tap → tap sẽ pass và
+    /// tap-defer của IMK thành chữ thô. `frontDefersToTap` là @autoclosure vì đó là
+    /// cả một lần giải routing — chỉ được trả khi các điều kiện rẻ phía trước đã lọc
+    /// (đường thường: sameApp=true, thoát ngay). KHÔNG kéo tap vào thay vì marked:
+    /// tap thấy phím TRƯỚC IMK nên không thể biết IMK sắp nhường, còn cho tap route
+    /// theo client id là dựa vào thứ tự activate/deactivate vốn flaky (client thiu
+    /// → backspace-retype bắn nhầm vào app in-place, tệ hơn chữ thô).
+    static func splitBrainToMarked(clientDefersToTap: Bool, sameApp: Bool,
+                                   spotlightDefer: Bool, alreadyMarked: Bool,
+                                   frontDefersToTap: @autoclosure () -> Bool) -> Bool {
+        guard clientDefersToTap, !sameApp, !spotlightDefer, !alreadyMarked else { return false }
+        return !frontDefersToTap()
+    }
+
     // MARK: - Event handling (hot path)
 
     /// Also receive flagsChanged (default is keyDown only): the composition is
@@ -382,7 +398,25 @@ final class TelexInputController: IMKInputController {
         // decision — this used to be 6 separate calls, each re-locking AppState and
         // several re-reading Accessibility.isTrusted.
         let routing = AppState.shared.tapRouting(id, front: frontID)
-        if routing.tapDefer || spotlightDefersToTap {
+        // SPLIT-BRAIN GUARD (lớp bug issue #55): client id routes về họ tap (thường
+        // là XPC service lạ rơi vào safe-unknown) nhưng TAP thì quyết theo FRONTMOST
+        // — nếu frontmost không thuộc họ tap, tap sẽ pass nguyên phím: IMK nhường,
+        // tap cũng nhường, chữ ra THÔ. Phát hiện tại đúng phím này (client id là bên
+        // vừa đưa event — không thể thiu; frontmost đọc từ cache đáng tin) và rơi về
+        // MARKED cho focus hiện tại: đúng chữ tuyệt đối, chỉ có gạch chân — đúng
+        // tinh thần safe-unknown khi kênh tap không với tới. Ca nào field-verify
+        // in-place tốt thì thêm rule vào typing-modes.yml như documentPopoverViewService.
+        // Không đụng Spotlight (defer vô điều kiện là CHỦ ĐÍCH — đọc NOTE dưới).
+        if Self.splitBrainToMarked(clientDefersToTap: routing.tapDefer,
+                                   sameApp: id == frontID,
+                                   spotlightDefer: spotlightDefersToTap,
+                                   alreadyMarked: fieldForcedMarked,
+                                   frontDefersToTap: AppState.shared.tapRouting(frontID).tapDefer) {
+            fieldForcedMarked = true
+            logDecision("split-brain: client \(id ?? "?") routes tap, front \(frontID ?? "?") won't engage → marked for this focus")
+            Signposts.log.notice("split-brain → marked: client=\(id ?? "?", privacy: .public) front=\(frontID ?? "?", privacy: .public)")
+        }
+        if (routing.tapDefer && !fieldForcedMarked) || spotlightDefersToTap {
             // NOTE: SpotlightDetector.isVisible defers UNCONDITIONALLY, even when the
             // tap is dormant (Accessibility not trusted / sandboxed build). That means
             // Spotlight typing gets raw passthrough with NO composition at all. This is

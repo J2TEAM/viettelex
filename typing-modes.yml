@@ -73,6 +73,12 @@ com.apple.TextEdit: inPlace
 com.apple.Preview: inPlace
 com.apple.Passwords: inPlace
 com.apple.appkit.xpc.openAndSavePanelService: inPlace
+# Popover đổi tên file trên thanh tiêu đề (Preview/TextEdit/Pages…) — cũng là
+# remote view service của AppKit như save panel ở trên. Thiếu rule thì client id
+# lạ này rơi vào safe-unknown → IMK tap-defer, trong khi tap lại quyết theo
+# frontmost (Preview = inPlace) và pass → hai bên nhường nhau, phím ra thô
+# (issue #55, 17/08/2026: "Haf tieen" nguyên xi trong ô rename của Preview).
+com.apple.appkit.xpc.documentPopoverViewService: inPlace
 com.apple.SafariPlatformSupport.Helper: inPlace
 com.robinhood.release.Money: inPlace
 com.relaykey.client: inPlace

@@ -79,6 +79,39 @@ final class BundledTypingModesTests: XCTestCase {
         }
     }
 
+    // MARK: Issue #55 (17/08/2026) — AppKit remote view service phải có rule riêng
+
+    func testAppKitXPCServicesResolveToInPlace() throws {
+        // Ô nhập trong save panel / popover đổi tên trên thanh tiêu đề KHÔNG thuộc
+        // app đang mở — IMK client là XPC service của AppKit. Thiếu rule thì id lạ
+        // này rơi vào safe-unknown (IMK tap-defer) trong khi tap quyết theo
+        // FRONTMOST (Preview = inPlace) và pass → SPLIT-BRAIN: hai bên nhường nhau,
+        // phím ra thô ("Haf tieen" — issue #55). Cùng họ remote view service, cùng
+        // host NSTextField chuẩn → in-place.
+        for id in ["com.apple.appkit.xpc.openAndSavePanelService",
+                   "com.apple.appkit.xpc.documentPopoverViewService"] {
+            XCTAssertEqual(try bundledRules()[id], "inPlace", "\(id) thiếu/hỏng trong typing-modes.yml")
+            XCTAssertEqual(AppState.shared.autoResolvedMode(id), .inPlace, id)
+        }
+    }
+
+    func testSplitBrainGuardFallsToMarkedOnlyOnRealMismatch() {
+        // Ca #55: client = XPC service lạ (safe-unknown → tap), front = Preview
+        // (in-place) → tap sẽ không nhận → phải rơi về marked.
+        func guardFires(client: Bool = true, same: Bool = false, spot: Bool = false,
+                        marked: Bool = false, front: Bool = false) -> Bool {
+            TelexInputController.splitBrainToMarked(
+                clientDefersToTap: client, sameApp: same, spotlightDefer: spot,
+                alreadyMarked: marked, frontDefersToTap: front)
+        }
+        XCTAssertTrue(guardFires())                          // đúng ca #55
+        XCTAssertFalse(guardFires(same: true))               // terminal thường: client == front
+        XCTAssertFalse(guardFires(front: true))              // front cũng tap → defer là ĐÚNG
+        XCTAssertFalse(guardFires(client: false))            // client không routes tap
+        XCTAssertFalse(guardFires(spot: true))               // Spotlight defer vô điều kiện là chủ đích
+        XCTAssertFalse(guardFires(marked: true))             // đã marked rồi → khỏi log lại
+    }
+
     func testCometResolvesToInPlaceNotBrowserAxDetect() throws {
         // Comet (Perplexity, Chromium) cố ý KHÔNG theo họ browser axDetect —
         // maintainer chỉ định In-Place 15/08/2026. Hàng rào: một cleanup "gom mọi
