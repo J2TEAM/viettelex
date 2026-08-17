@@ -93,3 +93,11 @@ Press “Repair automatically”: VietTelex removes its own stuck entry and asks
 "Bracket vowels: [ types ơ, ] types ư" = "Bracket vowels: [ types ơ, ] types ư";
 "Typing method" = "Typing method";
 "Vietnam flag" = "Vietnam flag";
+
+/* Uninstall (About tab, 17/08/2026) */
+"Uninstall VietTelex…" = "Uninstall VietTelex…";
+"Uninstall VietTelex?" = "Uninstall VietTelex?";
+"This removes the app, every setting and all your shortcuts. It cannot be undone." = "This removes the app, every setting and all your shortcuts. It cannot be undone.";
+"Uninstall" = "Uninstall";
+"VietTelex has been removed. Log out and back in to clear it from the input source list." = "VietTelex has been removed. Log out and back in to clear it from the input source list.";
+"Settings were removed, but the app file could not be deleted — drag it to the Trash from ~/Library/Input Methods." = "Settings were removed, but the app file could not be deleted — drag it to the Trash from ~/Library/Input Methods.";

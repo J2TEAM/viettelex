@@ -252,3 +252,11 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Bracket vowels: [ types ơ, ] types ư" = "Phím ngoặc: [ ra ơ, ] ra ư";
 "Typing method" = "Kiểu gõ";
 "Vietnam flag" = "cờ Việt Nam";
+
+/* Gỡ cài đặt (tab Giới thiệu, 17/08/2026) */
+"Uninstall VietTelex…" = "Gỡ cài đặt VietTelex…";
+"Uninstall VietTelex?" = "Gỡ cài đặt VietTelex?";
+"This removes the app, every setting and all your shortcuts. It cannot be undone." = "Sẽ xoá app, toàn bộ cài đặt và gõ tắt của bạn. Không hoàn tác được.";
+"Uninstall" = "Gỡ cài đặt";
+"VietTelex has been removed. Log out and back in to clear it from the input source list." = "Đã gỡ VietTelex. Đăng xuất rồi đăng nhập lại để nó biến mất khỏi danh sách bộ gõ.";
+"Settings were removed, but the app file could not be deleted — drag it to the Trash from ~/Library/Input Methods." = "Đã xoá cài đặt, nhưng không xoá được file app — kéo nó vào Thùng rác từ ~/Library/Input Methods.";

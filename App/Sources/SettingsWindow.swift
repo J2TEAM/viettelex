@@ -1162,6 +1162,13 @@ struct AboutTab: View {
 
             Text("© \(String(currentYear)) Vietnam Blockchain Association by Phil Trinh").foregroundStyle(.secondary)
             Spacer()
+            // Gỡ cài đặt trọn gói — hỏi xác nhận bằng NSAlert kiểu critical trước khi
+            // làm gì (không hoàn tác được: xoá app + toàn bộ settings/gõ tắt).
+            Button(role: .destructive) { confirmUninstall() } label: {
+                Label(model.loc("Uninstall VietTelex…"), systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+            .padding(.bottom, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
@@ -1229,6 +1236,24 @@ struct AboutTab: View {
             markdown: s,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(s)
+    }
+
+    /// Hỏi xác nhận (Huỷ là nút mặc định — Enter không được gỡ nhầm) rồi giao cho
+    /// Uninstaller. Xong hiện tổng kết và thoát process — app đã tự xoá, không còn
+    /// gì để chạy tiếp.
+    private func confirmUninstall() {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = model.loc("Uninstall VietTelex?")
+        alert.informativeText = model.loc("This removes the app, every setting and all your shortcuts. It cannot be undone.")
+        alert.addButton(withTitle: model.loc("Cancel"))          // nút đầu = default (Return)
+        alert.addButton(withTitle: model.loc("Uninstall"))
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        let summary = Uninstaller.run()
+        let done = NSAlert()
+        done.messageText = summary
+        done.runModal()
+        exit(0)
     }
 
     private func runCheck() {
