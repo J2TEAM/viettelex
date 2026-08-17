@@ -600,13 +600,24 @@ struct GeneralTab: View {
                 }
             }
             Section(header: Label(model.loc("Input style"), systemImage: "keyboard")) {
-                // VNI tốt nghiệp từ tab Thử nghiệm (maintainer 17/08/2026). Bật VNI thì
-                // các tuỳ chỉnh THUẦN-TELEX ẩn đi (Simple/Quick/bỏ dấu tự do/phím ngoặc
-                // — freeMarking chỉ chạy trong parseStep của Telex, VNI không đọc);
+                // VNI tốt nghiệp từ tab Thử nghiệm (maintainer 17/08/2026), trình bày
+                // dạng radio Telex/VNI cùng dòng (17/08 chiều) — hai kiểu gõ loại trừ
+                // nhau nên radio đúng ngữ nghĩa hơn toggle bật/tắt. Chọn VNI thì các
+                // tuỳ chỉnh THUẦN-TELEX ẩn đi (Simple/Quick/bỏ dấu tự do/phím ngoặc —
+                // freeMarking chỉ chạy trong parseStep của Telex, VNI không đọc);
                 // "kiểu cũ/mới" là quy tắc ĐẶT dấu, áp dụng cho cả hai nên giữ hiện.
-                Toggle(model.loc("VNI typing"), isOn: $model.vniMode)
-                Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
-                    .font(.caption).foregroundStyle(.secondary)
+                Picker(model.loc("Typing method"), selection: Binding(
+                    get: { model.vniMode ? "vni" : "telex" },
+                    set: { model.vniMode = ($0 == "vni") })) {
+                    Text("Telex").tag("telex")
+                    Text("VNI").tag("vni")
+                }
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                if model.vniMode {
+                    Text(model.loc("Type diacritics with digits instead of Telex letters: 1-5 = sắc/huyền/hỏi/ngã/nặng, 6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = clear tone. Letters stay literal. Keep Live spell-check on so numbers like “mp3” aren’t turned into tones."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !model.vniMode {
                     Toggle(model.loc("Simple Telex"), isOn: $model.simpleTelex)
                     Text(model.loc("A lone “w” stays “w” (type “uw” for ư). Off = full Telex (cw→cư)."))
