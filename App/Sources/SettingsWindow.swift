@@ -912,7 +912,7 @@ struct ExperimentalTab: View {
                     Text("★ — " + model.loc("five-pointed star")).tag("star")
                     Text("🇻🇳 — " + model.loc("Vietnam flag")).tag("flag")
                 }
-                Text(model.loc("Changing the menu icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect."))
+                Text(model.loc("Menu bar icons are drawn in a single color that follows the menu bar (no full-color icons — macOS strips the colors). Changing the icon rewrites a file inside the app, which breaks the app's code signature seal (the app keeps working and keeps its permissions). Requires a Mac restart to take effect."))
                     .font(.caption).foregroundStyle(.secondary)
                 if model.menuIconApplied {
                     Text(model.loc("Icon saved — restart your Mac to see it."))

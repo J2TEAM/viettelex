@@ -31,7 +31,9 @@ enum MenuIconSwitcher {
     static func sourceName(for choice: String) -> String {
         switch choice {
         case "star": return "MenuIcon2"
-        case "flag": return "MenuIcon3"   // cờ VN màu thật (field request qua email 17/08)
+        case "flag": return "MenuIcon3"   // bóng cờ + sao đục lỗ (field request 17/08; TextInputMenuAgent
+                                          // render icon dạng TEMPLATE — bỏ màu, chỉ giữ alpha, nên bản
+                                          // emoji màu 18/08 hiện thành khối trắng → vẽ lại monochrome)
         default:     return "MenuIcon1"
         }
     }
